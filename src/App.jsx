@@ -613,7 +613,7 @@ function ClaimPage({ activityId, authCode }) {
   const [activity, setActivity] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [form, setForm] = useState({ invitation_code: '', zhihu_name: '', wechat_name: '', profile_url: '', expected_word_count: 800 })
+  const [form, setForm] = useState({ invitation_code: '', expected_word_count: 800 })
   const [application, setApplication] = useState(null)
   const [claimedKey, setClaimedKey] = useState(null)
   const [articleUrl, setArticleUrl] = useState('')
@@ -660,8 +660,8 @@ function ClaimPage({ activityId, authCode }) {
       const payload = {
         activity_id: activityId,
         zhihu_name: curAnswerer.zhihu_name,
-        wechat_name: form.wechat_name,
-        profile_url: form.profile_url,
+        wechat_name: '',
+        profile_url: curAnswerer.account_address || '',
         expected_word_count: Math.max(800, Number(form.expected_word_count) || 800),
       }
       const { data, error: requestError } = await supabase.from('keyflow_applications')
@@ -779,9 +779,7 @@ function ClaimPage({ activityId, authCode }) {
         <form className="public-form" onSubmit={submitApplication}>
           <h2>报名参与</h2>
           <p className="invite-hint">确认信息后提交报名，运营方筛选通过后即可领取 Key。</p>
-          <label className="field"><span>知乎名称</span><input value={answerer.zhihu_name} disabled /></label>
-          <Field label="微信名" required value={form.wechat_name} placeholder="便于运营方联系" onChange={(value) => setForm({ ...form, wechat_name: value })}/>
-          <Field label="知乎主页地址" wide type="url" required value={form.profile_url} placeholder="https://www.zhihu.com/people/..." onChange={(value) => setForm({ ...form, profile_url: value })}/>
+          <label className="field"><span>知乎用户名</span><input value={answerer.zhihu_name} disabled /></label>
           <Field label="预计完成字数" type="number" required value={form.expected_word_count} onChange={(value) => setForm({ ...form, expected_word_count: value })} onBlur={(event) => { const numberValue = Number(event.target.value) || 800; if (numberValue < 800) setForm({ ...form, expected_word_count: 800 }) }}/>
           <span className="word-min-hint">最低 800 字</span>
           {error && <p className="public-error">{error}</p>}
@@ -801,7 +799,7 @@ function ClaimPage({ activityId, authCode }) {
 }
 
 function RegisterPage({ aid }) {
-  const [form, setForm] = useState({ invitation_code: '', zhihu_name: '', account_address: '', password: '', confirm_password: '' })
+  const [form, setForm] = useState({ invitation_code: '', zhihu_name: '', account_address: '', wechat_id: '', password: '', confirm_password: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -811,6 +809,8 @@ function RegisterPage({ aid }) {
     event.preventDefault(); setError('')
     if (!form.invitation_code.trim()) { setError('请输入邀请码'); return }
     if (!form.zhihu_name.trim()) { setError('请输入知乎用户名'); return }
+    if (!form.account_address.trim()) { setError('请输入知乎主页地址'); return }
+    if (!form.wechat_id.trim()) { setError('请输入微信号'); return }
     if (form.password.length < 6) { setError('密码至少 6 位'); return }
     if (form.password !== form.confirm_password) { setError('两次输入的密码不一致'); return }
     setLoading(true)
@@ -818,6 +818,7 @@ function RegisterPage({ aid }) {
       p_code: form.invitation_code.trim(),
       p_zhihu_name: form.zhihu_name.trim(),
       p_account_address: form.account_address.trim(),
+      p_wechat_id: form.wechat_id.trim(),
       p_password: form.password,
     })
     setLoading(false)
@@ -853,8 +854,12 @@ function RegisterPage({ aid }) {
             <input required value={form.zhihu_name} placeholder="你的知乎昵称" onChange={(e) => setForm({ ...form, zhihu_name: e.target.value })} />
           </label>
           <label className="register-field">
-            <span>知乎主页地址</span>
-            <input type="url" value={form.account_address} placeholder="https://www.zhihu.com/people/xxxxxx" onChange={(e) => setForm({ ...form, account_address: e.target.value })} />
+            <span>知乎主页地址<em>*</em></span>
+            <input type="url" required value={form.account_address} placeholder="https://www.zhihu.com/people/xxxxxx" onChange={(e) => setForm({ ...form, account_address: e.target.value })} />
+          </label>
+          <label className="register-field">
+            <span>微信号<em>*</em></span>
+            <input required value={form.wechat_id} placeholder="微信号即你的微信唯一ID，不是微信名" onChange={(e) => setForm({ ...form, wechat_id: e.target.value })} />
           </label>
           <label className="register-field">
             <span>密码<em>*</em></span>
@@ -1010,7 +1015,7 @@ function AnswererManagement({ codes, answerers, activities, applications, onRefr
     <section className="panel" style={{ marginTop: 'var(--sp-6)' }}>
       <div className="panel-head"><div><h3>注册答主列表</h3><p>所有通过邀请码注册的答主账号。</p></div></div>
       <div className="key-stats" style={{ padding: '0 var(--sp-4) var(--sp-4)' }}>{[{value: answerers.length, label: '注册答主'}].map(({value, label}) => <div className="key-stat" key={label}><strong>{value}</strong><span>{label}</span></div>)}</div>
-      <div className="table-wrap"><table><thead><tr><th>知乎用户名</th><th>账户地址</th><th>注册时间</th></tr></thead><tbody>{answerers.length ? answerers.map((a) => <tr key={a.id}><td><div className="person"><span className="person-avatar">{a.zhihu_name[0]}</span><div><strong>{a.zhihu_name}</strong><small>答主</small></div></div></td><td><code style={{ fontSize: 'var(--fs-xs)' }}>{a.account_address || '未填写'}</code></td><td>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(a.created_at))}</td></tr>) : <tr><td colSpan="3" className="table-empty">暂无注册答主。</td></tr>}</tbody></table></div>
+      <div className="table-wrap"><table><thead><tr><th>知乎用户名</th><th>知乎主页地址</th><th>微信号</th><th>注册时间</th></tr></thead><tbody>{answerers.length ? answerers.map((a) => <tr key={a.id}><td><div className="person"><span className="person-avatar">{a.zhihu_name[0]}</span><div><strong>{a.zhihu_name}</strong><small>答主</small></div></div></td><td>{a.account_address ? <a className="profile-link" href={a.account_address} target="_blank" rel="noreferrer">查看主页</a> : <span style={{ color: 'var(--gray-400)', fontSize: 'var(--fs-xs)' }}>未填写</span>}</td><td>{a.wechat_id || '未填写'}</td><td>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(a.created_at))}</td></tr>) : <tr><td colSpan="4" className="table-empty">暂无注册答主。</td></tr>}</tbody></table></div>
     </section>
     {notice && <div className="toast"><Icon name="check" size={17}/>{notice}</div>}
   </div>
