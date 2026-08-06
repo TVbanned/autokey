@@ -1,0 +1,59 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap');
+
+:root {
+  /* Surface */
+  --c-bg: #f9fafb;
+  --c-surface: #ffffff;
+  --c-surface-2: #f3f4f6;
+  --c-border: #e5e7eb;
+  --c-border-strong: #d1d5db;
+
+  /* Brand */
+  --c-primary: #3ecf8e;
+  --c-primary-hover: #2ebb7a;
+  --c-primary-soft: #ecfdf5;
+  --c-zhihu: #0084ff;
+
+  /* Text */
+  --c-ink: #111827;
+  --c-ink-2: #374151;
+  --c-ink-3: #6b7280;
+  --c-ink-4: #9ca3af;
+
+  /* Semantic */
+  --c-success: #059669;
+  --c-success-soft: #ecfdf5;
+  --c-warning: #d97706;
+  --c-warning-soft: #fffbeb;
+  --c-danger: #dc2626;
+  --c-danger-soft: #fef2f2;
+
+  /* Type scale — clear steps */
+  --fs-page-title: 22px;
+  --fs-section-title: 17px;
+  --fs-body: 14px;
+  --fs-label: 13px;
+  --fs-meta: 12px;
+
+  /* Radius */
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 10px;
+  --r-full: 9999px;
+
+  /* Spacing — 8px base */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+
+  /* Layout */
+  --sidebar-w: 224px;
+  --topbar-h: 52px;
+}
+
+html, body, #root { min-height: 100%; }
