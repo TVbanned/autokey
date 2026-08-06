@@ -32,3 +32,6 @@ awesome-design-md-main/
 
 # supabase temp
 supabase/.temp/
+
+# debug
+.dbg/

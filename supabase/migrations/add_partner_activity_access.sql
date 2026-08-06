@@ -58,7 +58,7 @@ begin
   end if;
 
   return jsonb_build_object(
-    'activity', jsonb_build_object('title', v_activity.title, 'game_name', v_activity.game_name, 'application_deadline', v_activity.application_deadline, 'delivery_deadline', v_activity.delivery_deadline),
+    'activity', jsonb_build_object('title', v_activity.title, 'game_name', v_activity.game_name, 'game_cover', v_activity.game_cover, 'application_deadline', v_activity.application_deadline, 'delivery_deadline', v_activity.delivery_deadline),
     'applications', coalesce((select jsonb_agg(jsonb_build_object('zhihu_name', a.zhihu_name, 'status', a.status, 'submitted_at', a.submitted_at) order by a.submitted_at desc) from keyflow_applications a where a.activity_id = v_activity.id), '[]'::jsonb),
     'deliveries', coalesce((select jsonb_agg(jsonb_build_object('zhihu_name', a.zhihu_name, 'status', d.status, 'article_url', d.article_url, 'submitted_at', d.submitted_at) order by d.submitted_at desc) from keyflow_deliveries d join keyflow_applications a on a.id = d.application_id where a.activity_id = v_activity.id), '[]'::jsonb),
     'key_count', (select count(*) from keyflow_keys where activity_id = v_activity.id)
