@@ -947,7 +947,7 @@ function AdminLoginPage() {
     setLoading(false)
     if (rpcErr) { setError(rpcErr.message); return }
     localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(data))
-    window.location.reload()
+    window.location.href = window.location.pathname
   }
 
   return <div className="admin-login-wrapper">
