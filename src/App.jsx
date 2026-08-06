@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from './supabase'
 import './App.css'
 
+const ADMIN_SESSION_KEY = 'keyflow_admin_session'
+
 const initialActivity = {
   title: '', game_name: '', description: '', rules: '', main_question: '',
   sub_questions: '[]',
@@ -155,7 +157,7 @@ function App() {
   const authorStats = useMemo(() => {
     const stats = {}
     applications.forEach((app) => {
-      const key = app.profile_url
+      const key = app.zhihu_id || app.profile_url
       if (!key || app.activity_id === selectedActivity?.id) return
       if (!stats[key]) stats[key] = { participated: 0, completed: 0 }
       stats[key].participated++
@@ -432,6 +434,11 @@ function App() {
     if (activityId) return <ClaimPage activityId={activityId} authCode={authCode} />
   }
 
+  // 管理员登录门控：无 session 或显式访问 ?admin 时显示登录页
+  const adminSession = (() => { try { return JSON.parse(localStorage.getItem(ADMIN_SESSION_KEY)) } catch { return null } })()
+  const adminLoginMode = urlParams.get('admin') !== null
+  if (adminLoginMode || !adminSession) return <AdminLoginPage />
+
   const claimLink = selectedActivity ? `${window.location.origin}${window.location.pathname}?apply=${selectedActivity.id}` : ''
   const partnerLink = selectedActivity?.partner_token ? `${window.location.origin}${window.location.pathname}?partner=${selectedActivity.partner_token}` : ''
 
@@ -440,7 +447,14 @@ function App() {
       <div className="brand"><span className="brand-mark zhihu-mark">知</span>GameJourney</div>
       <div className="sidebar-divider" />
       <nav className="nav-section"><p className="nav-label">工作台</p>{nav.map(([label, icon]) => <button key={label} className={`nav-item ${active === label ? 'active' : ''}`} onClick={() => setActive(label)}><Icon name={icon}/><span>{label}</span>{label === '活动看板' && keyReadyCount > 0 && <b className="nav-alert">{keyReadyCount}</b>}{label === '答主报名' && pendingCount > 0 && <b>{pendingCount}</b>}</button>)}</nav>
-      <div className="profile"><span className="avatar">张</span><div className="profile-info"><strong>张小满</strong><small>运营方</small></div></div>
+      <div className="profile">
+        <span className="avatar">{adminSession?.display_name?.[0] || '管'}</span>
+        <div className="profile-info">
+          <strong>{adminSession?.display_name || '管理员'}</strong>
+          <small>运营方</small>
+        </div>
+        <button className="admin-logout-btn" title="退出登录" onClick={() => { localStorage.removeItem(ADMIN_SESSION_KEY); window.location.href = window.location.pathname + '?admin' }}>退出</button>
+      </div>
     </aside>
     <main>
       <header className="topbar"><div className="mobile-brand"><span className="brand-mark zhihu-mark">知</span> GameJourney</div><div className="crumb">工作台 <span>/</span> {active}</div><button className="reload" onClick={loadData}>刷新数据</button></header>
@@ -585,7 +599,7 @@ function ApplicationsPage({ activity, applications, authorStats, statusLabel, on
     <section className="panel applications-panel">
       <div className="application-toolbar"><div className="application-filters">{filters.map(([value, label]) => <button key={value} className={statusFilter === value ? 'active' : ''} onClick={() => setStatusFilter(value)}>{label}<b>{statusCounts[value]}</b></button>)}</div><div className="application-controls"><input aria-label="搜索答主" value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索知乎名或微信名"/><select aria-label="排序方式" value={sortBy} onChange={(event) => setSortBy(event.target.value)}><option value="submitted_at">按报名时间</option><option value="expected_word_count">按预计字数</option></select></div></div>
       {selectedIds.size > 0 && <div className="batch-actions"><span>已选 <strong>{selectedIds.size}</strong> 项</span><button className="select-action" onClick={() => batchReview('selected')}>批量入选</button><button className="reject-action" onClick={() => batchReview('rejected')}>批量不选</button><button className="reset-action" onClick={() => setSelectedIds(new Set())}>取消选择</button></div>}
-      <div className="table-wrap"><table className="applications-table"><thead><tr><th><input type="checkbox" checked={visibleApplications.length > 0 && visibleApplications.every((p) => selectedIds.has(p.id))} onChange={toggleSelectAll}/></th><th>答主</th><th>知乎主页</th><th>微信名</th><th>预计字数</th><th>报名时间</th><th>历史参加活动</th><th>历史完成活动</th><th>延迟提交</th><th>状态</th><th>操作</th></tr></thead><tbody>{visibleApplications.length ? visibleApplications.map((person) => { const history = authorStats[person.profile_url] || { participated: 0, completed: 0 }; return <tr key={person.id}><td><input type="checkbox" checked={selectedIds.has(person.id)} onChange={() => toggleSelect(person.id)}/></td><td><div className="person"><span className="person-avatar">{person.zhihu_name[0]}</span><div><strong>{person.zhihu_name}</strong><small>知乎答主</small></div></div></td><td><a className="profile-link" href={person.profile_url} target="_blank" rel="noreferrer">查看主页</a></td><td>{person.wechat_name}</td><td><span className="word-count">{person.expected_word_count.toLocaleString()} 字</span></td><td>{new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(person.submitted_at))}</td><td><span className="history-count">{history.participated} <small>次</small></span></td><td><span className={`history-count ${history.participated !== history.completed ? 'highlight-red' : ''}`}>{history.completed} <small>次</small></span></td><td><span className={`history-count ${person.delayed_count > 0 ? 'highlight-red' : ''}`}>{person.delayed_count} <small>次</small></span></td><td><span className={`pill ${person.status === 'selected' ? 'success' : person.status === 'pending' ? 'warning' : 'muted'}`}>{statusLabel[person.status]}</span></td><td><div className="review-actions">{person.status === 'pending' ? <><button className="select-action" onClick={() => onReviewApplication(person.id, 'selected')}>入选</button><button className="reject-action" onClick={() => onReviewApplication(person.id, 'rejected')}>不选</button></> : <button className="reset-action" onClick={() => onReviewApplication(person.id, 'pending')}>重新筛选</button>}<button className="delete-action" onClick={() => onDeleteApplication(person.id)}>删除</button></div></td></tr> }) : <tr><td colSpan="11" className="table-empty">没有符合条件的报名记录。</td></tr>}</tbody></table></div>
+      <div className="table-wrap"><table className="applications-table"><thead><tr><th><input type="checkbox" checked={visibleApplications.length > 0 && visibleApplications.every((p) => selectedIds.has(p.id))} onChange={toggleSelectAll}/></th><th>答主</th><th>知乎主页</th><th>微信名</th><th>预计字数</th><th>报名时间</th><th>历史参加活动</th><th>历史完成活动</th><th>延迟提交</th><th>状态</th><th>操作</th></tr></thead><tbody>{visibleApplications.length ? visibleApplications.map((person) => { const history = authorStats[person.zhihu_id || person.profile_url] || { participated: 0, completed: 0 }; return <tr key={person.id}><td><input type="checkbox" checked={selectedIds.has(person.id)} onChange={() => toggleSelect(person.id)}/></td><td><div className="person"><span className="person-avatar">{person.zhihu_name[0]}</span><div><strong>{person.zhihu_name}</strong><small>知乎答主</small></div></div></td><td><a className="profile-link" href={person.profile_url} target="_blank" rel="noreferrer">查看主页</a></td><td>{person.wechat_name}</td><td><span className="word-count">{person.expected_word_count.toLocaleString()} 字</span></td><td>{new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(person.submitted_at))}</td><td><span className="history-count">{history.participated} <small>次</small></span></td><td><span className={`history-count ${history.participated !== history.completed ? 'highlight-red' : ''}`}>{history.completed} <small>次</small></span></td><td><span className={`history-count ${person.delayed_count > 0 ? 'highlight-red' : ''}`}>{person.delayed_count} <small>次</small></span></td><td><span className={`pill ${person.status === 'selected' ? 'success' : person.status === 'pending' ? 'warning' : 'muted'}`}>{statusLabel[person.status]}</span></td><td><div className="review-actions">{person.status === 'pending' ? <><button className="select-action" onClick={() => onReviewApplication(person.id, 'selected')}>入选</button><button className="reject-action" onClick={() => onReviewApplication(person.id, 'rejected')}>不选</button></> : <button className="reset-action" onClick={() => onReviewApplication(person.id, 'pending')}>重新筛选</button>}<button className="delete-action" onClick={() => onDeleteApplication(person.id)}>删除</button></div></td></tr> }) : <tr><td colSpan="11" className="table-empty">没有符合条件的报名记录。</td></tr>}</tbody></table></div>
     </section>
   </section>
 }
@@ -843,7 +857,7 @@ function RegisterPage({ aid }) {
       </div>
       <form className="register-form" onSubmit={handleRegister}>
         <h2>创建账号</h2>
-        <p className="register-form-sub">邀请码由知乎运营提供，每个邀请码仅可使用一次。</p>
+        <p className="register-form-sub">邀请码为平台通用凭证，由知乎运营提供，每个邀请码仅可使用一次。</p>
         <div className="register-fields">
           <label className="register-field">
             <span>邀请码（联系知乎运营获得）<em>*</em></span>
@@ -962,14 +976,12 @@ function AdminLoginPage() {
 function AnswererManagement({ codes, answerers, activities, applications, onRefresh }) {
   const [count, setCount] = useState(5)
   const [generating, setGenerating] = useState(false)
-  const [targetActivityId, setTargetActivityId] = useState(activities[0]?.id || '')
   const [notice, setNotice] = useState('')
   const toast = (msg) => { setNotice(msg); window.setTimeout(() => setNotice(''), 2800) }
   const applicantByAppId = useMemo(() => Object.fromEntries(applications.map((app) => [app.id, app.zhihu_name])), [applications])
   const answererById = useMemo(() => Object.fromEntries(answerers.map(a => [a.id, a])), [answerers])
 
   const generate = async () => {
-    if (!targetActivityId) return
     setGenerating(true)
     const { error } = await supabase.rpc('keyflow_generate_invitation_codes', { p_count: count })
     setGenerating(false)
@@ -997,25 +1009,22 @@ function AnswererManagement({ codes, answerers, activities, applications, onRefr
 
   return <div>
     <section className="panel inv-codes-panel">
-      <div className="panel-head"><div><h3>邀请码管理</h3><p>每个邀请码仅可使用一次。答主注册或申领后即绑定。</p></div></div>
+      <div className="panel-head"><div><h3>邀请码管理</h3><p>邀请码为平台通用凭证，不绑定具体游戏活动。每个邀请码仅可使用一次。</p></div></div>
       <div className="inv-codes-header">
         <div className="key-stats inv-stats">{[{value: codes.length, label: '总邀请码'}, {value: unusedCount, label: '未使用'}, {value: usedCount, label: '已使用'}].map(({value, label}) => <div className="key-stat" key={label}><strong>{value}</strong><span>{label}</span></div>)}</div>
         <div className="inv-gen-row">
           <div className="inv-count-input"><span>数量</span><input type="number" min="1" max="100" value={count} onChange={e => setCount(Math.max(1, Math.min(100, Number(e.target.value) || 1)))} /></div>
-          <select className="inv-activity-select" value={targetActivityId} onChange={e => setTargetActivityId(e.target.value)}>
-            {activities.map(a => <option key={a.id} value={a.id}>{a.title}</option>)}
-          </select>
-          <button className="primary compact" onClick={generate} disabled={generating || !targetActivityId}>{generating ? '生成中…' : `生成 ${count} 个`}</button>
+          <button className="primary compact" onClick={generate} disabled={generating}>{generating ? '生成中…' : `生成 ${count} 个`}</button>
           {unusedCount > 0 && <button className="outline-button compact" onClick={copyAllUnused}>复制全部未使用</button>}
         </div>
       </div>
-      <div className="table-wrap"><table><thead><tr><th>邀请码</th><th>状态</th><th>绑定用户</th><th>生成时间</th></tr></thead><tbody>{codes.length ? codes.slice(0, 30).map((c) => <tr key={c.id}><td><code className={`invite-code ${c.application_id || c.answerer_id ? 'used' : ''}`} onClick={() => !c.application_id && !c.answerer_id && copyCode(c.code)} title={c.application_id || c.answerer_id ? '已使用' : '点击复制'}>{c.code}</code></td><td><span className={`pill ${c.application_id || c.answerer_id ? 'success' : 'warning'}`}>{c.application_id || c.answerer_id ? '已使用' : '可用'}</span></td><td>{getCodeUser(c) || '—'}</td><td>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium' }).format(new Date(c.created_at))}</td></tr>) : <tr><td colSpan="4" className="table-empty">尚未生成邀请码。选择活动后点击生成。</td></tr>}</tbody></table></div>
+      <div className="table-wrap"><table><thead><tr><th>邀请码</th><th>状态</th><th>绑定用户</th><th>生成时间</th></tr></thead><tbody>{codes.length ? codes.slice(0, 30).map((c) => <tr key={c.id}><td><code className={`invite-code ${c.application_id || c.answerer_id ? 'used' : ''}`} onClick={() => !c.application_id && !c.answerer_id && copyCode(c.code)} title={c.application_id || c.answerer_id ? '已使用' : '点击复制'}>{c.code}</code></td><td><span className={`pill ${c.application_id || c.answerer_id ? 'success' : 'warning'}`}>{c.application_id || c.answerer_id ? '已使用' : '可用'}</span></td><td>{getCodeUser(c) || '—'}</td><td>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium' }).format(new Date(c.created_at))}</td></tr>) : <tr><td colSpan="4" className="table-empty">尚未生成邀请码。设置数量后点击「生成 N 个」。</td></tr>}</tbody></table></div>
     </section>
 
     <section className="panel" style={{ marginTop: 'var(--sp-6)' }}>
       <div className="panel-head"><div><h3>注册答主列表</h3><p>所有通过邀请码注册的答主账号。</p></div></div>
       <div className="key-stats" style={{ padding: '0 var(--sp-4) var(--sp-4)' }}>{[{value: answerers.length, label: '注册答主'}].map(({value, label}) => <div className="key-stat" key={label}><strong>{value}</strong><span>{label}</span></div>)}</div>
-      <div className="table-wrap"><table><thead><tr><th>知乎用户名</th><th>知乎主页地址</th><th>微信号</th><th>注册时间</th></tr></thead><tbody>{answerers.length ? answerers.map((a) => <tr key={a.id}><td><div className="person"><span className="person-avatar">{a.zhihu_name[0]}</span><div><strong>{a.zhihu_name}</strong><small>答主</small></div></div></td><td>{a.account_address ? <a className="profile-link" href={a.account_address} target="_blank" rel="noreferrer">查看主页</a> : <span style={{ color: 'var(--gray-400)', fontSize: 'var(--fs-xs)' }}>未填写</span>}</td><td>{a.wechat_id || '未填写'}</td><td>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(a.created_at))}</td></tr>) : <tr><td colSpan="4" className="table-empty">暂无注册答主。</td></tr>}</tbody></table></div>
+      <div className="table-wrap"><table><thead><tr><th>#</th><th>知乎用户名</th><th>知乎主页地址</th><th>微信号</th><th>注册时间</th></tr></thead><tbody>{answerers.length ? answerers.map((a) => <tr key={a.id}><td><span className="serial-number">{a.serial_number != null ? String(a.serial_number).padStart(3, '0') : '—'}</span></td><td><div className="person"><span className="person-avatar">{a.zhihu_name[0]}</span><div><strong>{a.zhihu_name}</strong><small>答主</small></div></div></td><td>{a.account_address ? <a className="profile-link" href={a.account_address} target="_blank" rel="noreferrer">查看主页</a> : <span style={{ color: 'var(--gray-400)', fontSize: 'var(--fs-xs)' }}>未填写</span>}</td><td>{a.wechat_id || '未填写'}</td><td>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(a.created_at))}</td></tr>) : <tr><td colSpan="5" className="table-empty">暂无注册答主。</td></tr>}</tbody></table></div>
     </section>
     {notice && <div className="toast"><Icon name="check" size={17}/>{notice}</div>}
   </div>
