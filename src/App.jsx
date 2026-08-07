@@ -128,6 +128,7 @@ function App() {
   const [mainQuestionDraft, setMainQuestionDraft] = useState('')
   const [editingSubIndex, setEditingSubIndex] = useState(null)
   const [subDraft, setSubDraft] = useState('')
+  const [lastBoardViewTime, setLastBoardViewTime] = useState(() => localStorage.getItem('keyflow_last_board_view') || new Date(0).toISOString())
 
   const selectedActivity = activities.find((item) => item.id === selectedId) || activities[0]
   const subQuestions = useMemo(() => {
@@ -142,14 +143,27 @@ function App() {
   const claimedCount = filteredApplications.filter((item) => item.keyflow_keys?.claimed_at).length
   const deliveredCount = filteredApplications.filter((item) => item.keyflow_deliveries?.id).length
 
-  // 发key中且全部入选答主已领Key的活动数（用于强提醒）
-  const keyReadyCount = useMemo(() => {
-    return activities.filter(act => {
-      if (act.status !== 'key_distribution') return false
-      const apps = applications.filter(a => a.activity_id === act.id && a.status === 'selected')
-      return apps.length > 0 && apps.every(a => a.keyflow_keys?.claimed_at)
-    }).length
-  }, [activities, applications])
+  // 活动看板红色提醒：有新增报名的游戏数 + 已全部领Key待推进的活动数（去重）
+  const boardAttentionCount = useMemo(() => {
+    const lastView = new Date(lastBoardViewTime)
+    const attentionIds = new Set()
+    // 有新增报名的活动
+    applications.forEach(app => {
+      if (app.submitted_at && new Date(app.submitted_at) > lastView) {
+        attentionIds.add(app.activity_id)
+      }
+    })
+    // 发key中且全部入选答主已领Key的活动
+    activities.forEach(act => {
+      if (act.status === 'key_distribution') {
+        const apps = applications.filter(a => a.activity_id === act.id && a.status === 'selected')
+        if (apps.length > 0 && apps.every(a => a.keyflow_keys?.claimed_at)) {
+          attentionIds.add(act.id)
+        }
+      }
+    })
+    return attentionIds.size
+  }, [activities, applications, lastBoardViewTime])
 
   // 当前选中的活动是否已全部领Key待推进
   const currentActivityKeyReady = selectedActivity?.status === 'key_distribution' &&
@@ -446,7 +460,7 @@ function App() {
     <aside className="sidebar">
       <div className="brand"><span className="brand-mark zhihu-mark">知</span>GameJourney</div>
       <div className="sidebar-divider" />
-      <nav className="nav-section"><p className="nav-label">工作台</p>{nav.map(([label, icon]) => <button key={label} className={`nav-item ${active === label ? 'active' : ''}`} onClick={() => setActive(label)}><Icon name={icon}/><span>{label}</span>{label === '活动看板' && keyReadyCount > 0 && <b className="nav-alert">{keyReadyCount}</b>}{label === '答主报名' && pendingCount > 0 && <b>{pendingCount}</b>}</button>)}</nav>
+      <nav className="nav-section"><p className="nav-label">工作台</p>{nav.map(([label, icon]) => <button key={label} className={`nav-item ${active === label ? 'active' : ''}`} onClick={() => { setActive(label); if (label === '活动看板') { const now = new Date().toISOString(); setLastBoardViewTime(now); localStorage.setItem('keyflow_last_board_view', now) } }}><Icon name={icon}/><span>{label}</span>{label === '活动看板' && boardAttentionCount > 0 && <b className="nav-alert">{boardAttentionCount}</b>}{label === '答主报名' && pendingCount > 0 && <b>{pendingCount}</b>}</button>)}</nav>
       <div className="profile">
         <span className="avatar">{adminSession?.display_name?.[0] || '管'}</span>
         <div className="profile-info">
@@ -478,12 +492,65 @@ function App() {
   </div>
 }
 
+function extractDominantColor(imageUrl) {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = () => {
+      const canvas = document.createElement('canvas')
+      const size = 80
+      canvas.width = size
+      canvas.height = size
+      const ctx = canvas.getContext('2d')
+      ctx.drawImage(img, 0, 0, size, size)
+      const data = ctx.getImageData(0, 0, size, size).data
+      let r = 0, g = 0, b = 0, count = 0
+      const sx = Math.floor(size * 0.4), sy = Math.floor(size * 0.15)
+      const ex = size, ey = Math.floor(size * 0.85)
+      for (let y = sy; y < ey; y++) {
+        for (let x = sx; x < ex; x++) {
+          const i = (y * size + x) * 4
+          r += data[i]; g += data[i + 1]; b += data[i + 2]
+          count++
+        }
+      }
+      resolve({ r: Math.round(r / count), g: Math.round(g / count), b: Math.round(b / count) })
+    }
+    img.onerror = () => resolve(null)
+    img.src = imageUrl
+  })
+}
+
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255
+  const max = Math.max(r, g, b), min = Math.min(r, g, b)
+  let h = 0, s = 0, l = (max + min) / 2
+  if (max !== min) {
+    const d = max - min
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
+    h = max === r ? ((g - b) / d + (g < b ? 6 : 0)) / 6
+      : max === g ? ((b - r) / d + 2) / 6
+      : ((r - g) / d + 4) / 6
+  }
+  return { h: h * 360, s: s * 100, l: l * 100 }
+}
+
+function toHeroColor({ r, g, b }) {
+  const { h, s } = rgbToHsl(r, g, b)
+  const sat = Math.min(s * 0.55, 45)
+  // keep hue, reduce saturation, set low lightness for dark bg
+  const a = (sat / 100) * Math.min(0.15, 1 - 0.15)
+  const f = (n) => { const k = (n + h / 30) % 12; const val = 0.15 - a * Math.max(Math.min(k - 3, 9 - k, 1), -1); return Math.round(val * 255) }
+  return { r: f(0), g: f(8), b: f(4) }
+}
+
 function PartnerPage({ token }) {
   const [snapshot, setSnapshot] = useState(null)
   const [input, setInput] = useState('')
   const [error, setError] = useState('')
   const [importing, setImporting] = useState(false)
   const [notice, setNotice] = useState('')
+  const [heroColor, setHeroColor] = useState(null)
   const parsedKeys = useMemo(() => parseKeys(input), [input])
   const platformCounts = useMemo(() => parsedKeys.reduce((counts, { platform }) => ({ ...counts, [platform]: (counts[platform] || 0) + 1 }), {}), [parsedKeys])
   const toast = (message) => { setNotice(message); window.setTimeout(() => setNotice(''), 2800) }
@@ -496,6 +563,16 @@ function PartnerPage({ token }) {
   }
 
   useEffect(() => { loadSnapshot() }, [token])
+
+  useEffect(() => {
+    if (!snapshot?.activity?.game_cover) return
+    let cancelled = false
+    extractDominantColor(snapshot.activity.game_cover).then((color) => {
+      if (cancelled || !color) return
+      setHeroColor(toHeroColor(color))
+    })
+    return () => { cancelled = true }
+  }, [snapshot?.activity?.game_cover])
 
   const importKeys = async () => {
     if (!parsedKeys.length) return
@@ -522,7 +599,7 @@ function PartnerPage({ token }) {
   const applicationStatus = { pending: '待筛选', selected: '已入选', rejected: '未入选' }
   const deliveryStatus = { pending: '待审核', approved: '已通过', revision_required: '需修改', rejected: '未通过' }
 
-  return <div className="partner-page"><header className="partner-header"><div className="partner-brand"><span className="brand-mark">G</span><span>GameJourney</span><small>合作方协作页</small></div><button className="reload" onClick={loadSnapshot}>刷新数据</button></header><main className="partner-main"><section className="partner-hero"><div className="partner-hero-content"><p>{activity.game_name}</p><h1>{activity.title}</h1><span>在此补充活动 Key，并实时查看报名与交稿进展。</span><div><span>报名截止 {formatDate(activity.application_deadline)}</span><span>交付截止 {formatDate(activity.delivery_deadline)}</span></div></div>{activity.game_cover && <div className="partner-hero-art" aria-hidden="true"><img src={activity.game_cover} alt="" /></div>}</section>{error && <div className="error-box">操作失败：{error}<button onClick={() => setError('')}><Icon name="close" size={16}/></button></div>}<section className="partner-metrics"><div><strong>{keyCount}</strong><span>已入库 Key</span></div><div><strong>{applications.length}</strong><span>累计报名</span></div><div><strong>{selectedCount}</strong><span>已入选答主</span></div><div><strong>{deliveries.length}</strong><span>已交稿</span></div></section><section className="partner-grid"><section className="panel partner-key-panel"><div className="panel-head"><div><h3>添加 Key</h3><p>每行一个，也支持逗号、分号和制表符分隔；平台将自动识别。</p></div></div><div className="key-import-body"><textarea className="key-textarea" value={input} onChange={(event) => setInput(event.target.value)} placeholder={'示例：\nABCDE-FGHIJ-KLMNO-PQRST\nABCD-EFGH-IJKL-MNOP'}/>{parsedKeys.length > 0 && <div className="key-preview"><div className="key-preview-head"><strong>导入预览</strong><span>{parsedKeys.length} 个唯一 Key</span></div><div className="platform-summary">{Object.entries(platformCounts).map(([platform, count]) => <span className={`platform-tag ${platform}`} key={platform}>{platformLabel[platform]} {count}</span>)}</div></div>}<div className="key-import-footer"><span>重复 Key 将自动跳过，Key 明文不会展示在数据列表中。</span><button className="primary" onClick={importKeys} disabled={!parsedKeys.length || importing}>{importing ? '入库中…' : `确认入库 ${parsedKeys.length} 个 Key`}</button></div></div></section><section className="panel partner-progress"><div className="panel-head"><div><h3>进度说明</h3><p>活动数据由运营方维护，以下信息会实时更新。</p></div></div><div className="progress-list"><div><Icon name="users"/><span>报名情况</span><strong>{applications.length} 人</strong></div><div><Icon name="check"/><span>入选答主</span><strong>{selectedCount} 人</strong></div><div><Icon name="file"/><span>交稿情况</span><strong>{deliveries.length} 篇</strong></div></div><a className="partner-apply-link" href={window.location.origin + window.location.pathname + '?apply=' + activity.id}>点击进入答主报名页面</a></section></section><section className="panel partner-table"><div className="panel-head"><div><h3>报名情况</h3><p>展示答主信息，合作方可标记推荐人选。</p></div></div><div className="table-wrap"><table><thead><tr><th>答主</th><th>知乎主页</th><th>字数预估</th><th>推荐入选</th><th>报名时间</th><th>状态</th></tr></thead><tbody>{applications.length ? applications.map((item, index) => <tr key={`${item.zhihu_name}-${index}`}><td><span className="person-name">{item.zhihu_name}</span></td><td><a className="profile-link" href={item.profile_url} target="_blank" rel="noreferrer">查看主页 <Icon name="arrow" size={13}/></a></td><td>{item.expected_word_count ? `${item.expected_word_count.toLocaleString()} 字` : '—'}</td><td><button className={`recommend-toggle ${item.partner_recommended ? 'active' : ''}`} onClick={() => toggleRecommend(item.id)} title={item.partner_recommended ? '取消推荐' : '推荐入选'}>{item.partner_recommended ? '已推荐' : '推荐'}</button></td><td>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(item.submitted_at))}</td><td><span className={`pill ${item.status === 'selected' ? 'success' : item.status === 'pending' ? 'warning' : 'muted'}`}>{applicationStatus[item.status]}</span></td></tr>) : <tr><td colSpan="6" className="table-empty">暂无报名记录。</td></tr>}</tbody></table></div></section><section className="panel partner-table"><div className="panel-head"><div><h3>交稿情况</h3><p>合作方可查看已提交作品的审核进度。</p></div></div><div className="table-wrap"><table><thead><tr><th>答主</th><th>交稿时间</th><th>审核状态</th><th>作品</th></tr></thead><tbody>{deliveries.length ? deliveries.map((item, index) => <tr key={`${item.zhihu_name}-${index}`}><td>{item.zhihu_name}</td><td>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(item.submitted_at))}</td><td><span className={`pill ${item.status === 'approved' ? 'success' : item.status === 'pending' ? 'warning' : 'muted'}`}>{deliveryStatus[item.status]}</span></td><td><a className="profile-link" href={item.article_url} target="_blank" rel="noreferrer">查看作品</a></td></tr>) : <tr><td colSpan="4" className="table-empty">暂无交稿记录。</td></tr>}</tbody></table></div></section></main>{notice && <div className="toast"><Icon name="check" size={17}/>{notice}</div>}</div>
+  return <div className="partner-page"><header className="partner-header"><div className="partner-brand"><span className="brand-mark">G</span><span>GameJourney</span><small>合作方协作页</small></div><button className="reload" onClick={loadSnapshot}>刷新数据</button></header><main className="partner-main"><section className="partner-hero" style={heroColor ? { '--hero-r': heroColor.r, '--hero-g': heroColor.g, '--hero-b': heroColor.b } : {}}><div className="partner-hero-content"><p>{activity.game_name}</p><h1>{activity.title}</h1><span>在此补充活动 Key，并实时查看报名与交稿进展。</span><div><span>报名截止 {formatDate(activity.application_deadline)}</span><span>交付截止 {formatDate(activity.delivery_deadline)}</span></div></div>{activity.game_cover && <div className="partner-hero-art" aria-hidden="true"><img src={activity.game_cover} alt="" /></div>}</section>{error && <div className="error-box">操作失败：{error}<button onClick={() => setError('')}><Icon name="close" size={16}/></button></div>}<section className="partner-metrics"><div><strong>{keyCount}</strong><span>已入库 Key</span></div><div><strong>{applications.length}</strong><span>累计报名</span></div><div><strong>{selectedCount}</strong><span>已入选答主</span></div><div><strong>{deliveries.length}</strong><span>已交稿</span></div></section><section className="partner-grid"><section className="panel partner-key-panel"><div className="panel-head"><div><h3>添加 Key</h3><p>每行一个，也支持逗号、分号和制表符分隔；平台将自动识别。</p></div></div><div className="key-import-body"><textarea className="key-textarea" value={input} onChange={(event) => setInput(event.target.value)} placeholder={'示例：\nABCDE-FGHIJ-KLMNO-PQRST\nABCD-EFGH-IJKL-MNOP'}/>{parsedKeys.length > 0 && <div className="key-preview"><div className="key-preview-head"><strong>导入预览</strong><span>{parsedKeys.length} 个唯一 Key</span></div><div className="platform-summary">{Object.entries(platformCounts).map(([platform, count]) => <span className={`platform-tag ${platform}`} key={platform}>{platformLabel[platform]} {count}</span>)}</div></div>}<div className="key-import-footer"><span>重复 Key 将自动跳过，Key 明文不会展示在数据列表中。</span><button className="primary" onClick={importKeys} disabled={!parsedKeys.length || importing}>{importing ? '入库中…' : `确认入库 ${parsedKeys.length} 个 Key`}</button></div></div></section><section className="panel partner-progress"><div className="panel-head"><div><h3>进度说明</h3><p>活动数据由运营方维护，以下信息会实时更新。</p></div></div><div className="progress-list"><div><Icon name="users"/><span>报名情况</span><strong>{applications.length} 人</strong></div><div><Icon name="check"/><span>入选答主</span><strong>{selectedCount} 人</strong></div><div><Icon name="file"/><span>交稿情况</span><strong>{deliveries.length} 篇</strong></div></div><a className="partner-apply-link" href={window.location.origin + window.location.pathname + '?apply=' + activity.id}>点击进入答主报名页面</a></section></section><section className="panel partner-table"><div className="panel-head"><div><h3>报名情况</h3><p>展示答主信息，合作方可标记推荐人选。</p></div></div><div className="table-wrap"><table><thead><tr><th>答主</th><th>知乎主页</th><th>字数预估</th><th>推荐入选</th><th>报名时间</th><th>状态</th></tr></thead><tbody>{applications.length ? applications.map((item, index) => <tr key={`${item.zhihu_name}-${index}`}><td><span className="person-name">{item.zhihu_name}</span></td><td><a className="profile-link" href={item.profile_url} target="_blank" rel="noreferrer">查看主页 <Icon name="arrow" size={13}/></a></td><td>{item.expected_word_count ? `${item.expected_word_count.toLocaleString()} 字` : '—'}</td><td><button className={`recommend-toggle ${item.partner_recommended ? 'active' : ''}`} onClick={() => toggleRecommend(item.id)} title={item.partner_recommended ? '取消推荐' : '推荐入选'}>{item.partner_recommended ? '已推荐' : '推荐'}</button></td><td>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(item.submitted_at))}</td><td><span className={`pill ${item.status === 'selected' ? 'success' : item.status === 'pending' ? 'warning' : 'muted'}`}>{applicationStatus[item.status]}</span></td></tr>) : <tr><td colSpan="6" className="table-empty">暂无报名记录。</td></tr>}</tbody></table></div></section><section className="panel partner-table"><div className="panel-head"><div><h3>交稿情况</h3><p>合作方可查看已提交作品的审核进度。</p></div></div><div className="table-wrap"><table><thead><tr><th>答主</th><th>交稿时间</th><th>审核状态</th><th>作品</th></tr></thead><tbody>{deliveries.length ? deliveries.map((item, index) => <tr key={`${item.zhihu_name}-${index}`}><td>{item.zhihu_name}</td><td>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(item.submitted_at))}</td><td><span className={`pill ${item.status === 'approved' ? 'success' : item.status === 'pending' ? 'warning' : 'muted'}`}>{deliveryStatus[item.status]}</span></td><td><a className="profile-link" href={item.article_url} target="_blank" rel="noreferrer">查看作品</a></td></tr>) : <tr><td colSpan="4" className="table-empty">暂无交稿记录。</td></tr>}</tbody></table></div></section></main>{notice && <div className="toast"><Icon name="check" size={17}/>{notice}</div>}</div>
 }
 
 function KeyManagement({ activity, input, parsedKeys, platformCounts, importedKeys, importing, onInput, onImport, onSelectActivity, applications }) {
@@ -1000,6 +1077,8 @@ function AnswererManagement({ codes, answerers, activities, applications, onRefr
 
   const unusedCount = codes.filter(c => !c.application_id && !c.answerer_id).length
   const usedCount = codes.filter(c => c.application_id || c.answerer_id).length
+  const withWechat = answerers.filter(a => a.wechat_id).length
+  const withHomepage = answerers.filter(a => a.account_address).length
 
   const getCodeUser = (c) => {
     if (c.answerer_id && answererById[c.answerer_id]) return answererById[c.answerer_id].zhihu_name
@@ -1007,24 +1086,44 @@ function AnswererManagement({ codes, answerers, activities, applications, onRefr
     return null
   }
 
-  return <div>
-    <section className="panel inv-codes-panel">
-      <div className="panel-head"><div><h3>邀请码管理</h3><p>邀请码为平台通用凭证，不绑定具体游戏活动。每个邀请码仅可使用一次。</p></div></div>
-      <div className="inv-codes-header">
-        <div className="key-stats inv-stats">{[{value: codes.length, label: '总邀请码'}, {value: unusedCount, label: '未使用'}, {value: usedCount, label: '已使用'}].map(({value, label}) => <div className="key-stat" key={label}><strong>{value}</strong><span>{label}</span></div>)}</div>
+  return <div className="answerer-mgmt">
+    <section className="panel">
+      <div className="panel-head">
+        <div className="panel-head-info">
+          <h3>邀请码管理</h3>
+          <p>邀请码为平台通用凭证，不绑定具体游戏活动。每个邀请码仅可使用一次。</p>
+        </div>
+        <span className="panel-icon"><Icon name="ticket" size={20} /></span>
+      </div>
+      <div className="inv-codes-body">
+        <div className="answerer-stats">
+          <div className="answerer-stat"><strong>{codes.length}</strong><span>总邀请码</span></div>
+          <div className="answerer-stat accent-green"><strong>{unusedCount}</strong><span>未使用</span></div>
+          <div className="answerer-stat accent-amber"><strong>{usedCount}</strong><span>已使用</span></div>
+        </div>
         <div className="inv-gen-row">
-          <div className="inv-count-input"><span>数量</span><input type="number" min="1" max="100" value={count} onChange={e => setCount(Math.max(1, Math.min(100, Number(e.target.value) || 1)))} /></div>
+          <div className="inv-count-input"><span>生成数量</span><input type="number" min="1" max="100" value={count} onChange={e => setCount(Math.max(1, Math.min(100, Number(e.target.value) || 1)))} /></div>
           <button className="primary compact" onClick={generate} disabled={generating}>{generating ? '生成中…' : `生成 ${count} 个`}</button>
           {unusedCount > 0 && <button className="outline-button compact" onClick={copyAllUnused}>复制全部未使用</button>}
         </div>
       </div>
-      <div className="table-wrap"><table><thead><tr><th>邀请码</th><th>状态</th><th>绑定用户</th><th>生成时间</th></tr></thead><tbody>{codes.length ? codes.slice(0, 30).map((c) => <tr key={c.id}><td><code className={`invite-code ${c.application_id || c.answerer_id ? 'used' : ''}`} onClick={() => !c.application_id && !c.answerer_id && copyCode(c.code)} title={c.application_id || c.answerer_id ? '已使用' : '点击复制'}>{c.code}</code></td><td><span className={`pill ${c.application_id || c.answerer_id ? 'success' : 'warning'}`}>{c.application_id || c.answerer_id ? '已使用' : '可用'}</span></td><td>{getCodeUser(c) || '—'}</td><td>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium' }).format(new Date(c.created_at))}</td></tr>) : <tr><td colSpan="4" className="table-empty">尚未生成邀请码。设置数量后点击「生成 N 个」。</td></tr>}</tbody></table></div>
+      <div className="table-wrap"><table><thead><tr><th>邀请码</th><th>状态</th><th>绑定用户</th><th>生成时间</th></tr></thead><tbody>{codes.length ? codes.slice(0, 30).map((c) => { const used = c.application_id || c.answerer_id; return <tr key={c.id}><td><code className={`code-chip ${used ? 'used' : ''}`} onClick={() => !used && copyCode(c.code)} title={used ? '已使用' : '点击复制'}>{c.code}</code></td><td><span className={`pill ${used ? 'success' : 'warning'}`}>{used ? '已使用' : '可用'}</span></td><td>{getCodeUser(c) || <span className="text-muted">—</span>}</td><td className="text-muted">{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium' }).format(new Date(c.created_at))}</td></tr> }) : <tr><td colSpan="4" className="table-empty">尚未生成邀请码。设置数量后点击「生成 N 个」。</td></tr>}</tbody></table></div>
     </section>
 
-    <section className="panel" style={{ marginTop: 'var(--sp-6)' }}>
-      <div className="panel-head"><div><h3>注册答主列表</h3><p>所有通过邀请码注册的答主账号。</p></div></div>
-      <div className="key-stats" style={{ padding: '0 var(--sp-4) var(--sp-4)' }}>{[{value: answerers.length, label: '注册答主'}].map(({value, label}) => <div className="key-stat" key={label}><strong>{value}</strong><span>{label}</span></div>)}</div>
-      <div className="table-wrap"><table><thead><tr><th>#</th><th>知乎用户名</th><th>知乎主页地址</th><th>微信号</th><th>注册时间</th></tr></thead><tbody>{answerers.length ? answerers.map((a) => <tr key={a.id}><td><span className="serial-number">{a.serial_number != null ? String(a.serial_number).padStart(3, '0') : '—'}</span></td><td><div className="person"><span className="person-avatar">{a.zhihu_name[0]}</span><div><strong>{a.zhihu_name}</strong><small>答主</small></div></div></td><td>{a.account_address ? <a className="profile-link" href={a.account_address} target="_blank" rel="noreferrer">查看主页</a> : <span style={{ color: 'var(--gray-400)', fontSize: 'var(--fs-xs)' }}>未填写</span>}</td><td>{a.wechat_id || '未填写'}</td><td>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(a.created_at))}</td></tr>) : <tr><td colSpan="5" className="table-empty">暂无注册答主。</td></tr>}</tbody></table></div>
+    <section className="panel">
+      <div className="panel-head">
+        <div className="panel-head-info">
+          <h3>注册答主列表</h3>
+          <p>所有通过邀请码注册的答主账号。</p>
+        </div>
+        <span className="panel-icon"><Icon name="users" size={20} /></span>
+      </div>
+      <div className="answerer-stats">
+        <div className="answerer-stat"><strong>{answerers.length}</strong><span>注册答主</span></div>
+        <div className="answerer-stat accent-green"><strong>{withWechat}</strong><span>已填微信号</span></div>
+        <div className="answerer-stat accent-amber"><strong>{withHomepage}</strong><span>已填主页</span></div>
+      </div>
+      <div className="table-wrap"><table><thead><tr><th>#</th><th>知乎用户名</th><th>知乎主页</th><th>微信号</th><th>注册时间</th></tr></thead><tbody>{answerers.length ? answerers.map((a) => <tr key={a.id}><td><span className="serial-badge">{a.serial_number != null ? String(a.serial_number).padStart(3, '0') : '—'}</span></td><td><div className="person"><span className="person-avatar">{a.zhihu_name[0]}</span><div><strong>{a.zhihu_name}</strong><small>答主</small></div></div></td><td>{a.account_address ? <a className="profile-link" href={a.account_address} target="_blank" rel="noreferrer"><Icon name="eye" size={14} />查看主页</a> : <span className="text-muted">未填写</span>}</td><td>{a.wechat_id || <span className="text-muted">未填写</span>}</td><td className="text-muted">{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(a.created_at))}</td></tr>) : <tr><td colSpan="5" className="table-empty">暂无注册答主。</td></tr>}</tbody></table></div>
     </section>
     {notice && <div className="toast"><Icon name="check" size={17}/>{notice}</div>}
   </div>
