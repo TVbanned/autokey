@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from './supabase'
 import defaultRegisterBanner from './assets/hero.png'
 import './App.css'
@@ -133,6 +133,8 @@ function App() {
   const [pageAsset, setPageAsset] = useState(null)
   const [pageAssetLoading, setPageAssetLoading] = useState(false)
   const [pageAssetSaving, setPageAssetSaving] = useState(false)
+  const pendingImageRef = useRef(null)
+  const [confirmState, setConfirmState] = useState(null)
 
   const selectedActivity = activities.find((item) => item.id === selectedId) || activities[0]
   const subQuestions = useMemo(() => {
@@ -185,22 +187,25 @@ function App() {
     const { data, error: requestError } = await supabase.from('keyflow_page_assets').select('image_data, updated_at').eq('key', 'register_banner').maybeSingle()
     setPageAssetLoading(false)
     if (requestError) return setError(requestError.message)
-    setPageAsset(data)
+    setPageAsset(data); pendingImageRef.current = null
   }
 
   const savePageAsset = async (imageData) => {
     setPageAssetSaving(true); setError('')
-    const { data, error: requestError } = await supabase.from('keyflow_page_assets').upsert({ key: 'register_banner', image_data: imageData, updated_at: new Date().toISOString() }).select('image_data, updated_at').single()
+    const payload = pendingImageRef.current || imageData
+    const { data, error: requestError } = await supabase.from('keyflow_page_assets').upsert({ key: 'register_banner', image_data: payload, updated_at: new Date().toISOString() }).select('image_data, updated_at').single()
     setPageAssetSaving(false)
     if (requestError) return setError(requestError.message)
-    setPageAsset(data); toast(imageData ? '注册页头图已保存' : '已恢复默认头图')
+    setPageAsset(data); pendingImageRef.current = null
+    toast(payload ? '注册页头图已保存' : '已恢复默认头图')
   }
 
   const handlePageAssetFile = (file) => {
     if (!file?.type.startsWith('image/')) return setError('请选择图片文件')
     if (file.size > 500 * 1024) return setError('图片大小不能超过 500KB')
     const reader = new FileReader()
-    reader.onload = () => setPageAsset((asset) => ({ ...asset, image_data: reader.result }))
+    reader.onload = () => { pendingImageRef.current = reader.result; setPageAsset((asset) => ({ ...asset, image_data: reader.result })) }
+    reader.onerror = () => setError('图片读取失败，请重试')
     reader.readAsDataURL(file)
   }
 
@@ -362,21 +367,36 @@ function App() {
 
   const deleteActivity = (id, event) => {
     event.stopPropagation()
-    if (!window.confirm('确定要删除该活动吗？关联的报名、Key 和交付数据也将被删除，此操作不可撤销。')) return
-    setTimeout(async () => {
-      const { error: requestError } = await supabase.from('keyflow_activities').delete().eq('id', id)
-      if (requestError) return setError(requestError.message)
-      if (selectedId === id) setSelectedId('')
-      setActivities((items) => items.filter((item) => item.id !== id))
-      const removedAppIds = applications.filter(a => a.activity_id === id).map(a => a.id)
-      setApplications((items) => items.filter((item) => item.activity_id !== id))
-      if (removedAppIds.length) {
-        const ids = new Set(removedAppIds)
-        setKeys((items) => items.filter((item) => item.application_id === null || !ids.has(item.application_id)))
-        setDeliveries((items) => items.filter((item) => !ids.has(item.application_id)))
-      }
-      toast('活动已删除')
-    }, 0)
+    setConfirmState({
+      message: '确定要删除该活动吗？关联的报名、Key 和交付数据也将被删除，此操作不可撤销。',
+      onConfirm: async () => {
+        setConfirmState(null)
+        const { error: requestError } = await supabase.from('keyflow_activities').delete().eq('id', id)
+        if (requestError) return setError(requestError.message)
+        if (selectedId === id) setSelectedId('')
+        setActivities((items) => items.filter((item) => item.id !== id))
+        const removedAppIds = applications.filter(a => a.activity_id === id).map(a => a.id)
+        setApplications((items) => items.filter((item) => item.activity_id !== id))
+        if (removedAppIds.length) {
+          const ids = new Set(removedAppIds)
+          setKeys((items) => items.filter((item) => item.application_id === null || !ids.has(item.application_id)))
+          setDeliveries((items) => items.filter((item) => !ids.has(item.application_id)))
+        }
+        toast('活动已删除')
+      },
+    })
+  }
+
+  const toggleOnline = async (id, isOnline, event) => {
+    event.stopPropagation()
+    const newValue = !isOnline
+    setActivities((items) => items.map((item) => item.id === id ? { ...item, is_online: newValue } : item))
+    const { error: requestError } = await supabase.from('keyflow_activities').update({ is_online: newValue }).eq('id', id)
+    if (requestError) {
+      setActivities((items) => items.map((item) => item.id === id ? { ...item, is_online: isOnline } : item))
+      return setError(requestError.message)
+    }
+    toast(newValue ? '项目已上线' : '项目已下线')
   }
 
   const importKeys = async () => {
@@ -524,7 +544,7 @@ function App() {
           <section className="metrics">{[[filteredApplications.length,'报名答主','全部报名','答主报名'],[selectedCount,'已入选',`目标 ${selectedActivity.target_authors} 人`,'答主报名'],[claimedCount,'已领取 Key',`${selectedCount - claimedCount}/${selectedCount} 人 未领取key`,'Key 管理'],[deliveredCount,'已提交交付',`${selectedCount - deliveredCount}/${selectedCount} 人未交付`,'交付验收']].map(([number,label,note,target]) => <div className="metric clickable" key={label} onClick={() => setActive(target)}><strong>{number}</strong><span>{label}</span><small>{note}</small></div>)}</section>
           <section className="panel applicants-panel"><div className="panel-head"><div><h3>答主报名</h3><p>查看答主报名、Key 领取和内容提交状态。</p></div><button className="primary compact" onClick={() => setApplicationModal(true)}><Icon name="plus" size={15}/> 新增报名</button></div><div className="table-wrap"><table><thead><tr><th>答主</th><th>查看主页</th><th>入选状态</th><th>是否领取 Key</th><th>是否提交内容</th><th>操作</th></tr></thead><tbody>{filteredApplications.length ? filteredApplications.map((person) => <tr key={person.id}><td><div className="person"><span className="person-avatar">{person.zhihu_name[0]}</span><div><strong>{person.zhihu_name}</strong><small>知乎答主</small></div></div></td><td><a className="profile-link" href={person.profile_url} target="_blank" rel="noreferrer">查看主页</a></td><td><span className={`pill ${person.status === 'selected' ? 'success' : person.status === 'pending' ? 'warning' : 'muted'}`}>{statusLabel[person.status]}</span></td><td><span className={`pill ${person.keyflow_keys?.claimed_at ? 'success' : 'muted'}`}>{person.keyflow_keys?.claimed_at ? '已领取' : '未领取'}</span></td><td><button className={`pill pill-link ${person.keyflow_deliveries?.id ? 'success' : 'muted'}`} onClick={() => setActive('交付验收')}>{person.keyflow_deliveries?.id ? '已提交' : '未提交'}</button></td><td><div className="review-actions">{person.status === 'pending' ? <><button className="select-action" onClick={() => reviewApplication(person.id, 'selected')}>入选</button><button className="reject-action" onClick={() => reviewApplication(person.id, 'rejected')}>不选</button></> : <button className="reset-action" disabled={!!person.keyflow_keys?.claimed_at} onClick={() => reviewApplication(person.id, 'pending')}>重新筛选</button>}</div></td></tr>) : <tr><td colSpan="6" className="table-empty">还没有报名记录。可添加测试报名，或后续将表单公开给答主填写。</td></tr>}</tbody></table></div></section>
           <section className="stage-progression"><div className="stage-header"><div><h3>阶段推进</h3><span>截止时间到期或全部交稿后自动推进，全部领Key后可手动点击「推进」</span></div><button className="outline-button stage-reset-btn" onClick={resetStage}>重置阶段</button></div><div className="stage-timeline">{STAGES.map((stage, i) => { const currentIdx = STAGES.indexOf(selectedActivity?.status || 'recruiting'); const isCurrent = i === currentIdx; const isPast = i < currentIdx; const isNext = i === currentIdx + 1; const trigger = STAGE_TRIGGER[stage] ? STAGE_TRIGGER[stage](selectedActivity) : ''; return <div key={stage} className={`stage-node ${isCurrent ? 'current' : ''} ${isPast ? 'past' : ''} ${isNext ? 'next' : ''}`}><button className="stage-dot-btn" disabled={i !== currentIdx + 1} onClick={i === currentIdx + 1 ? advanceStage : undefined}><span className="stage-dot"/></button><span className="stage-label">{STAGE_LABEL[stage]}</span>{isNext ? <button className={`stage-action ${currentActivityKeyReady ? 'pulse' : ''}`} onClick={advanceStage} disabled={advancing}>{advancing ? '...' : '推进'}</button> : i > currentIdx ? <span className="stage-action muted">推进</span> : isCurrent && i > 0 && i < STAGES.length - 1 ? <><span className="stage-action manual-advance disabled">...</span><span className="stage-action current-hint">{trigger}</span></> : isCurrent && i === 0 ? <span className="stage-action current-hint">{trigger}</span> : isPast ? <span className="stage-action"><Icon name="check" size={12}/></span> : null}</div> })}</div></section>
-        </> : active === '活动看板' ? <div className="activity-cards">{activities.map((item) => { const apps = applications.filter((a) => a.activity_id === item.id); const creatingCount = apps.filter(a => a.status === 'selected' && a.keyflow_keys?.claimed_at).length; const deliveredCount = apps.filter(a => a.keyflow_deliveries?.id).length; const isKeyReady = item.status === 'key_distribution' && apps.filter(a => a.status === 'selected').length > 0 && apps.filter(a => a.status === 'selected').every(a => a.keyflow_keys?.claimed_at); return <div key={item.id} className={`activity-card ${item.id === selectedId ? 'selected' : ''} ${isKeyReady ? 'alert' : ''}`} onClick={() => { setSelectedId(item.id); setActive('活动概览') }}><button className="activity-card-delete" title="删除活动" onClick={(e) => deleteActivity(item.id, e)}><Icon name="close" size={14}/></button><div className="activity-card-cover">{item.game_cover ? <img src={item.game_cover} alt={item.game_name}/> : <span>{item.game_name[0]}</span>}</div><div className="activity-card-body"><p className="activity-card-game">{item.game_name}</p><h3>{item.title}</h3><div className="activity-card-meta"><span className={`pill ${STAGE_COLOR[item.status] || ''}`}>{STAGE_LABEL[item.status] || item.status}</span><span>{item.status === 'delivery' ? `${creatingCount} 人创作中` : item.status === 'completed' ? `${deliveredCount} 篇作品` : `${apps.length} 报名`}</span></div><small>{getStatusTimeText(item, apps)}</small></div></div> })}</div> : active === '答主报名' ? <ApplicationsPage activity={selectedActivity} applications={filteredApplications} authorStats={authorStats} statusLabel={statusLabel} onSelectActivity={openDrawer} onAddApplication={() => setApplicationModal(true)} onReviewApplication={reviewApplication} onDeleteApplication={deleteApplication} toast={toast} /> : active === 'Key 管理' ? <KeyManagement activity={selectedActivity} input={keyInput} parsedKeys={parsedKeys} platformCounts={platformCounts} importedKeys={keys.filter((item) => item.activity_id === selectedActivity?.id)} importing={keyImporting} onInput={setKeyInput} onImport={importKeys} onSelectActivity={openDrawer} applications={filteredApplications} toast={toast}/> : active === '交付验收' ? <DeliveriesPage activity={selectedActivity} deliveries={activityDeliveries} applications={filteredApplications} statusLabel={deliveryStatusLabel} notes={deliveryNotes} onNoteChange={(id, value) => setDeliveryNotes((items) => ({ ...items, [id]: value }))} onReview={reviewDelivery} onSelectActivity={openDrawer} pendingCount={pendingDeliveries} approvedCount={approvedDeliveries} revisionCount={revisionDeliveries} toast={toast} /> : active === '答主管理' ? <AnswererManagement codes={invitationCodes} answerers={answerers} activities={activities} applications={applications} onRefresh={loadData} /> : active === '合作方管理' ? <PartnerManagement codes={invitationCodes} answerers={answerers} onRefresh={loadData} /> : active === '页面编辑' ? <PageEditor asset={pageAsset} loading={pageAssetLoading} saving={pageAssetSaving} onSelectFile={handlePageAssetFile} onSave={savePageAsset} /> : <div className="empty-state"><div className="empty-icon"><Icon name="clock" size={26}/></div><h2>{active}即将开放</h2><p>请先完成活动与答主报名管理。</p></div>}
+        </> : active === '活动看板' ? <div className="activity-cards">{activities.map((item) => { const apps = applications.filter((a) => a.activity_id === item.id); const creatingCount = apps.filter(a => a.status === 'selected' && a.keyflow_keys?.claimed_at).length; const deliveredCount = apps.filter(a => a.keyflow_deliveries?.id).length; const isKeyReady = item.status === 'key_distribution' && apps.filter(a => a.status === 'selected').length > 0 && apps.filter(a => a.status === 'selected').every(a => a.keyflow_keys?.claimed_at); return <div key={item.id} className={`activity-card ${item.id === selectedId ? 'selected' : ''} ${isKeyReady ? 'alert' : ''}`} onClick={() => { setSelectedId(item.id); setActive('活动概览') }}><button className="activity-card-delete" title="删除活动" onClick={(e) => deleteActivity(item.id, e)}><Icon name="close" size={14}/></button><div className="activity-card-cover">{item.game_cover ? <img src={item.game_cover} alt={item.game_name}/> : <span>{item.game_name[0]}</span>}</div><div className="activity-card-body"><p className="activity-card-game">{item.game_name}</p><h3>{item.title}</h3><div className="activity-card-meta"><span className={`pill ${STAGE_COLOR[item.status] || ''}`}>{STAGE_LABEL[item.status] || item.status}</span><span>{item.status === 'delivery' ? `${creatingCount} 人创作中` : item.status === 'completed' ? `${deliveredCount} 篇作品` : `${apps.length} 报名`}</span></div><small>{getStatusTimeText(item, apps)}</small><div className="activity-card-online" onClick={(e) => toggleOnline(item.id, item.is_online !== false, e)} title={item.is_online !== false ? '已上线，点击下线' : '已下线，点击上线'}><span className={`online-toggle ${item.is_online !== false ? 'active' : ''}`}><span className="online-toggle-knob"/></span><span className="online-label">{item.is_online !== false ? '已上线' : '已下线'}</span></div></div></div> })}</div> : active === '答主报名' ? <ApplicationsPage activity={selectedActivity} applications={filteredApplications} authorStats={authorStats} statusLabel={statusLabel} onSelectActivity={openDrawer} onAddApplication={() => setApplicationModal(true)} onReviewApplication={reviewApplication} onDeleteApplication={deleteApplication} toast={toast} /> : active === 'Key 管理' ? <KeyManagement activity={selectedActivity} input={keyInput} parsedKeys={parsedKeys} platformCounts={platformCounts} importedKeys={keys.filter((item) => item.activity_id === selectedActivity?.id)} importing={keyImporting} onInput={setKeyInput} onImport={importKeys} onSelectActivity={openDrawer} applications={filteredApplications} toast={toast}/> : active === '交付验收' ? <DeliveriesPage activity={selectedActivity} deliveries={activityDeliveries} applications={filteredApplications} statusLabel={deliveryStatusLabel} notes={deliveryNotes} onNoteChange={(id, value) => setDeliveryNotes((items) => ({ ...items, [id]: value }))} onReview={reviewDelivery} onSelectActivity={openDrawer} pendingCount={pendingDeliveries} approvedCount={approvedDeliveries} revisionCount={revisionDeliveries} toast={toast} /> : active === '答主管理' ? <AnswererManagement codes={invitationCodes} answerers={answerers} activities={activities} applications={applications} onRefresh={loadData} /> : active === '合作方管理' ? <PartnerManagement codes={invitationCodes} answerers={answerers} onRefresh={loadData} /> : active === '页面编辑' ? <PageEditor asset={pageAsset} loading={pageAssetLoading} saving={pageAssetSaving} onSelectFile={handlePageAssetFile} onSave={savePageAsset} /> : <div className="empty-state"><div className="empty-icon"><Icon name="clock" size={26}/></div><h2>{active}即将开放</h2><p>请先完成活动与答主报名管理。</p></div>}
       </section>
     </main>
     {drawerOpen && <div className="drawer-backdrop" onMouseDown={() => setDrawerOpen(false)}><aside className="drawer" onMouseDown={(event) => event.stopPropagation()}><header className="drawer-header"><h2>切换活动</h2><button onClick={() => setDrawerOpen(false)}><Icon name="close"/></button></header><div className="drawer-search"><Icon name="grid" size={16}/><input placeholder="搜索活动名称或游戏名…" value={drawerSearch} onChange={(event) => setDrawerSearch(event.target.value)} autoFocus/></div><div className="drawer-list">{filteredDrawerActivities.length ? filteredDrawerActivities.map((item) => { const apps = applications.filter((a) => a.activity_id === item.id); return <div key={item.id} className={`drawer-card ${item.id === selectedId ? 'selected' : ''}`} onClick={() => { setSelectedId(item.id); setDrawerOpen(false) }}><div className="drawer-card-cover">{item.game_cover ? <img src={item.game_cover} alt={item.game_name}/> : <span>{item.game_name[0]}</span>}</div><div className="drawer-card-body"><p className="drawer-card-game">{item.game_name}</p><h3>{item.title}</h3><div className="drawer-card-meta"><span className={`pill ${STAGE_COLOR[item.status] || ''}`}>{STAGE_LABEL[item.status] || item.status}</span><span>{apps.length} 报名</span></div></div></div> }) : <div className="drawer-empty">没有匹配的活动</div>}</div></aside></div>}
@@ -532,7 +552,12 @@ function App() {
     {applicationModal && <Modal title="新增答主报名" onClose={() => setApplicationModal(false)}><form onSubmit={createApplication} className="form-grid"><Field label="知乎 ID（可选，用于防重复）" value={applicationForm.zhihu_id} onChange={(value) => setApplicationForm({ ...applicationForm, zhihu_id: value })} placeholder="知乎 OAuth 返回的用户 ID"/><Field label="知乎名称" required value={applicationForm.zhihu_name} onChange={(value) => setApplicationForm({ ...applicationForm, zhihu_name: value })}/><Field label="微信名" required value={applicationForm.wechat_name} onChange={(value) => setApplicationForm({ ...applicationForm, wechat_name: value })}/><Field label="知乎主页地址" type="url" required value={applicationForm.profile_url} onChange={(value) => setApplicationForm({ ...applicationForm, profile_url: value })}/><Field label="预计完成字数" type="number" required value={applicationForm.expected_word_count} onChange={(value) => setApplicationForm({ ...applicationForm, expected_word_count: value })} onBlur={(event) => { const numberValue = Number(event.target.value) || 800; if (numberValue < 800) setApplicationForm({ ...applicationForm, expected_word_count: 800 }) }}/><span className="word-min-hint">最低 800 字</span><button className="primary form-submit">保存报名</button></form></Modal>}
     {editActivityModal && <Modal title="编辑活动" onClose={() => setEditActivityModal(false)}><form onSubmit={updateActivity} className="form-grid"><Field label="活动标题" required value={activityForm.title} onChange={(value) => setActivityForm({ ...activityForm, title: value })}/><Field label="游戏名称" required value={activityForm.game_name} onChange={(value) => setActivityForm({ ...activityForm, game_name: value })}/><label className="field steam-field"><span>Steam 商店地址</span><div className="steam-input-row"><input type="url" placeholder="https://store.steampowered.com/app/..." value={activityForm.steam_url || ''} onChange={(event) => setActivityForm({ ...activityForm, steam_url: event.target.value })}/><button type="button" className="btn-secondary steam-fetch-btn" onClick={handleSteamFetch} disabled={steamFetching}>{steamFetching ? '抓取中…' : '抓取'}</button></div></label><Field label="目标答主数" type="number" required value={activityForm.target_authors} onChange={(value) => setActivityForm({ ...activityForm, target_authors: value })}/><Field label="报名截止时间" type="datetime-local" value={activityForm.application_deadline || ''} onChange={(value) => setActivityForm({ ...activityForm, application_deadline: value })}/><Field label="交付截止时间" type="datetime-local" value={activityForm.delivery_deadline || ''} onChange={(value) => setActivityForm({ ...activityForm, delivery_deadline: value })}/><Field label="游戏简介" textarea value={activityForm.description || ''} onChange={(value) => setActivityForm({ ...activityForm, description: value })}/><Field label="测评要求" textarea value={activityForm.review_requirement || '测评要求：图文并茂，生动有趣'} onChange={(value) => setActivityForm({ ...activityForm, review_requirement: value })}/>{activityForm.game_cover && <div className="steam-preview"><img src={activityForm.game_cover} alt="封面预览"/><span>已抓取游戏封面</span></div>}<button className="primary form-submit">保存修改</button></form></Modal>}
     {notice && <div className="toast"><Icon name="check" size={17}/>{notice}</div>}
+    {confirmState && <ConfirmDialog message={confirmState.message} onConfirm={confirmState.onConfirm} onCancel={() => setConfirmState(null)} />}
   </div>
+}
+
+function ConfirmDialog({ message, onConfirm, onCancel }) {
+  return <div className="modal-backdrop" onMouseDown={onCancel}><section className="modal confirm-dialog" onMouseDown={(e) => e.stopPropagation()}><header><h2>确认操作</h2></header><div className="confirm-body"><p>{message}</p><div className="confirm-actions"><button className="outline-button" onClick={onCancel}>取消</button><button className="primary danger" onClick={onConfirm}>确认删除</button></div></div></section></div>
 }
 
 function PageEditor({ asset, loading, saving, onSelectFile, onSave }) {
@@ -1028,9 +1053,9 @@ function RegisterPage({ aid }) {
   useEffect(() => {
     // #region debug-point A-D:register-banner-load
     supabase.from('keyflow_page_assets').select('image_data').eq('key', 'register_banner').maybeSingle().then(({ data, error: requestError }) => {
-      fetch('http://127.0.0.1:7777/event', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: 'register-banner', runId: 'pre-fix', hypothesisId: requestError ? 'A' : data?.image_data?.startsWith('data:image/') ? 'C' : 'C', location: 'App.jsx:RegisterPage', msg: '[DEBUG] 注册页头图查询完成', data: { supabaseUrl: import.meta.env.VITE_SUPABASE_URL, error: requestError?.message || null, hasData: !!data?.image_data, isImageDataUrl: data?.image_data?.startsWith('data:image/') || false, imageLength: data?.image_data?.length || 0 } }) }).catch(() => {})
+      if (requestError) { console.error('[RegisterPage] 读取头图失败:', requestError.message); return }
       if (data?.image_data) setBanner(data.image_data)
-    })
+    }).catch((err) => { console.error('[RegisterPage] 查询异常:', err) })
     // #endregion
   }, [])
 
@@ -1224,22 +1249,27 @@ function PartnerManagement({ codes, answerers, onRefresh }) {
   const toast = (msg) => { setNotice(msg); window.setTimeout(() => setNotice(''), 2800) }
   const partnerCodes = codes.filter((code) => code.code_type === 'partner')
   const unusedCodes = partnerCodes.filter((code) => !code.application_id && !code.answerer_id)
+  const usedCodes = partnerCodes.filter((code) => code.application_id || code.answerer_id)
   const partnerAnswererIds = new Set(partnerCodes.filter((code) => code.answerer_id).map((code) => code.answerer_id))
   const partners = answerers.filter((answerer) => partnerAnswererIds.has(answerer.id))
-  const displayCodes = unusedCodes.slice(0, 10)
+  const displayCodes = partnerCodes.slice(0, 10)
   const canGenerate = unusedCodes.length === 0
 
   const generate = async () => {
+    if (!canGenerate) {
+      toast('已生成的邀请码尚未全部消耗')
+      return
+    }
     setGenerating(true)
     const { error } = await supabase.rpc('keyflow_generate_invitation_codes', { p_count: 10, p_code_type: 'partner' })
     setGenerating(false)
-    if (error) return toast(error.message)
+    if (error) return
     await onRefresh()
     toast('已生成 10 个合作方邀请码')
   }
   const copyCode = (code) => { navigator.clipboard.writeText(code); toast('邀请码已复制') }
 
-  const usedCount = partnerCodes.filter((code) => code.answerer_id || code.application_id).length
+  const usedCount = usedCodes.length
 
   const downloadPastCodes = async () => {
     const { data, error } = await supabase.rpc('keyflow_get_past_invitation_codes', { p_code_type: 'partner' })
@@ -1262,7 +1292,7 @@ function PartnerManagement({ codes, answerers, onRefresh }) {
 
   return <div className="answerer-mgmt">
     <section className="metrics answerer-overview"><div className="metric"><strong>{unusedCodes.length}</strong><span>可用邀请码</span></div><div className="metric"><strong>{usedCount}</strong><span>已使用</span></div><div className="metric"><strong>{partners.length}</strong><span>注册合作方</span></div></section>
-    <section className="panel"><div className="panel-head"><div><h3>合作方邀请码管理</h3><p>合作方专用邀请码，通过该邀请码注册的用户会归入合作方列表。</p></div><div className="inv-gen-row"><span title={!canGenerate ? '已生成的邀请码尚未全部消耗' : ''}><button className="primary compact" onClick={generate} disabled={generating || !canGenerate}>{generating ? '生成中…' : '批量生成新的邀请码'}</button></span>{usedCount > 0 && <button className="outline-button compact" onClick={downloadPastCodes}>下载过往邀请码</button>}</div></div>{displayCodes.length ? <div className="invite-grid"><div className="invite-col">{displayCodes.slice(0, 5).map((code) => <div key={code.id} className="invite-card" onClick={() => copyCode(code.code)} title="点击复制"><span className="invite-card-num">{code.code}</span><small>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium' }).format(new Date(code.created_at))}</small></div>)}</div><div className="invite-col">{displayCodes.slice(5, 10).map((code) => <div key={code.id} className="invite-card" onClick={() => copyCode(code.code)} title="点击复制"><span className="invite-card-num">{code.code}</span><small>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium' }).format(new Date(code.created_at))}</small></div>)}</div></div> : <p className="table-empty" style={{ padding: 'var(--sp-8) 0', textAlign: 'center' }}>暂无可用的合作方邀请码，点击「生成」创建新一批。</p>}</section>
+    <section className="panel"><div className="panel-head"><div><h3>合作方邀请码管理</h3><p>合作方专用邀请码，通过该邀请码注册的用户会归入合作方列表。</p></div><div className="inv-gen-row"><button className="primary compact" style={!canGenerate ? { opacity: 0.5, cursor: 'default' } : undefined} onClick={generate} disabled={generating}>{generating ? '生成中…' : '批量生成新的邀请码'}</button><button className="outline-button compact" onClick={downloadPastCodes}>下载过往邀请码</button></div></div>{displayCodes.length ? <div className="invite-grid"><div className="invite-col">{displayCodes.slice(0, 5).map((code) => { const isUsed = code.application_id || code.answerer_id; return <div key={code.id} className={`invite-card${isUsed ? ' used' : ''}`} onClick={() => !isUsed && copyCode(code.code)} title={isUsed ? '已使用' : '点击复制'}><span className="invite-card-num">{code.code}</span>{isUsed ? <span className="invite-card-used-badge">已使用</span> : <small>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium' }).format(new Date(code.created_at))}</small>}</div> })}</div><div className="invite-col">{displayCodes.slice(5, 10).map((code) => { const isUsed = code.application_id || code.answerer_id; return <div key={code.id} className={`invite-card${isUsed ? ' used' : ''}`} onClick={() => !isUsed && copyCode(code.code)} title={isUsed ? '已使用' : '点击复制'}><span className="invite-card-num">{code.code}</span>{isUsed ? <span className="invite-card-used-badge">已使用</span> : <small>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium' }).format(new Date(code.created_at))}</small>}</div> })}</div></div> : <p className="table-empty" style={{ padding: 'var(--sp-8) 0', textAlign: 'center' }}>暂无可用的合作方邀请码，点击「生成」创建新一批。</p>}</section>
     <section className="panel"><div className="panel-head"><div><h3>注册合作方列表</h3><p>所有通过合作方邀请码注册的用户。</p></div><button className="outline-button compact" onClick={() => {
       const headers = ['编号', '知乎用户名', '知乎主页地址', '微信号', '注册时间']
       const rows = partners.map((p) => [p.serial_number != null ? String(p.serial_number).padStart(3, '0') : '—', p.zhihu_name, p.account_address || '未填写', p.wechat_id || '未填写', new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(p.created_at))])
@@ -1281,6 +1311,7 @@ function AnswererManagement({ codes, answerers, activities, applications, onRefr
   const [selectedAnswerer, setSelectedAnswerer] = useState(null)
   const [generating, setGenerating] = useState(false)
   const [notice, setNotice] = useState('')
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null)
   const toast = (msg) => { setNotice(msg); window.setTimeout(() => setNotice(''), 2800) }
   const answererById = useMemo(() => Object.fromEntries(answerers.map(a => [a.id, a])), [answerers])
   const activityById = useMemo(() => Object.fromEntries(activities.map((activity) => [activity.id, activity])), [activities])
@@ -1296,9 +1327,10 @@ function AnswererManagement({ codes, answerers, activities, applications, onRefr
 
   const answererCodes = codes.filter(c => c.code_type === 'answerer')
   const unusedCodes = answererCodes.filter(c => !c.application_id && !c.answerer_id)
+  const usedCodes = answererCodes.filter(c => c.application_id || c.answerer_id)
   const unusedCount = unusedCodes.length
-  const usedCount = answererCodes.filter(c => c.application_id || c.answerer_id).length
-  const displayCodes = unusedCodes.slice(0, 10)
+  const usedCount = usedCodes.length
+  const displayCodes = answererCodes.slice(0, 10)
   const leftCol = displayCodes.slice(0, 5)
   const rightCol = displayCodes.slice(5, 10)
   const canGenerate = unusedCount === 0
@@ -1317,6 +1349,15 @@ function AnswererManagement({ codes, answerers, activities, applications, onRefr
   }
 
   const copyCode = (code) => { navigator.clipboard.writeText(code); toast('邀请码已复制') }
+
+  const deleteAnswerer = async () => {
+    if (!confirmDeleteId) return
+    const { error: requestError } = await supabase.from('keyflow_answerers').delete().eq('id', confirmDeleteId)
+    setConfirmDeleteId(null)
+    if (requestError) return toast('删除失败：' + requestError.message)
+    await onRefresh()
+    toast('答主已删除')
+  }
 
   const downloadPastCodes = async () => {
     const { data, error } = await supabase.rpc('keyflow_get_past_invitation_codes')
@@ -1350,7 +1391,7 @@ function AnswererManagement({ codes, answerers, activities, applications, onRefr
           {usedCount > 0 && <button className="outline-button compact" onClick={downloadPastCodes}>下载过往邀请码</button>}
         </div>
       </div>
-      {displayCodes.length ? <div className="invite-grid"><div className="invite-col">{leftCol.map(c => <div key={c.id} className="invite-card" onClick={() => copyCode(c.code)} title="点击复制"><span className="invite-card-num">{c.code}</span><small>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium' }).format(new Date(c.created_at))}</small></div>)}</div><div className="invite-col">{rightCol.map(c => <div key={c.id} className="invite-card" onClick={() => copyCode(c.code)} title="点击复制"><span className="invite-card-num">{c.code}</span><small>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium' }).format(new Date(c.created_at))}</small></div>)}</div></div> : <p className="table-empty" style={{ padding: 'var(--sp-8) 0', textAlign: 'center' }}>暂无可用的邀请码，点击「生成」创建新一批。</p>}
+      {displayCodes.length ? <div className="invite-grid"><div className="invite-col">{leftCol.map(c => { const isUsed = c.application_id || c.answerer_id; return <div key={c.id} className={`invite-card${isUsed ? ' used' : ''}`} onClick={() => !isUsed && copyCode(c.code)} title={isUsed ? '已使用' : '点击复制'}><span className="invite-card-num">{c.code}</span>{isUsed ? <span className="invite-card-used-badge">已使用</span> : <small>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium' }).format(new Date(c.created_at))}</small>}</div> })}</div><div className="invite-col">{rightCol.map(c => { const isUsed = c.application_id || c.answerer_id; return <div key={c.id} className={`invite-card${isUsed ? ' used' : ''}`} onClick={() => !isUsed && copyCode(c.code)} title={isUsed ? '已使用' : '点击复制'}><span className="invite-card-num">{c.code}</span>{isUsed ? <span className="invite-card-used-badge">已使用</span> : <small>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium' }).format(new Date(c.created_at))}</small>}</div> })}</div></div> : <p className="table-empty" style={{ padding: 'var(--sp-8) 0', textAlign: 'center' }}>暂无可用的邀请码，点击「生成」创建新一批。</p>}
     </section>
 
     <section className="panel">
@@ -1369,14 +1410,15 @@ function AnswererManagement({ codes, answerers, activities, applications, onRefr
         URL.revokeObjectURL(url)
         toast('答主列表已下载')
       }}>下载 Excel</button></div>
-      <div className="table-wrap"><table><thead><tr><th>#</th><th>知乎用户名</th><th>知乎主页地址</th><th>微信号</th><th>活动参与次数</th><th>成功完成次数</th><th>完成率</th><th>参与记录</th><th>注册时间</th></tr></thead><tbody>{answerers.length ? answerers.map((a) => {
+      <div className="table-wrap"><table><thead><tr><th>#</th><th>知乎用户名</th><th>知乎主页地址</th><th>微信号</th><th>活动参与次数</th><th>成功完成次数</th><th>完成率</th><th>参与记录</th><th>注册时间</th><th>操作</th></tr></thead><tbody>{answerers.length ? answerers.map((a) => {
         const records = participationByAnswerer[a.id] || []
         const completed = records.filter((r) => r.keyflow_deliveries?.article_url).length
         const rate = records.length ? `${Math.round(completed / records.length * 100)}%` : '—'
-        return <tr key={a.id}><td><span className="serial-number">{a.serial_number != null ? String(a.serial_number).padStart(3, '0') : '—'}</span></td><td><div className="person"><span className="person-avatar">{a.zhihu_name[0]}</span><div><strong>{a.zhihu_name}</strong><small>答主</small></div></div></td><td>{a.account_address ? <a className="profile-link" href={a.account_address} target="_blank" rel="noreferrer">查看主页</a> : <span style={{ color: 'var(--c-ink-4)', fontSize: 'var(--fs-meta)' }}>未填写</span>}</td><td>{a.wechat_id || '未填写'}</td><td>{records.length}</td><td>{completed}</td><td>{rate}</td><td><button className="outline-button compact" onClick={() => setSelectedAnswerer(a)}>查看记录</button></td><td>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(a.created_at))}</td></tr>
-      }) : <tr><td colSpan="9" className="table-empty">暂无注册答主。</td></tr>}</tbody></table></div>
+        return <tr key={a.id}><td><span className="serial-number">{a.serial_number != null ? String(a.serial_number).padStart(3, '0') : '—'}</span></td><td><div className="person"><span className="person-avatar">{a.zhihu_name[0]}</span><div><strong>{a.zhihu_name}</strong><small>答主</small></div></div></td><td>{a.account_address ? <a className="profile-link" href={a.account_address} target="_blank" rel="noreferrer">查看主页</a> : <span style={{ color: 'var(--c-ink-4)', fontSize: 'var(--fs-meta)' }}>未填写</span>}</td><td>{a.wechat_id || '未填写'}</td><td>{records.length}</td><td>{completed}</td><td>{rate}</td><td><button className="outline-button compact" onClick={() => setSelectedAnswerer(a)}>查看记录</button></td><td>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(a.created_at))}</td><td><button className="delete-action" onClick={() => setConfirmDeleteId(a.id)}>删除</button></td></tr>
+      }) : <tr><td colSpan="10" className="table-empty">暂无注册答主。</td></tr>}</tbody></table></div>
     </section>
     {selectedAnswerer && <AnswererParticipationModal answerer={selectedAnswerer} records={participationByAnswerer[selectedAnswerer.id] || []} onClose={() => setSelectedAnswerer(null)} toast={toast} />}
+    {confirmDeleteId && <ConfirmDialog message="确定要删除该答主吗？此操作不可撤销。" onConfirm={deleteAnswerer} onCancel={() => setConfirmDeleteId(null)} />}
     {notice && <div className="toast"><Icon name="check" size={17}/>{notice}</div>}
   </div>
 }
