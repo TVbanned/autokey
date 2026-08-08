@@ -36,7 +36,7 @@ begin
       join public.keyflow_activities a on a.id = app.activity_id
       left join public.keyflow_keys k on k.application_id = app.id
       left join public.keyflow_deliveries d on d.application_id = app.id
-      where app.answerer_id = p_answerer_id and d.id is null
+      where app.answerer_id = p_answerer_id and d.id is null and a.status not in ('delivery', 'completed')
     ), '[]'::jsonb),
     'more_activities', coalesce((
       select jsonb_agg(jsonb_build_object(
@@ -69,6 +69,13 @@ begin
       where a.is_online = true
         and a.status != 'draft'
         and a.status != 'recruiting'
+        and not exists (
+          select 1 from public.keyflow_applications app
+          left join public.keyflow_deliveries d on d.application_id = app.id
+          where app.activity_id = a.id and app.answerer_id = p_answerer_id
+            and d.id is null
+            and a.status not in ('delivery', 'completed')
+        )
     ), '[]'::jsonb),
     'submissions', (
       select coalesce(jsonb_agg(entry order by submitted_at desc), '[]'::jsonb)

@@ -1,5 +1,4 @@
--- 修复 participated_count：只统计管理员已通过（selected）的报名，非所有报名
--- 同时将 rejected 的报名从「正在参与」中排除，恢复 historical_activities 和 avatar_url
+-- 答主看板：被拒绝的报名（rejected）出现在历史活动中，状态显示为"未能入选"
 create or replace function public.keyflow_answerer_dashboard(p_answerer_id uuid)
 returns jsonb
 language plpgsql
@@ -37,7 +36,7 @@ begin
       join public.keyflow_activities a on a.id = app.activity_id
       left join public.keyflow_keys k on k.application_id = app.id
       left join public.keyflow_deliveries d on d.application_id = app.id
-      where app.answerer_id = p_answerer_id and d.id is null and app.status != 'rejected'
+      where app.answerer_id = p_answerer_id and d.id is null and app.status != 'rejected' and a.status not in ('delivery', 'completed')
     ), '[]'::jsonb),
     'more_activities', coalesce((
       select jsonb_agg(jsonb_build_object(
@@ -49,7 +48,7 @@ begin
         'delivery_deadline', a.delivery_deadline
       ) order by a.created_at desc)
       from public.keyflow_activities a
-      where a.status not in ('draft', 'completed', 'key_distribution')
+      where a.status not in ('draft', 'completed', 'key_distribution', 'delivery')
         and a.is_online = true
         and not exists (
           select 1
@@ -58,22 +57,47 @@ begin
         )
     ), '[]'::jsonb),
     'historical_activities', coalesce((
-      select jsonb_agg(jsonb_build_object(
-        'id', a.id,
-        'title', a.title,
-        'game_name', a.game_name,
-        'game_cover', a.game_cover,
-        'status', a.status,
-        'delivery_deadline', a.delivery_deadline
-      ) order by a.created_at desc)
-      from public.keyflow_activities a
-      where a.is_online = true
-        and a.status != 'draft'
-        and not (a.status = 'recruiting' and exists (
-          select 1
-          from public.keyflow_applications app
-          where app.activity_id = a.id and app.answerer_id = p_answerer_id
-        ))
+      select jsonb_agg(entry order by created_at desc)
+      from (
+        -- 原有的历史活动
+        select jsonb_build_object(
+          'id', a.id,
+          'title', a.title,
+          'game_name', a.game_name,
+          'game_cover', a.game_cover,
+          'status', a.status,
+          'delivery_deadline', a.delivery_deadline
+        ) as entry, a.created_at as created_at
+        from public.keyflow_activities a
+        where a.is_online = true
+          and a.status not in ('draft', 'recruiting')
+          and not exists (
+            select 1 from public.keyflow_applications app
+            left join public.keyflow_deliveries d on d.application_id = app.id
+            where app.activity_id = a.id and app.answerer_id = p_answerer_id
+              and app.status != 'rejected' and d.id is null
+              and a.status not in ('delivery', 'completed')
+          )
+
+        union all
+
+        -- 被拒绝的报名：仍在招募中的活动，显示"未能入选"
+        select jsonb_build_object(
+          'id', a.id,
+          'title', a.title,
+          'game_name', a.game_name,
+          'game_cover', a.game_cover,
+          'status', a.status,
+          'delivery_deadline', a.delivery_deadline,
+          'application_status', 'rejected'
+        ) as entry, app.reviewed_at as created_at
+        from public.keyflow_applications app
+        join public.keyflow_activities a on a.id = app.activity_id
+        where app.answerer_id = p_answerer_id
+          and app.status = 'rejected'
+          and a.is_online = true
+          and a.status = 'recruiting'
+      ) combined
     ), '[]'::jsonb),
     'submissions', (
       select coalesce(jsonb_agg(entry order by submitted_at desc), '[]'::jsonb)
