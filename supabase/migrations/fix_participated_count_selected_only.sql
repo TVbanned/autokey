@@ -1,17 +1,4 @@
--- 日常投稿表
-create table if not exists public.keyflow_daily_submissions (
-  id uuid primary key default gen_random_uuid(),
-  answerer_id uuid not null references public.keyflow_answerers(id),
-  article_url text not null,
-  article_title text not null default '',
-  submitted_at timestamptz not null default now(),
-  created_at timestamptz not null default now()
-);
-
-alter table public.keyflow_daily_submissions enable row level security;
-create policy "keyflow public daily_submissions access" on public.keyflow_daily_submissions for all to anon, authenticated using (true) with check (true);
-
--- 更新答主看板 RPC：加入日常投稿数量与合并 submissions
+-- 修复 participated_count：只统计管理员已通过（selected）的报名，非所有报名
 create or replace function public.keyflow_answerer_dashboard(p_answerer_id uuid)
 returns jsonb
 language plpgsql
