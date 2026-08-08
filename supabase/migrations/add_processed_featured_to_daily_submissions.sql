@@ -1,0 +1,2 @@
+ALTER TABLE keyflow_daily_submissions ADD COLUMN IF NOT EXISTS processed BOOLEAN DEFAULT FALSE;
+ALTER TABLE keyflow_daily_submissions ADD COLUMN IF NOT EXISTS featured BOOLEAN DEFAULT FALSE;
