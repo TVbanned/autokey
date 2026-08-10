@@ -456,10 +456,17 @@ function App() {
             }
           })
         }
+      }).catch((e) => {
+        console.error('辅助数据加载失败:', e)
       })
-      // 优先等待活动+报名，让看板尽快可用
-      const [activityResult, applicationResult] = await Promise.all([pAct, pApp])
+      // 优先等待活动+报名，让看板尽快可用（20 秒超时保护）
+      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('数据加载超时，请检查网络后刷新重试')), 20000))
+      const [activityResult, applicationResult] = await Promise.race([
+        Promise.all([pAct, pApp]),
+        timeout,
+      ])
       if (activityResult.error) { setError(activityResult.error.message); setLoading(false); return }
+      if (applicationResult.error) { setError(applicationResult.error.message); setLoading(false); return }
       const rawActivities = activityResult.data || []
       const apps = applicationResult.data || []
       const { updated: afterDeadline } = autoAdvanceByDeadline(rawActivities)
