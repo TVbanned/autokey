@@ -459,8 +459,8 @@ function App() {
       }).catch((e) => {
         console.error('辅助数据加载失败:', e)
       })
-      // 优先等待活动+报名，让看板尽快可用（20 秒超时保护）
-      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('数据加载超时，请检查网络后刷新重试')), 20000))
+      // 优先等待活动+报名，让看板尽快可用（45 秒超时保护，兼容 Supabase 免费版冷启动）
+      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('数据加载超时，请检查网络后刷新重试')), 45000))
       const [activityResult, applicationResult] = await Promise.race([
         Promise.all([pAct, pApp]),
         timeout,
@@ -617,7 +617,7 @@ function App() {
     }
     setBatchFillingRelease(false)
     setBatchFillProgress('')
-    toast(`已补填 ${filled} 款游戏的发售时间${skipped > 0 ? `，${skipped} 款无发售时间或已跳过` : ''}`)
+    toast(`已更新 ${filled} 款游戏的发售时间${skipped > 0 ? `，${skipped} 款无发售时间或已跳过` : ''}`)
     loadData()
   }
 
@@ -918,7 +918,7 @@ function App() {
     <main>
       <header className="topbar"><div className="mobile-brand"><span className="brand-mark zhihu-mark">知</span> GameJourney</div><div className="crumb">工作台 <span>/</span> {active}</div><div className="topbar-links"><a className="topbar-link-btn" href={window.location.pathname + '?partner'} target="_blank">合作方看板</a><a className="topbar-link-btn" href={window.location.pathname + '?dashboard'} target="_blank">答主看板</a><a className="topbar-link-btn" href={window.location.pathname + '?home'} target="_blank">展示页</a><button className="reload" onClick={loadData}>刷新数据</button></div></header>
       <section className="content">
-        <div className="page-title"><div><p className="eyebrow">真实数据工作台</p><h1>{active}{active === '活动看板' && <span className="board-game-count"> 当前已有 <b>{activities.length}</b> 款游戏入库</span>}{active !== '活动看板' && active !== '答主管理' && active !== '合作方管理' && active !== '答主日常投稿' && active !== '剩余KEY管理' && active !== '页面编辑' && active !== '收件箱' && selectedActivity?.game_name && <><span className="title-divider">|</span>{selectedActivity.game_name}</>}</h1><p className="subtitle">{active === '页面编辑' ? '管理注册页面的展示资源，保存后会实时同步。' : '活动、报名、Key 与交付数据均实时保存至 Supabase。'}</p></div>{active === '答主报名' ? <div style={{ display: 'flex', gap: 'var(--sp-2)' }}><button className="outline-button" onClick={() => { navigator.clipboard.writeText(claimLink); toast('申领链接已复制，可直接发送给答主') }}>复制申领链接</button><button className="outline-button preview-claim-btn" onClick={() => window.open(claimLink, '_blank')}>预览申领页</button></div> : active === '页面编辑' ? null : active === '活动看板' ? <div style={{ display: 'flex', gap: 'var(--sp-3)', alignItems: 'center' }}><div className="board-sort-wrap"><select className="board-sort-select" value={boardSort} onChange={e => setBoardSort(e.target.value)}><option value="default">默认排序</option><option value="created_at_desc">入库时间 ↓</option><option value="created_at_asc">入库时间 ↑</option><option value="release_date_desc">发售时间 ↓</option><option value="release_date_asc">发售时间 ↑</option></select><svg className="board-sort-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg></div><div className="partner-search-wrap" style={{ background: '#fff', minWidth: 260, gap: 'var(--sp-1)', padding: 'var(--sp-1) var(--sp-2)' }}><Icon name="search" size={14} /><input className="partner-search-input" placeholder="搜索活动名称或游戏名…" value={boardSearch} onChange={e => setBoardSearch(e.target.value)} />{boardSearch && <button className="partner-search-clear" onClick={() => setBoardSearch('')}><Icon name="close" size={14} /></button>}</div>{activities.some(a => a.steam_url && !a.release_date) && <button className="outline-button" onClick={batchFillReleaseDates} disabled={batchFillingRelease}>{batchFillingRelease ? `补填中 ${batchFillProgress}` : '补填发售时间'}</button>}<button className="primary" onClick={() => { setActivityForm({...initialActivity, ...getDefaultDeadlines()}); setGameCoverUpload(null); setActivityModal(true); }}><Icon name="plus"/> 创建活动</button></div> : <button className="primary" onClick={() => { setActivityForm({...initialActivity, ...getDefaultDeadlines()}); setGameCoverUpload(null); setActivityModal(true); }}><Icon name="plus"/> 创建活动</button>}</div>
+        <div className="page-title"><div><p className="eyebrow">真实数据工作台</p><h1>{active}{active === '活动看板' && <span className="board-game-count"> 当前已有 <b>{activities.length}</b> 款游戏入库</span>}{active !== '活动看板' && active !== '答主管理' && active !== '合作方管理' && active !== '答主日常投稿' && active !== '剩余KEY管理' && active !== '页面编辑' && active !== '收件箱' && selectedActivity?.game_name && <><span className="title-divider">|</span>{selectedActivity.game_name}</>}</h1><p className="subtitle">{active === '页面编辑' ? '管理注册页面的展示资源，保存后会实时同步。' : '活动、报名、Key 与交付数据均实时保存至 Supabase。'}</p></div>{active === '答主报名' ? <div style={{ display: 'flex', gap: 'var(--sp-2)' }}><button className="outline-button" onClick={() => { navigator.clipboard.writeText(claimLink); toast('申领链接已复制，可直接发送给答主') }}>复制申领链接</button><button className="outline-button preview-claim-btn" onClick={() => window.open(claimLink, '_blank')}>预览申领页</button></div> : active === '页面编辑' ? null : active === '活动看板' ? <div style={{ display: 'flex', gap: 'var(--sp-3)', alignItems: 'center' }}><div className="board-sort-wrap"><select className="board-sort-select" value={boardSort} onChange={e => setBoardSort(e.target.value)}><option value="default">默认排序</option><option value="created_at_desc">入库时间 ↓</option><option value="created_at_asc">入库时间 ↑</option><option value="release_date_desc">发售时间 ↓</option><option value="release_date_asc">发售时间 ↑</option></select><svg className="board-sort-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg></div><div className="partner-search-wrap" style={{ background: '#fff', minWidth: 260, gap: 'var(--sp-1)', padding: 'var(--sp-1) var(--sp-2)' }}><Icon name="search" size={14} /><input className="partner-search-input" placeholder="搜索活动名称或游戏名…" value={boardSearch} onChange={e => setBoardSearch(e.target.value)} />{boardSearch && <button className="partner-search-clear" onClick={() => setBoardSearch('')}><Icon name="close" size={14} /></button>}</div>{activities.some(a => a.steam_url && !a.release_date) && <button className="outline-button" onClick={batchFillReleaseDates} disabled={batchFillingRelease}>{batchFillingRelease ? `更新中 ${batchFillProgress}` : '更新发售时间'}</button>}<button className="primary" onClick={() => { setActivityForm({...initialActivity, ...getDefaultDeadlines()}); setGameCoverUpload(null); setActivityModal(true); }}><Icon name="plus"/> 创建活动</button></div> : <button className="primary" onClick={() => { setActivityForm({...initialActivity, ...getDefaultDeadlines()}); setGameCoverUpload(null); setActivityModal(true); }}><Icon name="plus"/> 创建活动</button>}</div>
         {error && <div className="error-box">数据操作失败：{error}<button onClick={() => setError('')}><Icon name="close" size={16}/></button></div>}
         {loading && active !== '页面编辑' ? <div className="empty-state">正在加载活动数据…</div> : active === '活动概览' && !selectedActivity ? <div className="empty-state"><div className="empty-icon"><Icon name="calendar" size={26}/></div><h2>先创建第一个测评活动</h2><p>创建后即可收集答主报名、导入 Key 并进行交付验收。</p><button className="primary" onClick={() => { setActivityForm({...initialActivity, ...getDefaultDeadlines()}); setGameCoverUpload(null); setActivityModal(true); }}><Icon name="plus"/> 创建活动</button></div> : active === '活动概览' ? <>
           <section className="activity-picker"><button className="current-activity" onClick={openDrawer}><span>当前活动</span><strong>{selectedActivity.title}</strong><Icon name="arrow" size={14}/></button><div className="activity-picker-right"><span className={`activity-status ${STAGE_COLOR[selectedActivity.status] || ''}`}>{STAGE_LABEL[selectedActivity.status] || selectedActivity.status}</span><button className="outline-button" onClick={() => { navigator.clipboard.writeText(partnerLink); toast('合作方页面链接已复制') }}>复制合作方链接</button><button className="outline-button preview-partner-btn" onClick={() => window.open(partnerLink, '_blank')}>预览合作方页</button><button className="outline-button" onClick={() => { navigator.clipboard.writeText(claimLink); toast('申领链接已复制，可直接发送给答主') }}>复制申领链接</button><button className="outline-button preview-claim-btn" onClick={() => window.open(claimLink, '_blank')}>预览申领页</button><button className="outline-button" onClick={() => setApplicationModal(true)}><Icon name="plus" size={16}/> 新增报名</button></div></section>
@@ -1675,15 +1675,19 @@ function AnswererDashboard() {
     // #endregion
     if (!answerer?.id) return
     setError('')
+    // 第一步：快速加载核心数据，立即渲染页面
     const { data, error: requestError } = await supabase.rpc('keyflow_answerer_dashboard', { p_answerer_id: answerer.id })
     // #region debug-point C:dashboard-response
-    reportDashboard('C', '看板 RPC 返回', { durationMs: Math.round(performance.now() - dashboardStartedAt), error: requestError?.message ?? null, submissions: data?.submissions?.length ?? 0, activities: data?.activities?.length ?? 0, historicalActivities: data?.historical_activities?.length ?? 0 })
+    reportDashboard('C', '看板核心 RPC 返回', { durationMs: Math.round(performance.now() - dashboardStartedAt), error: requestError?.message ?? null, activities: data?.activities?.length ?? 0 })
     // #endregion
+    if (requestError) { setError(requestError.message); return }
+    setDashboard(data)
+    // 第二步：后台加载扩展数据（more_activities、historical_activities、submissions）
+    const { data: extras } = await supabase.rpc('keyflow_answerer_dashboard_extras', { p_answerer_id: answerer.id })
     // #region debug-point D:dashboard-state
-    reportDashboard('D', '准备更新看板状态', { hasData: !!data })
+    reportDashboard('D', '看板扩展数据返回', { moreActivities: extras?.more_activities?.length ?? 0, historicalActivities: extras?.historical_activities?.length ?? 0, submissions: extras?.submissions?.length ?? 0 })
     // #endregion
-    if (requestError) setError(requestError.message)
-    else setDashboard(data)
+    if (extras) setDashboard(current => current ? { ...current, ...extras } : current)
   }
 
   const loadSharedCode = async () => {
@@ -1859,7 +1863,15 @@ function AnswererDashboard() {
     // #endregion
   }
 
-  useEffect(() => { loadDashboard(); loadSharedCode(); fetchUnreadCount(); (async () => { if (answerer?.id) { const { data } = await supabase.rpc('keyflow_is_partner', { p_answerer_id: answerer.id }); setIsPartner(!!data) } })() }, [])
+  useEffect(() => {
+    // 并行发起所有独立请求，减少串行等待时间
+    Promise.all([
+      loadDashboard(),
+      loadSharedCode(),
+      fetchUnreadCount(),
+      (async () => { if (answerer?.id) { const { data } = await supabase.rpc('keyflow_is_partner', { p_answerer_id: answerer.id }); setIsPartner(!!data) } })(),
+    ])
+  }, [])
 
   useEffect(() => {
     if (!answerer?.id) return
@@ -2287,7 +2299,7 @@ function ClaimPage({ activityId, authCode }) {
             </div>
           )}
         </div>
-      ) : !hasApp && !isExempted && activity.status === 'key_distribution' ? (
+      ) : !hasApp && !isExempted && answerer && activity.status === 'key_distribution' ? (
         <div className="step-message">
           <div className="step-message-icon waiting"><Icon name="clock" size={24}/></div>
           <p>活动已进入发key阶段，如需报名请单独联系管理员</p>
