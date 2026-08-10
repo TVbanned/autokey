@@ -5,6 +5,22 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+function parseSteamReleaseDate(date: string): string | null {
+  // 仅解析 Steam 英文含明确日期的格式
+  const match = date.trim().match(/^(?:(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)|(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})),\s+(\d{4})$/);
+  if (!match) return null;
+
+  const [, dayFirst, monthFirst, monthLast, dayLast, yearText] = match;
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const year = Number(yearText);
+  const month = months.indexOf(monthFirst || monthLast) + 1;
+  const day = Number(dayFirst || dayLast);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+
+  if (parsed.getUTCFullYear() !== year || parsed.getUTCMonth() !== month - 1 || parsed.getUTCDate() !== day) return null;
+  return `${yearText}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}T00:00:00+08:00`;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -20,18 +36,43 @@ serve(async (req) => {
       });
     }
 
-    const steamRes = await fetch(
-      `https://store.steampowered.com/api/appdetails?appids=${value}&l=schinese&cc=cn`,
-      { headers: { "User-Agent": "keyflow/1.0" } }
-    );
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10_000);
+    let steamRes: Response;
+    try {
+      steamRes = await fetch(
+        `https://store.steampowered.com/api/appdetails?appids=${value}&l=english&cc=cn`,
+        { headers: { "User-Agent": "keyflow/1.0" }, signal: controller.signal },
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
+
     if (!steamRes.ok) {
-      return new Response(JSON.stringify({ success: false, error: `Steam API error: ${steamRes.status}` }), {
+      return new Response(JSON.stringify({ success: false, error: `Steam API 请求失败（HTTP ${steamRes.status}）` }), {
         status: 502,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const payload = await steamRes.json();
+    const contentType = steamRes.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      return new Response(JSON.stringify({ success: false, error: "Steam API 返回了非 JSON 响应" }), {
+        status: 502,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    let payload;
+    try {
+      payload = await steamRes.json();
+    } catch (e) {
+      console.error("Failed to parse Steam API response", e);
+      return new Response(JSON.stringify({ success: false, error: "Steam API 返回的 JSON 无法解析" }), {
+        status: 502,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     const game = payload?.[value]?.data;
     if (!payload?.[value]?.success || !game) {
       return new Response(JSON.stringify({ success: false, error: "Game not found" }), {
@@ -41,7 +82,7 @@ serve(async (req) => {
     }
 
     const rd = game.release_date
-    const releaseDate = rd?.date ? new Date(rd.date + " UTC").toISOString() : null
+    const releaseDate = rd?.date ? parseSteamReleaseDate(rd.date) : null
 
     return new Response(
       JSON.stringify({
@@ -60,7 +101,11 @@ serve(async (req) => {
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (e) {
-    return new Response(JSON.stringify({ success: false, error: "Internal error" }), {
+    console.error("steam-appdetails failed", e);
+    const message = e instanceof Error && e.name === "AbortError"
+      ? "Steam API 请求超时，请稍后重试"
+      : "Steam 元数据抓取失败，请稍后重试";
+    return new Response(JSON.stringify({ success: false, error: message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
