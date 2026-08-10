@@ -265,7 +265,7 @@ span.stage-orange { background: #ffedd5; color: #c2410c; }
 span.stage-purple { background: #ede9fe; color: #6d28d9; }
 span.stage-green { background: #dcfce7; color: #15803d; }
 .highlight-red { color: var(--c-danger); font-weight: 600; }
-.review-actions { display: flex; gap: var(--sp-1); align-items: center; }.review-actions button, .review-actions a { padding: var(--sp-1) var(--sp-2); border-radius: var(--r-sm); font-size: var(--fs-meta); font-weight: 500; transition: background 0.12s; }.select-action { color: var(--c-success); }.select-action:hover { background: var(--c-success-soft); }.reject-action,.delete-action { color: var(--c-danger); }.reject-action:hover,.delete-action:hover { background: var(--c-danger-soft); }.reset-action { color: var(--c-ink-3); }.reset-action:hover { background: var(--c-surface-2); }.reset-action:disabled { color: var(--c-ink-5); cursor: not-allowed; }.reset-action:disabled:hover { background: transparent; }.review-actions a { color: var(--c-ink-3); }.review-actions a:hover { background: var(--c-surface-2); }
+.review-actions { display: flex; gap: var(--sp-2); align-items: center; }.review-actions button { padding: 4px 12px; border-radius: var(--r-full); font-size: var(--fs-meta); font-weight: 500; transition: background .15s, box-shadow .15s; cursor: pointer; }.select-action { background: #d1fae5; color: #047857; border: 1px solid #a7f3d0; }.select-action:hover { background: #a7f3d0; }.reject-action,.delete-action { background: #fee2e2; color: #dc2626; border: 1px solid #fecaca; }.reject-action:hover,.delete-action:hover { background: #fecaca; }.reset-action { background: #f3f4f6; color: #6b7280; border: 1px solid #e5e7eb; }.reset-action:hover { background: #e5e7eb; color: #4b5563; }.reset-action:disabled { opacity: .45; cursor: not-allowed; }.reset-action:disabled:hover { background: #f3f4f6; color: #6b7280; }.review-actions a { padding: var(--sp-1) var(--sp-2); border-radius: var(--r-sm); font-size: var(--fs-meta); font-weight: 500; color: var(--c-ink-3); transition: background .12s; }.review-actions a:hover { background: var(--c-surface-2); }
 .table-empty { padding: var(--sp-8) var(--sp-4); text-align: center; color: var(--c-ink-4); font-size: var(--fs-label); }
 
 /* === Key Management === */
@@ -407,11 +407,12 @@ span.stage-green { background: #dcfce7; color: #15803d; }
 .partner-card-badge.busy { background: var(--c-warning); color: #fff; }
 
 /* Partner delivery review actions */
-.partner-review-actions { display: flex; gap: var(--sp-1); }
+.partner-review-actions { display: flex; gap: var(--sp-2); align-items: center; }
+.partner-review-actions button { padding: 4px 14px; border-radius: var(--r-full); font-size: var(--fs-meta); font-weight: 500; cursor: pointer; transition: background .15s, box-shadow .15s; }
 .partner-review-actions .compact.success { background: #d1fae5; color: #047857; border: 1px solid #a7f3d0; }
-.partner-review-actions .compact.success:hover { background: #a7f3d0; }
+.partner-review-actions .compact.success:hover { background: #a7f3d0; box-shadow: 0 0 0 2px rgba(4,120,87,.15); }
 .partner-review-actions .compact.danger { background: #fee2e2; color: #dc2626; border: 1px solid #fecaca; }
-.partner-review-actions .compact.danger:hover { background: #fecaca; }
+.partner-review-actions .compact.danger:hover { background: #fecaca; box-shadow: 0 0 0 2px rgba(220,38,38,.15); }
 
 .stage-progression { margin: var(--sp-4) 0; padding: var(--sp-4); border: 1px solid var(--c-border); border-radius: var(--r-md); background: var(--c-surface-2); }
 .stage-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: var(--sp-3); }

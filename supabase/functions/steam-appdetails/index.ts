@@ -6,8 +6,21 @@ const corsHeaders = {
 };
 
 function parseSteamReleaseDate(date: string): string | null {
-  // 仅解析 Steam 英文含明确日期的格式
-  const match = date.trim().match(/^(?:(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)|(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})),\s+(\d{4})$/);
+  const trimmed = date.trim();
+
+  // 中文格式: "2017 年 9 月 15 日" 或 "2017年9月15日"
+  const chineseMatch = trimmed.match(/^(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日$/);
+  if (chineseMatch) {
+    const year = Number(chineseMatch[1]);
+    const month = Number(chineseMatch[2]);
+    const day = Number(chineseMatch[3]);
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    if (parsed.getUTCFullYear() !== year || parsed.getUTCMonth() !== month - 1 || parsed.getUTCDate() !== day) return null;
+    return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}T00:00:00+08:00`;
+  }
+
+  // 英文格式: "15 Sep, 2017" 或 "Sep 15, 2017"
+  const match = trimmed.match(/^(?:(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)|(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})),\s+(\d{4})$/);
   if (!match) return null;
 
   const [, dayFirst, monthFirst, monthLast, dayLast, yearText] = match;
@@ -41,7 +54,7 @@ serve(async (req) => {
     let steamRes: Response;
     try {
       steamRes = await fetch(
-        `https://store.steampowered.com/api/appdetails?appids=${value}&l=english&cc=cn`,
+        `https://store.steampowered.com/api/appdetails?appids=${value}&l=schinese&cc=cn`,
         { headers: { "User-Agent": "keyflow/1.0" }, signal: controller.signal },
       );
     } finally {
