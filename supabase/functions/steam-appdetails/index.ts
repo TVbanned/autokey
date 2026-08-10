@@ -40,6 +40,9 @@ serve(async (req) => {
       });
     }
 
+    const rd = game.release_date
+    const releaseDate = rd?.date ? new Date(rd.date + " UTC").toISOString() : null
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -48,6 +51,7 @@ serve(async (req) => {
           title: game.name || "",
           desc: game.short_description || "",
           cover: game.header_image || "",
+          release_date: releaseDate,
           screenshots: (game.screenshots || []).slice(0, 4).map(s =>
             (s.path_full || s.path_thumbnail || "").replace(/\.1920x1080\.jpg/, ".600x338.jpg")
           ).filter(Boolean),
