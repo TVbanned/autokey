@@ -35,7 +35,17 @@ a { color: inherit; text-decoration: none; }
   font-size: 15px;
   font-weight: 600;
   color: var(--c-ink);
+  text-decoration: none;
 }
+a.brand:hover { opacity: 0.8; }
+a.public-brand { text-decoration: none; color: inherit; }
+a.public-brand:hover { opacity: 0.8; }
+a.partner-brand { text-decoration: none; color: inherit; }
+a.partner-brand:hover { opacity: 0.8; }
+a.mobile-brand { text-decoration: none; color: inherit; }
+a.mobile-brand:hover { opacity: 0.8; }
+a.home-brand { text-decoration: none; color: inherit; }
+a.home-brand:hover { opacity: 0.8; }
 .brand-mark {
   width: 26px; height: 26px;
   display: grid; place-items: center;
