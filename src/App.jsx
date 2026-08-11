@@ -800,6 +800,15 @@ function App() {
     setKeyImporting(false)
     if (requestError) return setError(requestError.message)
     const result = data?.[0]
+    // 根据实际入库的 key 版本自动同步活动 platforms 配置
+    const { data: dbPlatforms } = await supabase.from('keyflow_keys').select('platform').eq('activity_id', selectedActivity.id)
+    if (dbPlatforms?.length) {
+      const distinctPlatforms = [...new Set(dbPlatforms.map(k => k.platform))]
+      const currentPlatforms = Array.isArray(selectedActivity.platforms) && selectedActivity.platforms.length ? selectedActivity.platforms : ['steam']
+      if (JSON.stringify(distinctPlatforms.sort()) !== JSON.stringify([...currentPlatforms].sort())) {
+        await supabase.from('keyflow_activities').update({ platforms: distinctPlatforms }).eq('id', selectedActivity.id)
+      }
+    }
     setKeyInput(''); await loadData()
     toast(`已入库 ${result?.inserted_count || 0} 个 Key${result?.duplicate_count ? `，跳过 ${result.duplicate_count} 个重复项` : ''}`)
   }
