@@ -669,6 +669,9 @@ span.stage-green { background: #dcfce7; color: #15803d; }
 .profile-link { display: inline-flex; align-items: center; gap: var(--sp-1); color: var(--c-success); font-weight: 500; }
 .profile-link:hover { text-decoration: underline; }
 
+.copyable-text { cursor: pointer; }
+.copyable-text:hover { text-decoration: underline; color: var(--c-success); }
+
 /* === Invitation Codes (Global Panel) === */
 .inv-codes-panel { margin-bottom: var(--sp-5); }
 .inv-codes-header { display: flex; align-items: center; gap: var(--sp-4); padding: var(--sp-3) 0; flex-wrap: wrap; }
@@ -1380,6 +1383,7 @@ span.stage-green { background: #dcfce7; color: #15803d; }
   flex: 1; display: flex; flex-direction: column; gap: var(--sp-3);
 }
 .messaging-form-panel .field { display: flex; flex-direction: column; gap: var(--sp-1); }
+.req { color: #e5484d; margin-left: 2px; }
 .messaging-form-panel .field:last-of-type { flex: 1; display: flex; flex-direction: column; }
 .messaging-form-panel .field:last-of-type textarea { flex: 1; }
 .messaging-form-panel .field span {
