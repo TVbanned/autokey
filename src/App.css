@@ -265,6 +265,13 @@ span.stage-orange { background: #ffedd5; color: #c2410c; }
 span.stage-purple { background: #ede9fe; color: #6d28d9; }
 span.stage-green { background: #dcfce7; color: #15803d; }
 .highlight-red { color: var(--c-danger); font-weight: 600; }
+.highlight-green { color: var(--c-success); font-weight: 600; }
+.history-count.highlight-red,
+.history-count.highlight-green,
+.word-count.highlight-green { font-weight: 600; }
+.history-count.highlight-red { color: var(--c-danger); }
+.history-count.highlight-green { color: var(--c-success); }
+.word-count.highlight-green { color: var(--c-success); }
 .review-actions { display: flex; gap: var(--sp-2); align-items: center; }.review-actions button { padding: 4px 12px; border-radius: var(--r-full); font-size: var(--fs-meta); font-weight: 500; transition: background .15s, box-shadow .15s; cursor: pointer; }.select-action { background: #d1fae5; color: #047857; border: 1px solid #a7f3d0; }.select-action:hover { background: #a7f3d0; }.reject-action,.delete-action { background: #fee2e2; color: #dc2626; border: 1px solid #fecaca; }.reject-action:hover,.delete-action:hover { background: #fecaca; }.reset-action { background: #f3f4f6; color: #6b7280; border: 1px solid #e5e7eb; }.reset-action:hover { background: #e5e7eb; color: #4b5563; }.reset-action:disabled { opacity: .45; cursor: not-allowed; }.reset-action:disabled:hover { background: #f3f4f6; color: #6b7280; }.review-actions a { padding: var(--sp-1) var(--sp-2); border-radius: var(--r-sm); font-size: var(--fs-meta); font-weight: 500; color: var(--c-ink-3); transition: background .12s; }.review-actions a:hover { background: var(--c-surface-2); }
 .table-empty { padding: var(--sp-8) var(--sp-4); text-align: center; color: var(--c-ink-4); font-size: var(--fs-label); }
 
@@ -684,6 +691,8 @@ span.stage-green { background: #dcfce7; color: #15803d; }
 .answerer-table th, .answerer-table td { padding: var(--sp-2) var(--sp-2); }
 .answerer-col-id { width: 4%; }.answerer-col-name { width: 11%; }.answerer-col-remark { width: 10%; }.answerer-col-profile { width: 8%; }.answerer-col-wechat { width: 8%; }.answerer-col-count { width: 7%; }.answerer-col-rate { width: 5%; }.answerer-col-delay { width: 6%; }.answerer-col-submission { width: 11%; }.answerer-col-records { width: 7%; }.answerer-col-created { width: 11%; }.answerer-col-action { width: 5%; }
 .answerer-table .person { min-width: 0; }.answerer-table .person > div { min-width: 0; }.answerer-table .person strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.answerer-table .remark-text { display: block; overflow: hidden; text-overflow: ellipsis; }.answerer-table td:nth-child(5) { overflow: hidden; text-overflow: ellipsis; }
+.wechat-copy-cell { cursor: pointer; user-select: all; transition: background var(--t-fast); }
+.wechat-copy-cell:hover { background: var(--c-bg-hover); }
 
 
 @media (max-width: 850px) { .sidebar { display: none; }.topbar { padding: 0 var(--sp-4); }.crumb { display: none; }.mobile-brand { display: flex; }.content { padding: var(--sp-4); }.metrics, .key-stats, .delivery-stats, .application-summary { grid-template-columns: repeat(2, 1fr); }.page-title h1 { font-size: 18px; }.page-title .primary { width: 34px; padding: 0; font-size: 0; }.page-title .primary svg { width: 18px; height: 18px; }.activity-picker { flex-direction: column; align-items: stretch; gap: var(--sp-2); flex-wrap: wrap; }.activity-picker-right { flex-wrap: wrap; }.game-info { grid-template-columns: 1fr; }.game-cover { height: auto; aspect-ratio: 16 / 7; }.form-grid { grid-template-columns: 1fr; }.field:has(textarea), .form-submit { grid-column: auto; }.public-form { grid-template-columns: 1fr; }.public-form .field:last-of-type, .public-submit { grid-column: auto; }.key-import-footer { align-items: flex-start; flex-direction: column; }.key-import-footer .primary { width: 100%; }.step-label { font-size: 10px; }.step-body { padding: var(--sp-4); }.delivery-toolbar, .application-toolbar, .applications-hero { align-items: stretch; flex-direction: column; }.applications-hero-actions { justify-content: flex-end; }.application-controls { width: 100%; }.application-controls input { flex: 1; width: auto; }.acceptance-filters { grid-template-columns: repeat(3, minmax(0, 1fr)); }.delivery-toolbar > input { width: 100%; } }
