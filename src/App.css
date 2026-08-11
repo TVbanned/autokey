@@ -1408,14 +1408,13 @@ span.stage-green { background: #dcfce7; color: #15803d; }
 /* === Answerer Inbox Modal === */
 .answerer-inbox-modal { width: min(680px, 100%); }
 .answerer-inbox-body {
-  display: flex; flex-direction: column; gap: var(--sp-2);
-  padding: var(--sp-4);
+  display: flex; flex: 1; flex-direction: column; gap: var(--sp-2); min-height: 0;
+  padding: var(--sp-4) var(--sp-4) calc(var(--sp-4) + var(--sp-2));
 }
 .answerer-inbox-item {
   border: 1px solid var(--c-border);
   border-radius: var(--r-md);
   background: var(--c-surface);
-  overflow: hidden;
   transition: box-shadow .15s, border-color .15s, background .15s;
 }
 .answerer-inbox-item:last-child { border-bottom: 1px solid var(--c-border); }
@@ -1455,7 +1454,7 @@ span.stage-green { background: #dcfce7; color: #15803d; }
   padding-left: calc(var(--sp-4) + 8px + var(--sp-3));
   animation: inboxExpand .2s ease;
 }
-@keyframes inboxExpand { from { opacity: 0; max-height: 0; } to { opacity: 1; max-height: 200px; } }
+@keyframes inboxExpand { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
 .answerer-inbox-item-body-inner {
   background: #fff; border-radius: var(--r-sm);
   padding: var(--sp-3) var(--sp-4); border: 1px solid var(--c-border);
