@@ -1038,9 +1038,8 @@ function App() {
   }
 
   // 管理后台仅接受 Supabase Auth 会话，且必须由数据库中的管理员角色确认。
-  const adminLoginMode = urlParams.get('admin') !== null
   if (adminUser === undefined) return <div className="admin-login-wrapper"><div className="admin-login-card"><p style={{textAlign:'center',padding:'2rem',color:'var(--c-ink-3)'}}>正在验证安全登录状态…</p></div></div>
-  if (adminLoginMode || !adminUser || !adminAuthorized) return <Suspense fallback={<div className="admin-login-wrapper"><div className="admin-login-card"><p style={{textAlign:'center',padding:'2rem',color:'var(--c-ink-3)'}}>加载中…</p></div></div>}><AdminLoginPage /></Suspense>
+  if (!adminUser || !adminAuthorized) return <Suspense fallback={<div className="admin-login-wrapper"><div className="admin-login-card"><p style={{textAlign:'center',padding:'2rem',color:'var(--c-ink-3)'}}>加载中…</p></div></div>}><AdminLoginPage /></Suspense>
 
   const claimLink = selectedActivity ? `${window.location.origin}${window.location.pathname}?apply=${selectedActivity.id}` : ''
   const partnerLink = selectedActivity?.partner_token ? `${window.location.origin}${window.location.pathname}?partner=${selectedActivity.partner_token}` : ''
@@ -1111,9 +1110,9 @@ function PageEditor({ asset, loading, saving, onSelectFile, onSave }) {
 }
 
 function PartnerPage({ token }) {
-  const [answerer, setAnswerer] = useState(null)
+  const [answerer, setAnswerer] = useState(undefined)
   const [snapshot, setSnapshot] = useState(null)
-  useEffect(() => { getCurrentAnswerer().then(setAnswerer) }, [])
+  useEffect(() => { getCurrentAnswerer().then(setAnswerer).catch(() => setAnswerer(null)) }, [])
   const [partnerActivities, setPartnerActivities] = useState(null)
   const [isPartner, setIsPartner] = useState(null) // null=loading, true/false
   const [input, setInput] = useState('')
@@ -1232,6 +1231,9 @@ function PartnerPage({ token }) {
   }, [partnerActivities, token, gameSwitcherSearch])
 
   // ---- 登录门控：未登录时显示引导 ----
+  if (answerer === undefined) {
+    return <div className="partner-page"><div className="partner-loading">正在验证登录状态…</div></div>
+  }
   if (!answerer) {
     const loginHref = `?login&redirect=partner${token ? '&token=' + token : ''}`
     return <div className="public-page"><main className="public-card dashboard-login-card"><a className="public-brand" href="?home"><span className="brand-mark zhihu-mark">知</span><span>GameJourney · 合作方协作页</span></a><div className="step-message"><div className="step-message-icon waiting"><Icon name="users" size={24}/></div><p>登录后查看合作方协作页</p><span>使用你注册的合作方账号登录，即可查看活动报名与交稿进展。</span><div className="dashboard-auth-actions"><a href={loginHref} className="primary">去登录</a><a href="?register&redirect=partner" className="outline-button">去注册</a></div></div></main></div>
@@ -2896,6 +2898,18 @@ function HomePage() {
   const [notice, setNotice] = useState('')
   const toast = (msg) => { setNotice(msg); window.setTimeout(() => setNotice(''), 2800) }
 
+  const [authMode, setAuthMode] = useState('login')
+  const [loginForm, setLoginForm] = useState({ zhihu_name: '', password: '' })
+  const [loginLoading, setLoginLoading] = useState(false)
+  const [loginError, setLoginError] = useState('')
+  const [regForm, setRegForm] = useState({ invitation_code: '', zhihu_name: '', account_address: '', wechat_id: '', password: '', confirm_password: '' })
+  const [regLoading, setRegLoading] = useState(false)
+  const [regError, setRegError] = useState('')
+  const [nameHint, setNameHint] = useState(null)
+  const [addressHint, setAddressHint] = useState(null)
+  const nameTimer = useRef(null)
+  const addressTimer = useRef(null)
+
   const [avatarModalOpen, setAvatarModalOpen] = useState(false)
   const [avatarFile, setAvatarFile] = useState(null)
   const [avatarPreview, setAvatarPreview] = useState(null)
@@ -2936,6 +2950,99 @@ function HomePage() {
     supabase.from('keyflow_page_assets').select('image_data').eq('key', 'register_banner').maybeSingle()
       .then(({ data }) => { if (data?.image_data?.length > 100) { setBanner(data.image_data); setCachedBanner(data.image_data) } })
   }, [])
+
+  useEffect(() => {
+    const name = regForm.zhihu_name.trim()
+    if (!name || name.length < 2) { setNameHint(null); return }
+    clearTimeout(nameTimer.current)
+    setNameHint({ type: 'checking' })
+    nameTimer.current = setTimeout(async () => {
+      const { data, error: checkErr } = await supabase.rpc('keyflow_check_zhihu_name', { p_name: name })
+      if (checkErr) { setNameHint(null); return }
+      setNameHint(data?.exists ? { type: 'taken', suggestion: data.suggestion } : null)
+    }, 500)
+    return () => clearTimeout(nameTimer.current)
+  }, [regForm.zhihu_name])
+
+  useEffect(() => {
+    const addr = regForm.account_address.trim()
+    if (!addr || addr.length < 10) { setAddressHint(null); return }
+    clearTimeout(addressTimer.current)
+    setAddressHint({ type: 'checking' })
+    addressTimer.current = setTimeout(async () => {
+      const { data, error: checkErr } = await supabase.rpc('keyflow_check_account_address', { p_address: addr })
+      if (checkErr) { setAddressHint(null); return }
+      setAddressHint(data?.exists ? { type: 'taken', zhihu_name: data.zhihu_name } : null)
+    }, 500)
+    return () => clearTimeout(addressTimer.current)
+  }, [regForm.account_address])
+
+  const handleLogin = async (e) => {
+    e.preventDefault(); setLoginError('')
+    if (!loginForm.zhihu_name.trim()) { setLoginError('请输入知乎用户名'); return }
+    if (!loginForm.password) { setLoginError('请输入密码'); return }
+    setLoginLoading(true)
+    const { data: bootstrapData, error: bootstrapError } = await supabase.functions.invoke('answerer-auth-bootstrap', {
+      body: { action: 'login', zhihu_name: loginForm.zhihu_name.trim(), password: loginForm.password },
+    })
+    if (bootstrapError || !bootstrapData?.internal_email) {
+      setLoginLoading(false)
+      setLoginError(bootstrapData?.message || bootstrapError?.message || '登录失败，请稍后重试')
+      return
+    }
+    const { error: authError } = await supabase.auth.signInWithPassword({ email: bootstrapData.internal_email, password: loginForm.password })
+    if (authError) { setLoginLoading(false); setLoginError('认证登录失败，请稍后重试'); return }
+    const { data: profile, error: profileError } = await supabase.rpc('keyflow_my_answerer_profile')
+    setLoginLoading(false)
+    if (profileError || !profile?.length) {
+      await supabase.auth.signOut()
+      setLoginError('该 Auth 账号尚未绑定答主资料。旧账号请完成迁移后再登录。')
+      return
+    }
+    const answerer = profile[0]
+    const { data: isPartner } = await supabase.rpc('keyflow_is_partner', { p_answerer_id: answerer.id })
+    toast('登录成功')
+    window.setTimeout(() => { window.location.href = isPartner ? '?partner' : '?dashboard' }, 600)
+  }
+
+  const handleRegister = async (e) => {
+    e.preventDefault(); setRegError('')
+    if (!regForm.invitation_code.trim()) { setRegError('请输入邀请码'); return }
+    if (!regForm.zhihu_name.trim()) { setRegError('请输入知乎用户名'); return }
+    if (!regForm.account_address.trim()) { setRegError('请输入知乎主页地址'); return }
+    if (!regForm.wechat_id.trim()) { setRegError('请输入微信号'); return }
+    if (regForm.password.length < 6) { setRegError('密码至少 6 位'); return }
+    if (regForm.password !== regForm.confirm_password) { setRegError('两次输入的密码不一致'); return }
+    setRegLoading(true)
+    const { data: bootstrapData, error: bootstrapError } = await supabase.functions.invoke('answerer-auth-bootstrap', {
+      body: {
+        action: 'register',
+        code: regForm.invitation_code.trim(),
+        zhihu_name: regForm.zhihu_name.trim(),
+        account_address: regForm.account_address.trim(),
+        wechat_id: regForm.wechat_id.trim(),
+        password: regForm.password,
+      },
+    })
+    if (bootstrapError || !bootstrapData?.internal_email) {
+      setRegLoading(false)
+      setRegError(bootstrapData?.message || bootstrapError?.message || '注册失败，请稍后重试')
+      return
+    }
+    const { error: authError } = await supabase.auth.signInWithPassword({ email: bootstrapData.internal_email, password: regForm.password })
+    if (authError) { setRegLoading(false); setRegError('认证登录失败，请稍后重试'); return }
+    const { data: profile, error: profileError } = await supabase.rpc('keyflow_my_answerer_profile')
+    setRegLoading(false)
+    if (profileError || !profile?.length) {
+      await supabase.auth.signOut()
+      setRegError('答主资料绑定失败，请稍后重试')
+      return
+    }
+    const answerer = profile[0]
+    const { data: isPartner } = await supabase.rpc('keyflow_is_partner', { p_answerer_id: answerer.id })
+    toast('注册成功')
+    window.setTimeout(() => { window.location.href = isPartner ? '?partner' : '?dashboard' }, 600)
+  }
 
   const STAGE_LABEL = { recruiting: '招募中', key_distribution: '发key中', delivery: '创作中', completed: '已完结' }
   const STAGE_COLOR = { recruiting: 'stage-blue', key_distribution: 'stage-orange', delivery: 'stage-purple', completed: 'stage-green' }
@@ -3123,10 +3230,36 @@ function HomePage() {
     {!loggedIn && <aside className="home-auth">
       <div className="home-auth-bg" style={{ backgroundImage: `url(${banner})` }} />
       <div className="home-auth-content">
-        <h2>加入 GameJourney</h2>
-        <p className="home-auth-sub">登录后即可领取 Key 和提交测评作品。</p>
-        <a className="home-auth-submit" href={window.location.pathname + '?login'}>登录</a>
-        <p className="home-auth-switch">还没有账号？<a href={window.location.pathname + '?register'}>立即注册</a></p>
+        <div className="home-auth-tabs">
+          <button className={`home-auth-tab ${authMode === 'login' ? 'active' : ''}`} onClick={() => { setAuthMode('login'); setLoginError(''); setRegError('') }}>登录</button>
+          <button className={`home-auth-tab ${authMode === 'register' ? 'active' : ''}`} onClick={() => { setAuthMode('register'); setLoginError(''); setRegError('') }}>注册</button>
+        </div>
+        {authMode === 'login' ? (
+          <form className="home-auth-form" onSubmit={handleLogin}>
+            <h2>欢迎回来</h2>
+            <p className="home-auth-sub">登录后即可领取 Key 和提交测评作品。</p>
+            <label className="home-field"><span>知乎用户名</span><input required value={loginForm.zhihu_name} placeholder="输入注册时的知乎用户名" onChange={(e) => setLoginForm({ ...loginForm, zhihu_name: e.target.value })} /></label>
+            <label className="home-field"><span>密码</span><input type="password" required value={loginForm.password} placeholder="输入密码" onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} /></label>
+            {loginError && <p className="home-auth-error">{loginError}</p>}
+            <button className="home-auth-submit" disabled={loginLoading}>{loginLoading ? '登录中…' : '登录'}</button>
+            <p className="home-auth-switch">还没有账号？<button type="button" onClick={() => { setAuthMode('register'); setLoginError('') }}>立即注册</button></p>
+            <a className="home-auth-forgot" href={window.location.pathname + '?login'}>忘记密码？</a>
+          </form>
+        ) : (
+          <form className="home-auth-form" onSubmit={handleRegister}>
+            <h2>加入计划</h2>
+            <p className="home-auth-sub">邀请码由知乎运营或已注册答主提供，每个邀请码仅可使用一次。</p>
+            <label className="home-field"><span>邀请码（联系知乎运营或已注册答主获得）</span><input required value={regForm.invitation_code} placeholder="KF-XXXXXXXX" onChange={(e) => setRegForm({ ...regForm, invitation_code: e.target.value })} /></label>
+            <label className="home-field"><span>知乎用户名</span><input required value={regForm.zhihu_name} placeholder="请和你的知乎昵称保持一致，登录页面的唯一账号" onChange={(e) => setRegForm({ ...regForm, zhihu_name: e.target.value })} />{nameHint?.type === 'checking' && <span className="home-field-hint checking">检测中…</span>}{nameHint?.type === 'taken' && <span className="home-field-hint taken">该用户名已被使用，建议 <button type="button" className="home-suggestion-btn" onClick={() => { setRegForm({ ...regForm, zhihu_name: nameHint.suggestion }); setNameHint(null) }}>使用「{nameHint.suggestion}」</button></span>}</label>
+            <label className="home-field"><span>知乎主页地址</span><input type="url" required value={regForm.account_address} placeholder="https://www.zhihu.com/people/xxxxxx" onChange={(e) => setRegForm({ ...regForm, account_address: e.target.value })} />{addressHint?.type === 'checking' && <span className="home-field-hint checking">检测中…</span>}{addressHint?.type === 'taken' && <span className="home-field-hint warn">该主页地址已被用户「{addressHint.zhihu_name}」使用，你确定这是你的知乎账户吗？</span>}</label>
+            <label className="home-field"><span>微信号</span><input required value={regForm.wechat_id} placeholder="即你的微信唯一ID，不是微信名；如ID无效则账户会被封禁" onChange={(e) => setRegForm({ ...regForm, wechat_id: e.target.value })} /></label>
+            <label className="home-field"><span>密码</span><input type="password" required value={regForm.password} placeholder="至少 6 位字符" onChange={(e) => setRegForm({ ...regForm, password: e.target.value })} /></label>
+            <label className="home-field"><span>再次输入密码</span><input type="password" required value={regForm.confirm_password} placeholder="请再次输入密码" onChange={(e) => setRegForm({ ...regForm, confirm_password: e.target.value })} /></label>
+            {regError && <p className="home-auth-error">{regError}</p>}
+            <button className="home-auth-submit" disabled={regLoading}>{regLoading ? '注册中…' : '注册'}</button>
+            <p className="home-auth-switch">已有账号？<button type="button" onClick={() => { setAuthMode('login'); setRegError('') }}>去登录</button></p>
+          </form>
+        )}
       </div>
     </aside>}
     {notice && <div className="toast"><Icon name="check" size={17} />{notice}</div>}
