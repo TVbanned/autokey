@@ -38,3 +38,6 @@ supabase/.temp/
 
 # debug
 .dbg/
+
+# keys
+OpenClaw.pem
