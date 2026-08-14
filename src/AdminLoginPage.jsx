@@ -1,26 +1,37 @@
 import { useState } from 'react'
 import { supabase } from './supabase'
 
-const ADMIN_SESSION_KEY = 'keyflow_admin_session'
-
 export default function AdminLoginPage() {
-  const [username, setUsername] = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
   const handleLogin = async (event) => {
-    event.preventDefault(); setError('')
-    if (!username.trim()) { setError('请输入用户名'); return }
+    event.preventDefault()
+    setError('')
+    if (!email.trim()) { setError('请输入管理员邮箱'); return }
     if (!password) { setError('请输入密码'); return }
+
     setLoading(true)
-    const { data, error: rpcErr } = await supabase.rpc('keyflow_admin_login', {
-      p_username: username.trim(),
-      p_password: password,
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
     })
-    setLoading(false)
-    if (rpcErr) { setError(rpcErr.message); return }
-    localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(data))
+    if (signInError) {
+      setLoading(false)
+      setError(signInError.message)
+      return
+    }
+
+    const { data: isAdmin, error: roleError } = await supabase.rpc('keyflow_is_admin')
+    if (roleError || !isAdmin) {
+      await supabase.auth.signOut()
+      setLoading(false)
+      setError('该 Auth 账号未被授予管理员角色，不能进入后台。请由数据库管理员完成 Auth 账号与 keyflow_user_roles 的绑定。')
+      return
+    }
+
     window.location.href = window.location.pathname
   }
 
@@ -29,19 +40,19 @@ export default function AdminLoginPage() {
       <div className="admin-login-header">
         <a href="?home" style={{textDecoration:'none',color:'inherit'}}><span className="brand-mark zhihu-mark">知</span>
         <h1>GameJourney 管理后台</h1></a>
-        <p>请输入管理员账号登录</p>
+        <p>使用已授予管理员角色的 Supabase Auth 邮箱登录</p>
       </div>
       <form className="admin-login-form" onSubmit={handleLogin}>
         <label className="admin-login-field">
-          <span>用户名</span>
-          <input required value={username} placeholder="请输入管理员用户名" onChange={(e) => setUsername(e.target.value)} autoFocus />
+          <span>邮箱</span>
+          <input type="email" required value={email} placeholder="admin@example.com" onChange={(e) => setEmail(e.target.value)} autoFocus />
         </label>
         <label className="admin-login-field">
           <span>密码</span>
-          <input type="password" required value={password} placeholder="请输入密码" onChange={(e) => setPassword(e.target.value)} />
+          <input type="password" required value={password} placeholder="输入 Auth 密码" onChange={(e) => setPassword(e.target.value)} />
         </label>
         {error && <p className="admin-login-error">{error}</p>}
-        <button className="admin-login-submit" disabled={loading}>{loading ? '登录中…' : '登录'}</button>
+        <button className="admin-login-submit" disabled={loading}>{loading ? '登录中…' : '安全登录'}</button>
       </form>
     </div>
   </div>

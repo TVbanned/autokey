@@ -6,15 +6,14 @@ import './App.css'
 
 const AdminLoginPage = lazy(() => import('./AdminLoginPage.jsx'))
 
-const ADMIN_SESSION_KEY = 'keyflow_admin_session'
 const BANNER_CACHE_KEY = 'keyflow_banner'
 const HOME_ACTIVITIES_CACHE_KEY = 'keyflow_home_activities'
 
 const getCachedBanner = () => {
-  try { const v = sessionStorage.getItem(BANNER_CACHE_KEY); return v && v.length > 100 ? v : null } catch { return null }
+  try { const v = localStorage.getItem(BANNER_CACHE_KEY); return v && v.length > 100 ? v : null } catch { return null }
 }
 const setCachedBanner = (v) => {
-  try { if (v && v.length > 100) sessionStorage.setItem(BANNER_CACHE_KEY, v) } catch {}
+  try { if (v && v.length > 100) localStorage.setItem(BANNER_CACHE_KEY, v) } catch {}
 }
 const getCachedHomeActivities = () => {
   try { const v = sessionStorage.getItem(HOME_ACTIVITIES_CACHE_KEY); return v ? JSON.parse(v) : null } catch { return null }
@@ -297,6 +296,24 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [adminUser, setAdminUser] = useState(undefined)
+  const [adminAuthorized, setAdminAuthorized] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    const checkAdmin = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        if (active) { setAdminUser(null); setAdminAuthorized(false) }
+        return
+      }
+      const { data: isAdmin } = await supabase.rpc('keyflow_is_admin')
+      if (active) { setAdminUser(user); setAdminAuthorized(!!isAdmin) }
+    }
+    checkAdmin()
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => { checkAdmin() })
+    return () => { active = false; subscription.unsubscribe() }
+  }, [])
   const [activityModal, setActivityModal] = useState(false)
   const [applicationModal, setApplicationModal] = useState(false)
   const [editActivityModal, setEditActivityModal] = useState(false)
@@ -515,7 +532,7 @@ function App() {
         supabase.from('keyflow_daily_submissions').select('id, answerer_id, article_url, article_title, submitted_at, created_at, reviewed, processed, featured').order('submitted_at', { ascending: false }).limit(1000),
         supabase.from('keyflow_keys').select('id, activity_id, platform, application_id, created_at, claimed_at').order('created_at', { ascending: false }).limit(1000),
         supabase.from('keyflow_invitation_codes').select('id, code, code_type, application_id, answerer_id, created_at, used_at').order('created_at', { ascending: false }).order('id').limit(1000),
-        supabase.from('keyflow_answerers').select('id, serial_number, zhihu_name, account_address, wechat_id, remark, created_at, updated_at').order('created_at', { ascending: false }).limit(1000),
+        supabase.rpc('keyflow_admin_answerer_summaries'),
         supabase.from('keyflow_inbox').select('id, title, body, status, to_id, type, created_at, read_at').neq('type', 'system').order('created_at', { ascending: false }).limit(1000),
         supabase.from('keyflow_password_reset_requests').select('id, answerer_id, status, requested_at, reviewed_at, admin_note').order('requested_at', { ascending: false }).limit(1000),
       ]).then(([d, ds, k, ic, a, ib, r]) => {
@@ -523,18 +540,7 @@ function App() {
         if (failure) setError(failure.message)
         else {
           setDeliveries(d.data || []); setDailySubmissions(ds.data || []); setKeys(k.data || []); setInvitationCodes(ic.data || []); setAnswerers(a.data || []); setInboxMessages(ib.data || []); setPasswordResetRequests(r.data || [])
-          // 延后异步加载头像，base64 格式自动迁移到 Supabase Storage
-          supabase.from('keyflow_answerers').select('id, avatar_url').limit(1000).then(async ({ data: avatarData }) => {
-            if (avatarData) {
-              const migrated = await Promise.all(avatarData.map(async (a) => {
-                if (a.avatar_url && a.avatar_url.startsWith('data:')) {
-                  a.avatar_url = await migrateAvatarToStorage(a.id, a.avatar_url)
-                }
-                return a
-              }))
-              setAnswerers(prev => prev.map(aa => { const m = migrated.find(dd => dd.id === aa.id); return m && m.avatar_url ? { ...aa, avatar_url: m.avatar_url } : aa }))
-            }
-          })
+          // 头像已由受管理员角色保护的摘要 RPC 返回；不再直读答主表。
         }
       }).catch((e) => {
         console.error('辅助数据加载失败:', e)
@@ -1031,10 +1037,10 @@ function App() {
     if (activityId) return <ClaimPage activityId={activityId} authCode={authCode} />
   }
 
-  // 管理员登录门控：无 session 或显式访问 ?admin 时显示登录页
-  const adminSession = (() => { try { return JSON.parse(localStorage.getItem(ADMIN_SESSION_KEY)) } catch { return null } })()
+  // 管理后台仅接受 Supabase Auth 会话，且必须由数据库中的管理员角色确认。
   const adminLoginMode = urlParams.get('admin') !== null
-  if (adminLoginMode || !adminSession) return <Suspense fallback={<div className="admin-login-wrapper"><div className="admin-login-card"><p style={{textAlign:'center',padding:'2rem',color:'var(--c-ink-3)'}}>加载中…</p></div></div>}><AdminLoginPage /></Suspense>
+  if (adminUser === undefined) return <div className="admin-login-wrapper"><div className="admin-login-card"><p style={{textAlign:'center',padding:'2rem',color:'var(--c-ink-3)'}}>正在验证安全登录状态…</p></div></div>
+  if (adminLoginMode || !adminUser || !adminAuthorized) return <Suspense fallback={<div className="admin-login-wrapper"><div className="admin-login-card"><p style={{textAlign:'center',padding:'2rem',color:'var(--c-ink-3)'}}>加载中…</p></div></div>}><AdminLoginPage /></Suspense>
 
   const claimLink = selectedActivity ? `${window.location.origin}${window.location.pathname}?apply=${selectedActivity.id}` : ''
   const partnerLink = selectedActivity?.partner_token ? `${window.location.origin}${window.location.pathname}?partner=${selectedActivity.partner_token}` : ''
@@ -1052,12 +1058,12 @@ function App() {
         </button>
       </div>
       <div className="profile">
-        <span className="avatar">{adminSession?.display_name?.[0] || '管'}</span>
+        <span className="avatar">{adminUser.email?.[0]?.toUpperCase() || '管'}</span>
         <div className="profile-info">
-          <strong>{adminSession?.display_name || '管理员'}</strong>
-          <small>运营方</small>
+          <strong>{adminUser.email || '管理员'}</strong>
+          <small>运营方（Auth）</small>
         </div>
-        <button className="admin-logout-btn" title="退出登录" onClick={() => { localStorage.removeItem(ADMIN_SESSION_KEY); window.location.href = window.location.pathname + '?admin' }}>退出</button>
+        <button className="admin-logout-btn" title="退出登录" onClick={async () => { await supabase.auth.signOut(); window.location.href = window.location.pathname + '?admin' }}>退出</button>
       </div>
     </aside>
     <main>
@@ -1105,8 +1111,9 @@ function PageEditor({ asset, loading, saving, onSelectFile, onSave }) {
 }
 
 function PartnerPage({ token }) {
-  const answerer = getAnswererSession()
+  const [answerer, setAnswerer] = useState(null)
   const [snapshot, setSnapshot] = useState(null)
+  useEffect(() => { getCurrentAnswerer().then(setAnswerer) }, [])
   const [partnerActivities, setPartnerActivities] = useState(null)
   const [isPartner, setIsPartner] = useState(null) // null=loading, true/false
   const [input, setInput] = useState('')
@@ -1211,6 +1218,19 @@ function PartnerPage({ token }) {
     return () => { cancelled = true; image.removeEventListener('load', sample); image.removeEventListener('error', fallback) }
   }, [snapshot?.activity?.game_cover])
 
+  useEffect(() => {
+    if (pwdResetStep === 'pending' || pwdResetStep === 'approved') {
+      const interval = setInterval(checkResetStatus, 5000)
+      return () => clearInterval(interval)
+    }
+  }, [pwdResetStep])
+
+  const filteredGames = useMemo(() => {
+    const others = partnerActivities?.filter(a => a.partner_token !== token) || []
+    if (!gameSwitcherSearch) return others
+    return others.filter(a => matchesSearch(`${a.game_name || ''} ${a.title || ''}`, gameSwitcherSearch))
+  }, [partnerActivities, token, gameSwitcherSearch])
+
   // ---- 登录门控：未登录时显示引导 ----
   if (!answerer) {
     const loginHref = `?login&redirect=partner${token ? '&token=' + token : ''}`
@@ -1264,8 +1284,6 @@ function PartnerPage({ token }) {
     const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(filePath)
     const { error: updateErr } = await supabase.from('keyflow_answerers').update({ avatar_url: publicUrl, updated_at: new Date().toISOString() }).eq('id', answerer.id)
     if (updateErr) { setAvatarUploading(false); return }
-    const session = { ...answerer, avatar_url: publicUrl }
-    localStorage.setItem(SESSION_KEY, JSON.stringify(session))
     setAvatarUploading(false)
     setAvatarModalOpen(false)
     setAvatarPreview(publicUrl)
@@ -1337,31 +1355,18 @@ function PartnerPage({ token }) {
     setPwdResetLoading(false)
     if (rpcErr) { setPwdResetMsg(rpcErr.message); return }
     setPwdResetStep('done'); setPwdResetMsg('密码重置成功，请使用新密码重新登录。')
-    setTimeout(() => { localStorage.removeItem(SESSION_KEY); window.location.href = `?login&redirect=partner${token ? '&token=' + token : ''}` }, 2000)
+    setTimeout(() => { window.location.href = `?login&redirect=partner${token ? '&token=' + token : ''}` }, 2000)
   }
-
-  useEffect(() => {
-    if (pwdResetStep === 'pending' || pwdResetStep === 'approved') {
-      const interval = setInterval(checkResetStatus, 5000)
-      return () => clearInterval(interval)
-    }
-  }, [pwdResetStep])
-
-  const filteredGames = useMemo(() => {
-    const others = partnerActivities?.filter(a => a.partner_token !== token) || []
-    if (!gameSwitcherSearch) return others
-    return others.filter(a => matchesSearch(`${a.game_name || ''} ${a.title || ''}`, gameSwitcherSearch))
-  }, [partnerActivities, token, gameSwitcherSearch])
 
   // ---- 加载中 / 非合作方 ----
   if (isPartner === null) return <div className="partner-page"><div className="partner-loading">正在加载合作方协作页…</div></div>
-  if (!isPartner) return <div className="public-page"><main className="public-card dashboard-login-card"><a className="public-brand" href="?home"><span className="brand-mark zhihu-mark">知</span><span>GameJourney · 合作方协作页</span></a><div className="step-message"><p>你的账号不是合作方身份</p><span>请使用合作方邀请码注册的账号登录，或联系运营人员获取合作方账号。</span><div className="dashboard-auth-actions"><button className="outline-button" onClick={() => { localStorage.removeItem(SESSION_KEY); window.location.href = '?login' }}>切换账号</button></div></div></main></div>
+  if (!isPartner) return <div className="public-page"><main className="public-card dashboard-login-card"><a className="public-brand" href="?home"><span className="brand-mark zhihu-mark">知</span><span>GameJourney · 合作方协作页</span></a><div className="step-message"><p>你的账号不是合作方身份</p><span>请使用合作方邀请码注册的账号登录，或联系运营人员获取合作方账号。</span><div className="dashboard-auth-actions"><button className="outline-button" onClick={async () => { await supabase.auth.signOut(); window.location.href = '?login' }}>切换账号</button></div></div></main></div>
 
   // ---- 无 token：显示合作方活动列表 ----
   if (!token) {
     const stageLabel = { recruiting: '招募中', key_distribution: '发 Key 中', delivery: '交付/创作中', completed: '项目完结' }
     const daysLeft = (deadline) => Math.max(0, Math.ceil((new Date(deadline) - new Date()) / 86400000))
-    return <div className="partner-page"><header className="partner-header"><a className="partner-brand" href="?home"><span className="brand-mark zhihu-mark">知</span><span>GameJourney</span><small>合作方协作页</small></a><div className="partner-header-right"><button className="reload outline" onClick={() => { window.location.href = '?dashboard' }}>切换到答主看板</button>{answerer?.zhihu_name === '灰域信风' && <button className="reload outline" onClick={() => { window.location.href = '?admin' }}>切换到管理员后台</button>}<div className="dashboard-user-area" onClick={() => setDropdownOpen(!dropdownOpen)}><div className="dashboard-avatar-wrap">{answerer?.avatar_url ? <img className="dashboard-avatar-img" src={answerer.avatar_url} alt="" /> : <span className="dashboard-avatar-placeholder">{answerer?.zhihu_name?.[0] || '?'}</span>}</div>{unreadInboxCount > 0 && <span className="dashboard-avatar-dot"/>}<span className="dashboard-username">{answerer?.zhihu_name}<Icon name="arrow" size={12}/></span>{dropdownOpen && <><div className="dashboard-dropdown-backdrop" onClick={(e) => { e.stopPropagation(); setDropdownOpen(false) }}/><div className="dashboard-dropdown"><button onClick={() => { setDropdownOpen(false); setAvatarModalOpen(true) }}><Icon name="image" size={16}/> 修改头像</button><button onClick={() => { setDropdownOpen(false); setPwdResetModalOpen(true); setPwdResetStep('idle'); setPwdResetMsg(''); setNewPassword(''); setConfirmPassword(''); loadResetStatus() }}><Icon name="key" size={16}/> 重置密码</button><button onClick={() => { setDropdownOpen(false); setInboxModalOpen(true); loadInbox() }}><Icon name="inbox" size={16}/> 收件箱{unreadInboxCount > 0 && <span className="dashboard-dropdown-dot"/>}</button><button className="dashboard-logout-btn" onClick={() => { localStorage.removeItem(SESSION_KEY); window.location.href = '?login' }}><Icon name="logout" size={16}/> 退出登录</button></div></>}</div></div></header><main className="partner-main"><section className="partner-hero" style={{ '--partner-hero-rgb': heroColor }}><div className="partner-hero-content"><h1>我的合作活动</h1><span>点击进入活动协作页查看详情。</span></div></section><section className="dashboard-activity-cards">{partnerActivities === null ? <div className="partner-loading">正在加载活动列表…</div> : !partnerActivities.length ? <div className="panel" style={{gridColumn:'1/-1'}}><div className="step-message"><p>您的游戏如需招募测评，请联系管理员</p><span>vx：cmyk3165</span></div></div> : partnerActivities.map((activity) => <a className="dashboard-activity-card" href={`?partner=${activity.partner_token}`} key={activity.id}><div className="dashboard-activity-cover">{activity.game_cover ? <img src={activity.game_cover} alt={activity.game_name} loading="lazy"/> : <span>{activity.game_name?.[0] || '游'}</span>}</div><div className="dashboard-activity-body"><p>{activity.game_name}</p><h3>{activity.title}</h3><div><span className={`pill stage-${activity.status === 'key_distribution' ? 'orange' : activity.status === 'delivery' ? 'purple' : activity.status === 'completed' ? 'green' : 'blue'}`}>{stageLabel[activity.status] || activity.status}</span>{activity.status === 'delivery' && activity.delivery_deadline && <span className="dashboard-deadline">截稿还剩 {daysLeft(activity.delivery_deadline)} 天</span>}{activity.status === 'key_distribution' && <span className="dashboard-deadline">已有 {activity.key_claimed_count || 0} 人领取key</span>}{activity.status === 'recruiting' && <span className="dashboard-deadline">已有 {activity.application_count || 0} 人报名</span>}</div></div></a>)}</section></main>
+    return <div className="partner-page"><header className="partner-header"><a className="partner-brand" href="?home"><span className="brand-mark zhihu-mark">知</span><span>GameJourney</span><small>合作方协作页</small></a><div className="partner-header-right"><button className="reload outline" onClick={() => { window.location.href = '?dashboard' }}>切换到答主看板</button>{answerer?.zhihu_name === '灰域信风' && <button className="reload outline" onClick={() => { window.location.href = '?admin' }}>切换到管理员后台</button>}<div className="dashboard-user-area" onClick={() => setDropdownOpen(!dropdownOpen)}><div className="dashboard-avatar-wrap">{answerer?.avatar_url ? <img className="dashboard-avatar-img" src={answerer.avatar_url} alt="" /> : <span className="dashboard-avatar-placeholder">{answerer?.zhihu_name?.[0] || '?'}</span>}</div>{unreadInboxCount > 0 && <span className="dashboard-avatar-dot"/>}<span className="dashboard-username">{answerer?.zhihu_name}<Icon name="arrow" size={12}/></span>{dropdownOpen && <><div className="dashboard-dropdown-backdrop" onClick={(e) => { e.stopPropagation(); setDropdownOpen(false) }}/><div className="dashboard-dropdown"><button onClick={() => { setDropdownOpen(false); setAvatarModalOpen(true) }}><Icon name="image" size={16}/> 修改头像</button><button onClick={() => { setDropdownOpen(false); setPwdResetModalOpen(true); setPwdResetStep('idle'); setPwdResetMsg(''); setNewPassword(''); setConfirmPassword(''); loadResetStatus() }}><Icon name="key" size={16}/> 重置密码</button><button onClick={() => { setDropdownOpen(false); setInboxModalOpen(true); loadInbox() }}><Icon name="inbox" size={16}/> 收件箱{unreadInboxCount > 0 && <span className="dashboard-dropdown-dot"/>}</button><button className="dashboard-logout-btn" onClick={async () => { await supabase.auth.signOut(); window.location.href = '?login' }}><Icon name="logout" size={16}/> 退出登录</button></div></>}</div></div></header><main className="partner-main"><section className="partner-hero" style={{ '--partner-hero-rgb': heroColor }}><div className="partner-hero-content"><h1>我的合作活动</h1><span>点击进入活动协作页查看详情。</span></div></section><section className="dashboard-activity-cards">{partnerActivities === null ? <div className="partner-loading">正在加载活动列表…</div> : !partnerActivities.length ? <div className="panel" style={{gridColumn:'1/-1'}}><div className="step-message"><p>您的游戏如需招募测评，请联系管理员</p><span>vx：cmyk3165</span></div></div> : partnerActivities.map((activity) => <a className="dashboard-activity-card" href={`?partner=${activity.partner_token}`} key={activity.id}><div className="dashboard-activity-cover">{activity.game_cover ? <img src={activity.game_cover} alt={activity.game_name} loading="lazy"/> : <span>{activity.game_name?.[0] || '游'}</span>}</div><div className="dashboard-activity-body"><p>{activity.game_name}</p><h3>{activity.title}</h3><div><span className={`pill stage-${activity.status === 'key_distribution' ? 'orange' : activity.status === 'delivery' ? 'purple' : activity.status === 'completed' ? 'green' : 'blue'}`}>{stageLabel[activity.status] || activity.status}</span>{activity.status === 'delivery' && activity.delivery_deadline && <span className="dashboard-deadline">截稿还剩 {daysLeft(activity.delivery_deadline)} 天</span>}{activity.status === 'key_distribution' && <span className="dashboard-deadline">已有 {activity.key_claimed_count || 0} 人领取key</span>}{activity.status === 'recruiting' && <span className="dashboard-deadline">已有 {activity.application_count || 0} 人报名</span>}</div></div></a>)}</section></main>
       {pwdResetModalOpen && <Modal title="重置密码" onClose={() => { setPwdResetModalOpen(false); setPwdResetStep('idle'); setPwdResetMsg(''); setNewPassword(''); setConfirmPassword('') }}>
         <div className="pwd-reset-body">
           {pwdResetStep === 'idle' && <div className="pwd-reset-step"><div className="pwd-reset-step-icon"><Icon name="key" size={24}/></div><p className="pwd-reset-step-title">申请密码重置</p><p className="pwd-reset-step-desc">将向管理员提交密码重置申请。管理员审核通过后，你可以在此页面设置新密码。</p><button className="primary" onClick={requestPasswordReset} disabled={pwdResetLoading}>{pwdResetLoading ? '提交中…' : '提交申请'}</button></div>}
@@ -1425,7 +1430,7 @@ function PartnerPage({ token }) {
   const applicationStatus = { pending: '待筛选', selected: '已入选', rejected: '未入选' }
   const deliveryStatus = { pending: '待审核', approved: '已通过', revision_required: '需修改', rejected: '未通过' }
 
-  return <div className="partner-page"><header className="partner-header"><a className="partner-brand" href="?home"><span className="brand-mark zhihu-mark">知</span><span>GameJourney</span><small>合作方协作页</small></a><div className="partner-header-right"><button className="reload outline" onClick={() => { window.location.href = '?dashboard' }}>切换到答主看板</button>{answerer?.zhihu_name === '灰域信风' && <button className="reload outline" onClick={() => { window.location.href = '?admin' }}>切换到管理员后台</button>}<button className="reload" onClick={loadSnapshot}>刷新数据</button>{partnerActivities && partnerActivities.filter(a => a.partner_token !== token).length > 0 && <button className="reload" onClick={() => { setGameSwitcherOpen(true); setGameSwitcherSearch(''); setDropdownOpen(false) }}>切换游戏</button>}<div className="dashboard-user-area" onClick={() => { setDropdownOpen(!dropdownOpen); setGameSwitcherOpen(false) }}><div className="dashboard-avatar-wrap">{answerer?.avatar_url ? <img className="dashboard-avatar-img" src={answerer.avatar_url} alt="" /> : <span className="dashboard-avatar-placeholder">{answerer?.zhihu_name?.[0] || '?'}</span>}</div>{unreadInboxCount > 0 && <span className="dashboard-avatar-dot"/>}<span className="dashboard-username">{answerer?.zhihu_name}<Icon name="arrow" size={12}/></span>{dropdownOpen && <><div className="dashboard-dropdown-backdrop" onClick={(e) => { e.stopPropagation(); setDropdownOpen(false) }}/><div className="dashboard-dropdown"><button onClick={() => { setDropdownOpen(false); setAvatarModalOpen(true) }}><Icon name="image" size={16}/> 修改头像</button><button onClick={() => { setDropdownOpen(false); setPwdResetModalOpen(true); setPwdResetStep('idle'); setPwdResetMsg(''); setNewPassword(''); setConfirmPassword(''); loadResetStatus() }}><Icon name="key" size={16}/> 重置密码</button><button onClick={() => { setDropdownOpen(false); setInboxModalOpen(true); loadInbox() }}><Icon name="inbox" size={16}/> 收件箱{unreadInboxCount > 0 && <span className="dashboard-dropdown-dot"/>}</button><button className="dashboard-logout-btn" onClick={() => { localStorage.removeItem(SESSION_KEY); window.location.href = '?login' }}><Icon name="logout" size={16}/> 退出登录</button></div></>}</div></div></header><main className="partner-main"><section className="partner-hero" style={{ '--partner-hero-rgb': heroColor }}><div className="partner-hero-content"><p>{activity.game_name}</p><h1>{activity.title}</h1><span>在此补充活动 Key，并实时查看报名与交稿进展。</span><div><span>报名截止 {formatDate(activity.application_deadline)}</span><span>交付截止 {formatDate(activity.delivery_deadline)}</span></div></div>{activity.game_cover && <div className="partner-hero-art" aria-hidden="true"><img src={activity.game_cover} alt="" /></div>}</section>{error && <div className="error-box">操作失败：{error}<button onClick={() => setError('')}><Icon name="close" size={16}/></button></div>}<section className="partner-metrics"><div><strong>{keyCount}</strong><span>已入库 Key</span></div><div><strong>{applications.length}</strong><span>累计报名</span></div><div><strong>{selectedCount}</strong><span>已入选答主</span></div><div><strong>{deliveries.length}</strong><span>已交稿</span></div></section><section className="partner-grid"><section className="panel partner-key-panel"><div className="panel-head"><div><h3>添加 Key</h3><p>每行一个，也支持逗号、分号和制表符分隔；平台将自动识别。</p></div></div><div className="key-import-body"><textarea className="key-textarea" value={input} onChange={(event) => setInput(event.target.value)} placeholder={'示例：\nABCDE-FGHIJ-KLMNO-PQRST\nABCD-EFGH-IJKL-MNOP'}/>{parsedKeys.length > 0 && <div className="key-preview"><div className="key-preview-head"><strong>导入预览</strong><span>{parsedKeys.length} 个唯一 Key</span></div><div className="platform-summary">{Object.entries(platformCounts).map(([platform, count]) => <span className={`platform-tag ${platform}`} key={platform}>{platformLabel[platform]} {count}</span>)}</div></div>}<div className="key-import-footer"><span>重复 Key 将自动跳过，Key 明文不会展示在数据列表中。</span><button className="primary" onClick={importKeys} disabled={!parsedKeys.length || importing}>{importing ? '入库中…' : `确认入库 ${parsedKeys.length} 个 Key`}</button></div></div></section><section className="panel partner-progress"><div className="panel-head"><div><h3>进度说明</h3><p>活动数据由运营方维护，以下信息会实时更新。</p></div></div><div className="progress-list"><div><Icon name="users"/><span>报名情况</span><strong>{applications.length} 人</strong></div><div><Icon name="check"/><span>入选答主</span><strong>{selectedCount} 人</strong></div><div><Icon name="file"/><span>交稿情况</span><strong>{deliveries.length} 篇</strong></div></div><a className="partner-apply-link" href={window.location.origin + window.location.pathname + '?apply=' + activity.id}>点击进入答主报名页面</a></section></section><section className="panel partner-table"><div className="panel-head"><div><h3>报名情况</h3><p>展示答主信息，合作方可标记推荐人选。</p></div></div><div className="table-wrap"><table><thead><tr><th>答主</th><th>知乎主页</th><th>字数预估</th><th>推荐入选</th><th>报名时间</th><th>状态</th></tr></thead><tbody>{applications.length ? applications.map((item, index) => <tr key={`${item.zhihu_name}-${index}`}><td><span className="person-name">{item.zhihu_name}</span></td><td><a className="profile-link" href={item.profile_url} target="_blank" rel="noreferrer">查看主页 <Icon name="arrow" size={13}/></a></td><td>{item.expected_word_count ? `${item.expected_word_count.toLocaleString()} 字` : '—'}</td><td><button className={`recommend-toggle ${item.partner_recommended ? 'active' : ''}`} onClick={() => toggleRecommend(item.id)} title={item.partner_recommended ? '取消推荐' : '推荐入选'}>{item.partner_recommended ? '已推荐' : '推荐'}</button></td><td>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(item.submitted_at))}</td><td><span className={`pill ${item.status === 'selected' ? 'success' : item.status === 'pending' ? 'warning' : 'muted'}`}>{applicationStatus[item.status]}</span></td></tr>) : <tr><td colSpan="6" className="table-empty">暂无报名记录。</td></tr>}</tbody></table></div></section><section className="panel partner-table"><div className="panel-head"><div><h3>交稿情况</h3><p>合作方可审核作品，标记通过或不通过将直接作用于后台。</p></div></div><div className="table-wrap"><table><thead><tr><th>答主</th><th>交稿时间</th><th>审核状态</th><th>作品</th><th>是否通过</th></tr></thead><tbody>{deliveries.length ? deliveries.map((item, index) => <tr key={`${item.zhihu_name}-${index}`}><td>{item.zhihu_name}</td><td>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(item.submitted_at))}</td><td><span className={`pill ${item.status === 'approved' ? 'success' : item.status === 'pending' ? 'warning' : 'muted'}`}>{deliveryStatus[item.status]}</span></td><td><a className="profile-link" href={cleanZhihuAnswerUrl(item.article_url)} target="_blank" rel="noreferrer">查看作品</a></td><td>{item.status === 'approved' || item.status === 'rejected' ? <span className={`pill ${item.status === 'approved' ? 'success' : 'muted'}`}>{item.status === 'approved' ? '已通过' : '未通过'}</span> : <div className="partner-review-actions"><button className="compact success" onClick={() => reviewDelivery(item.id, 'approved')}>通过</button><button className="compact danger" onClick={() => reviewDelivery(item.id, 'rejected')}>不通过</button></div>}</td></tr>) : <tr><td colSpan="5" className="table-empty">暂无交稿记录。</td></tr>}</tbody></table></div></section></main>
+  return <div className="partner-page"><header className="partner-header"><a className="partner-brand" href="?home"><span className="brand-mark zhihu-mark">知</span><span>GameJourney</span><small>合作方协作页</small></a><div className="partner-header-right"><button className="reload outline" onClick={() => { window.location.href = '?dashboard' }}>切换到答主看板</button>{answerer?.zhihu_name === '灰域信风' && <button className="reload outline" onClick={() => { window.location.href = '?admin' }}>切换到管理员后台</button>}<button className="reload" onClick={loadSnapshot}>刷新数据</button>{partnerActivities && partnerActivities.filter(a => a.partner_token !== token).length > 0 && <button className="reload" onClick={() => { setGameSwitcherOpen(true); setGameSwitcherSearch(''); setDropdownOpen(false) }}>切换游戏</button>}<div className="dashboard-user-area" onClick={() => { setDropdownOpen(!dropdownOpen); setGameSwitcherOpen(false) }}><div className="dashboard-avatar-wrap">{answerer?.avatar_url ? <img className="dashboard-avatar-img" src={answerer.avatar_url} alt="" /> : <span className="dashboard-avatar-placeholder">{answerer?.zhihu_name?.[0] || '?'}</span>}</div>{unreadInboxCount > 0 && <span className="dashboard-avatar-dot"/>}<span className="dashboard-username">{answerer?.zhihu_name}<Icon name="arrow" size={12}/></span>{dropdownOpen && <><div className="dashboard-dropdown-backdrop" onClick={(e) => { e.stopPropagation(); setDropdownOpen(false) }}/><div className="dashboard-dropdown"><button onClick={() => { setDropdownOpen(false); setAvatarModalOpen(true) }}><Icon name="image" size={16}/> 修改头像</button><button onClick={() => { setDropdownOpen(false); setPwdResetModalOpen(true); setPwdResetStep('idle'); setPwdResetMsg(''); setNewPassword(''); setConfirmPassword(''); loadResetStatus() }}><Icon name="key" size={16}/> 重置密码</button><button onClick={() => { setDropdownOpen(false); setInboxModalOpen(true); loadInbox() }}><Icon name="inbox" size={16}/> 收件箱{unreadInboxCount > 0 && <span className="dashboard-dropdown-dot"/>}</button><button className="dashboard-logout-btn" onClick={async () => { await supabase.auth.signOut(); window.location.href = '?login' }}><Icon name="logout" size={16}/> 退出登录</button></div></>}</div></div></header><main className="partner-main"><section className="partner-hero" style={{ '--partner-hero-rgb': heroColor }}><div className="partner-hero-content"><p>{activity.game_name}</p><h1>{activity.title}</h1><span>在此补充活动 Key，并实时查看报名与交稿进展。</span><div><span>报名截止 {formatDate(activity.application_deadline)}</span><span>交付截止 {formatDate(activity.delivery_deadline)}</span></div></div>{activity.game_cover && <div className="partner-hero-art" aria-hidden="true"><img src={activity.game_cover} alt="" /></div>}</section>{error && <div className="error-box">操作失败：{error}<button onClick={() => setError('')}><Icon name="close" size={16}/></button></div>}<section className="partner-metrics"><div><strong>{keyCount}</strong><span>已入库 Key</span></div><div><strong>{applications.length}</strong><span>累计报名</span></div><div><strong>{selectedCount}</strong><span>已入选答主</span></div><div><strong>{deliveries.length}</strong><span>已交稿</span></div></section><section className="partner-grid"><section className="panel partner-key-panel"><div className="panel-head"><div><h3>添加 Key</h3><p>每行一个，也支持逗号、分号和制表符分隔；平台将自动识别。</p></div></div><div className="key-import-body"><textarea className="key-textarea" value={input} onChange={(event) => setInput(event.target.value)} placeholder={'示例：\nABCDE-FGHIJ-KLMNO-PQRST\nABCD-EFGH-IJKL-MNOP'}/>{parsedKeys.length > 0 && <div className="key-preview"><div className="key-preview-head"><strong>导入预览</strong><span>{parsedKeys.length} 个唯一 Key</span></div><div className="platform-summary">{Object.entries(platformCounts).map(([platform, count]) => <span className={`platform-tag ${platform}`} key={platform}>{platformLabel[platform]} {count}</span>)}</div></div>}<div className="key-import-footer"><span>重复 Key 将自动跳过，Key 明文不会展示在数据列表中。</span><button className="primary" onClick={importKeys} disabled={!parsedKeys.length || importing}>{importing ? '入库中…' : `确认入库 ${parsedKeys.length} 个 Key`}</button></div></div></section><section className="panel partner-progress"><div className="panel-head"><div><h3>进度说明</h3><p>活动数据由运营方维护，以下信息会实时更新。</p></div></div><div className="progress-list"><div><Icon name="users"/><span>报名情况</span><strong>{applications.length} 人</strong></div><div><Icon name="check"/><span>入选答主</span><strong>{selectedCount} 人</strong></div><div><Icon name="file"/><span>交稿情况</span><strong>{deliveries.length} 篇</strong></div></div><a className="partner-apply-link" href={window.location.origin + window.location.pathname + '?apply=' + activity.id}>点击进入答主报名页面</a></section></section><section className="panel partner-table"><div className="panel-head"><div><h3>报名情况</h3><p>展示答主信息，合作方可标记推荐人选。</p></div></div><div className="table-wrap"><table><thead><tr><th>答主</th><th>知乎主页</th><th>字数预估</th><th>推荐入选</th><th>报名时间</th><th>状态</th></tr></thead><tbody>{applications.length ? applications.map((item, index) => <tr key={`${item.zhihu_name}-${index}`}><td><span className="person-name">{item.zhihu_name}</span></td><td><a className="profile-link" href={item.profile_url} target="_blank" rel="noreferrer">查看主页 <Icon name="arrow" size={13}/></a></td><td>{item.expected_word_count ? `${item.expected_word_count.toLocaleString()} 字` : '—'}</td><td><button className={`recommend-toggle ${item.partner_recommended ? 'active' : ''}`} onClick={() => toggleRecommend(item.id)} title={item.partner_recommended ? '取消推荐' : '推荐入选'}>{item.partner_recommended ? '已推荐' : '推荐'}</button></td><td>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(item.submitted_at))}</td><td><span className={`pill ${item.status === 'selected' ? 'success' : item.status === 'pending' ? 'warning' : 'muted'}`}>{applicationStatus[item.status]}</span></td></tr>) : <tr><td colSpan="6" className="table-empty">暂无报名记录。</td></tr>}</tbody></table></div></section><section className="panel partner-table"><div className="panel-head"><div><h3>交稿情况</h3><p>合作方可审核作品，标记通过或不通过将直接作用于后台。</p></div></div><div className="table-wrap"><table><thead><tr><th>答主</th><th>交稿时间</th><th>审核状态</th><th>作品</th><th>是否通过</th></tr></thead><tbody>{deliveries.length ? deliveries.map((item, index) => <tr key={`${item.zhihu_name}-${index}`}><td>{item.zhihu_name}</td><td>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(item.submitted_at))}</td><td><span className={`pill ${item.status === 'approved' ? 'success' : item.status === 'pending' ? 'warning' : 'muted'}`}>{deliveryStatus[item.status]}</span></td><td><a className="profile-link" href={cleanZhihuAnswerUrl(item.article_url)} target="_blank" rel="noreferrer">查看作品</a></td><td>{item.status === 'approved' || item.status === 'rejected' ? <span className={`pill ${item.status === 'approved' ? 'success' : 'muted'}`}>{item.status === 'approved' ? '已通过' : '未通过'}</span> : <div className="partner-review-actions"><button className="compact success" onClick={() => reviewDelivery(item.id, 'approved')}>通过</button><button className="compact danger" onClick={() => reviewDelivery(item.id, 'rejected')}>不通过</button></div>}</td></tr>) : <tr><td colSpan="5" className="table-empty">暂无交稿记录。</td></tr>}</tbody></table></div></section></main>
     {gameSwitcherOpen && <div className="drawer-backdrop" onMouseDown={() => setGameSwitcherOpen(false)}><aside className="drawer" onMouseDown={(e) => e.stopPropagation()}><header className="drawer-header"><h2>切换游戏</h2><button onClick={() => setGameSwitcherOpen(false)}><Icon name="close"/></button></header><div className="drawer-search"><Icon name="grid" size={16}/><input placeholder="搜索游戏名称或活动名…" value={gameSwitcherSearch} onChange={(e) => setGameSwitcherSearch(e.target.value)} autoFocus/></div><div className="drawer-list">{filteredGames.length ? filteredGames.map((a) => <div key={a.partner_token} className="drawer-card" onClick={() => { setGameSwitcherOpen(false); window.location.href = '?partner=' + a.partner_token }}><div className="drawer-card-cover">{a.game_cover ? <img src={a.game_cover} alt={a.game_name}/> : <span>{a.game_name?.[0] || '游'}</span>}</div><div className="drawer-card-body"><p className="drawer-card-game">{a.game_name}</p><h3>{a.title}</h3></div></div>) : <div className="drawer-empty">没有匹配的活动</div>}</div></aside></div>}
     {pwdResetModalOpen && <Modal title="重置密码" onClose={() => { setPwdResetModalOpen(false); setPwdResetStep('idle'); setPwdResetMsg(''); setNewPassword(''); setConfirmPassword('') }}>
       <div className="pwd-reset-body">
@@ -1785,13 +1790,15 @@ function DateTimeField({ label, value, onChange }) {
 function Field({ label, textarea, wide, required, onChange, onBlur, ...props }) { return <label className={`field ${wide ? 'field-wide' : ''}`}><span>{label}{required ? <span className="req">*</span> : null}</span>{textarea ? <textarea required={required} onChange={(event) => onChange(event.target.value)} onBlur={onBlur ? (event) => onBlur(event) : undefined} {...props}/> : <input required={required} onChange={(event) => onChange(event.target.value)} onBlur={onBlur ? (event) => onBlur(event) : undefined} {...props}/>}</label> }
 function Modal({ title, children, onClose, className = '', wide }) { return <div className="modal-backdrop" onMouseDown={onClose}><section className={`modal ${className} ${wide ? 'modal-wide' : ''}`} onMouseDown={(event) => event.stopPropagation()}><header><h2>{title}</h2><button onClick={onClose}><Icon name="close"/></button></header>{children}</section></div> }
 
-const SESSION_KEY = 'keyflow_answerer_session'
-function getAnswererSession() {
-  try { const s = localStorage.getItem(SESSION_KEY); return s ? JSON.parse(s) : null } catch { return null }
+async function getCurrentAnswerer() {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+  const { data, error } = await supabase.rpc('keyflow_my_answerer_profile')
+  return error || !data?.length ? null : data[0]
 }
 
 function AnswererDashboard() {
-  const answerer = getAnswererSession()
+  const [answerer, setAnswerer] = useState(null)
   const [dashboard, setDashboard] = useState(null)
   const [, forceRender] = useReducer(x => x + 1, 0)
   const [error, setError] = useState('')
@@ -1823,6 +1830,8 @@ function AnswererDashboard() {
   const [participatedModalOpen, setParticipatedModalOpen] = useState(false)
   const [completedActivities, setCompletedActivities] = useState([])
   const [participatedActivities, setParticipatedActivities] = useState([])
+  useEffect(() => { getCurrentAnswerer().then(setAnswerer) }, [])
+
   const historicalMoreCovers = useMemo(() => {
     const activities = dashboard?.historical_activities || []
     const rank = (id = '') => [...id].reduce((value, char) => ((value << 5) - value + char.charCodeAt(0)) | 0, 0)
@@ -1900,8 +1909,6 @@ function AnswererDashboard() {
     const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(filePath)
     const { error: updateErr } = await supabase.from('keyflow_answerers').update({ avatar_url: publicUrl, updated_at: new Date().toISOString() }).eq('id', answerer.id)
     if (updateErr) { setAvatarUploading(false); return }
-    const session = { ...answerer, avatar_url: publicUrl }
-    localStorage.setItem(SESSION_KEY, JSON.stringify(session))
     setAvatarUploading(false)
     setAvatarModalOpen(false)
     setAvatarPreview(publicUrl)
@@ -1952,7 +1959,7 @@ function AnswererDashboard() {
     if (rpcErr) { setPwdResetMsg(rpcErr.message); return }
     setPwdResetStep('done')
     setPwdResetMsg('密码重置成功，请使用新密码重新登录。')
-    setTimeout(() => { localStorage.removeItem(SESSION_KEY); window.location.href = '?login' }, 2000)
+    setTimeout(() => { window.location.href = '?login' }, 2000)
   }
 
   useEffect(() => {
@@ -2036,14 +2043,15 @@ function AnswererDashboard() {
   }
 
   useEffect(() => {
+    if (!answerer?.id) return
     // 并行发起所有独立请求，减少串行等待时间
     Promise.all([
       loadDashboard(),
       loadSharedCode(),
       fetchUnreadCount(),
-      (async () => { if (answerer?.id) { const { data } = await supabase.rpc('keyflow_is_partner', { p_answerer_id: answerer.id }); setIsPartner(!!data) } })(),
+      (async () => { const { data } = await supabase.rpc('keyflow_is_partner', { p_answerer_id: answerer.id }); setIsPartner(!!data) })(),
     ])
-  }, [])
+  }, [answerer?.id])
 
   useEffect(() => {
     if (!answerer?.id) return
@@ -2093,7 +2101,7 @@ function AnswererDashboard() {
   const tierInfo = getTierInfo(points)
   const prevMin = tierInfo.min, nextMin = tierInfo.nextMin || prevMin + 500
   const progressPct = prevMin === 0 && points === 0 ? 0 : Math.min(100, Math.round(((points - prevMin) / (nextMin - prevMin)) * 100))
-  return <div className="partner-page"><header className="partner-header"><a className="partner-brand" href="?home"><span className="brand-mark zhihu-mark">知</span><span>GameJourney</span><small>答主看板</small></a><div className="partner-header-right">{(isPartner || answerer?.zhihu_name === '灰域信风') && <button className="reload outline" onClick={() => { window.location.href = '?partner' }}>切换到合作方看板</button>}{answerer?.zhihu_name === '灰域信风' && <button className="reload outline" onClick={() => { window.location.href = '?admin' }}>切换到管理员后台</button>}<button className="reload" onClick={loadDashboard}>刷新数据</button><button className="reload" onClick={() => { window.location.href = '?home' }}>回到封面</button><div className="dashboard-user-area" onClick={() => setDropdownOpen(!dropdownOpen)}><div className="dashboard-avatar-wrap">{answerer?.avatar_url ? <img className="dashboard-avatar-img" src={answerer.avatar_url} alt="" /> : <span className="dashboard-avatar-placeholder">{answerer?.zhihu_name?.[0] || '?'}</span>}</div>{unreadInboxCount > 0 && <span className="dashboard-avatar-dot"/>}<span className="dashboard-username">{answerer?.zhihu_name || dashboard?.answerer?.zhihu_name}<Icon name="arrow" size={12}/></span>{dropdownOpen && <><div className="dashboard-dropdown-backdrop" onClick={(e) => { e.stopPropagation(); setDropdownOpen(false) }}/><div className="dashboard-dropdown"><button onClick={() => { setDropdownOpen(false); setAvatarModalOpen(true) }}><Icon name="image" size={16}/> 修改头像</button><button onClick={() => { setDropdownOpen(false); setPwdResetModalOpen(true); setPwdResetStep('idle'); setPwdResetMsg(''); setNewPassword(''); setConfirmPassword(''); loadResetStatus() }}><Icon name="key" size={16}/> 重置密码</button><button onClick={() => { setDropdownOpen(false); setInboxModalOpen(true); loadInbox() }}><Icon name="inbox" size={16}/> 收件箱{unreadInboxCount > 0 && <span className="dashboard-dropdown-dot"/>}</button><button className="dashboard-logout-btn" onClick={() => { localStorage.removeItem(SESSION_KEY); window.location.href = '?login' }}><Icon name="logout" size={16}/> 退出登录</button></div></>}</div></div></header><main className="partner-main answerer-dashboard"><section className="partner-hero dashboard-hero"><div className="partner-hero-content"><p>你好，{dashboard.answerer.zhihu_name}</p><h1>我的测评活动</h1><span>查看正在参与的活动和已提交的作品。</span><div className="answerer-stats-row"><div className="hero-shared-code"><div className="hero-shared-code-inner">{sharedCode ? <div className="hero-shared-code-card"><span className="hero-shared-code-value" title="点击复制" onClick={() => { navigator.clipboard.writeText(sharedCode.code); setSharedMsg('邀请码已复制') }}>{sharedCode.code}</span><small>生成于 {new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(sharedCode.created_at))}</small></div> : <button className="hero-shared-code-btn" onClick={generateSharedCode} disabled={generatingShared}>{generatingShared ? '生成中…' : '分享邀请码'}<small>每日可生成一个</small></button>}{sharedMsg && <span className="hero-shared-code-msg" style={sharedMsg.includes('已生成') || sharedMsg.includes('已复制') ? undefined : { color: '#fca5a5' }}>{sharedMsg}</span>}</div></div><div className="answerer-stats"><div className="answerer-stats-left"><div className="answerer-tier-row"><span className="answerer-tier-icon">Lv{tierInfo.tier}</span><div><span className="answerer-tier-title">{tierInfo.title}</span><span className="answerer-tier-points">{points} 积分</span></div></div><div className="answerer-tier-progress"><div className="answerer-progress-bar"><div className="answerer-progress-fill" style={{width: progressPct + '%'}}></div></div>{tierInfo.nextTitle && <span className="answerer-next-tier">距「{tierInfo.nextTitle}」还需 {tierInfo.nextMin - points} 积分</span>}</div></div></div><div className="answerer-hero-metrics"><div className="answerer-metric answerer-metric-clickable" onClick={() => { setParticipatedModalOpen(true); loadParticipatedActivities() }} title="查看已参与活动详情"><span className="answerer-metric-value">{dashboard.participated_count || 0}</span><span className="answerer-metric-label">已参与活动</span><span className="answerer-metric-note">50 积分/个</span></div><div className="answerer-metric answerer-metric-clickable" onClick={() => { setCompletedModalOpen(true); loadCompletedActivities() }} title="查看已完成活动详情"><span className="answerer-metric-value">{dashboard.submission_count || 0}</span><span className="answerer-metric-label">已完成活动</span><span className="answerer-metric-note">300 积分/个</span></div><div className="answerer-metric"><span className="answerer-metric-value">{dashboard.daily_submission_count || 0}</span><span className="answerer-metric-label">已投稿日常回答</span><span className="answerer-metric-note">80 积分/个</span></div></div></div></div></section><section className="dashboard-daily-form"><div className="panel-head dashboard-section-head"><div><h3>今日创作投稿（非测评活动内容）</h3><p>任何知乎游戏领域回答都可以投稿，可提升积分；每日可投稿1条；灌水投稿会导致账户扣分甚至封禁。</p></div></div><form onSubmit={submitDaily}><div className="daily-form-fields"><input type="url" placeholder="知乎回答链接（必填，不收今日之前老投稿）" value={dailyUrl} onChange={(e) => setDailyUrl(e.target.value)} required/><input type="text" placeholder="作品标题（必填，不收今日之前老投稿）" value={dailyTitle} onChange={(e) => setDailyTitle(e.target.value)} required/><button type="submit" className="primary" disabled={dailySubmitting}>{dailySubmitting ? '投稿中…' : '提交投稿'}</button></div>{dailyMsg && <p className="daily-form-msg">{dailyMsg}</p>}</form></section><section><div className="panel-head dashboard-section-head"><div><h3>正在参与</h3><p>点击活动卡片回到申领页。</p></div></div><div className="dashboard-activity-cards">{dashboard.activities.length ? dashboard.activities.map((activity) => <a className="dashboard-activity-card" href={`?apply=${activity.id}`} key={activity.id}><div className="dashboard-activity-cover">{activity.game_cover ? <img src={activity.game_cover} alt={activity.game_name} loading="lazy"/> : <span>{activity.game_name?.[0] || '游'}</span>}</div><div className="dashboard-activity-body"><p>{activity.game_name}</p><h3>{activity.title}</h3><div><span className={`pill stage-${getPersonalStage(activity) === 'key_distribution' ? 'orange' : getPersonalStage(activity) === 'delivery' ? 'purple' : getPersonalStage(activity) === 'completed' ? 'green' : 'blue'}`}>{stageLabel[getPersonalStage(activity)] || getPersonalStage(activity)}</span>{getPersonalStage(activity) === 'delivery' && activity.delivery_deadline && <span className="dashboard-deadline">距截稿还剩 {daysLeft(activity.delivery_deadline)} 天</span>}</div></div></a>) : <div className="dashboard-empty">暂无正在参与的活动。</div>}</div></section><section><div className="panel-head dashboard-section-head"><div><h3>更多体验活动</h3><p>后台已上线的活动，点击卡片前往报名。</p></div></div><div className="dashboard-activity-cards">{moreActivities.length ? moreActivities.map((activity) => <a className="dashboard-activity-card" href={`?apply=${activity.id}`} key={activity.id}><div className="dashboard-activity-cover">{activity.game_cover ? <img src={activity.game_cover} alt={activity.game_name} loading="lazy"/> : <span>{activity.game_name?.[0] || '游'}</span>}</div><div className="dashboard-activity-body"><p>{activity.game_name}</p><h3>{activity.title}</h3><div><span className={`pill stage-${activity.status === 'key_distribution' ? 'orange' : activity.status === 'delivery' ? 'purple' : activity.status === 'completed' ? 'green' : 'blue'}`}>{stageLabel[activity.status] || activity.status}</span>{activity.status === 'delivery' && activity.delivery_deadline && <span className="dashboard-deadline">距截稿还剩 {daysLeft(activity.delivery_deadline)} 天</span>}</div></div></a>) : <div className="dashboard-empty">{dashboard.more_activities === undefined ? '活动卡片加载中，请耐心等候' : '暂无更多可体验的活动。'}</div>}</div></section><section><div className="panel-head dashboard-section-head"><div><h3>历史活动</h3><p>招募已结束的活动回顾。</p></div></div><div className="dashboard-activity-cards">{historicalActivities.length ? (<>{historicalActivities.slice(0, HISTORICAL_VISIBLE).map((activity) => <a className="dashboard-activity-card" href={`?apply=${activity.id}`} key={activity.id}><div className="dashboard-activity-cover">{activity.game_cover ? <img src={activity.game_cover} alt={activity.game_name} loading="lazy"/> : <span>{activity.game_name?.[0] || '游'}</span>}</div><div className="dashboard-activity-body"><p>{activity.game_name}</p><h3>{activity.title}</h3><div>{activity.application_status === 'rejected' ? <span className="pill muted">未能入选</span> : activity.has_delivery ? <span className="pill stage-green">成功参与</span> : <span className={`pill stage-${activity.status === 'key_distribution' ? 'orange' : activity.status === 'delivery' ? 'purple' : activity.status === 'completed' ? 'green' : 'blue'}`}>{stageLabel[activity.status] || activity.status}</span>}</div></div></a>)}{historicalActivities.length > HISTORICAL_VISIBLE && <a className="dashboard-activity-card dashboard-activity-more" href="?home" style={{textDecoration:'none'}}><div className="dashboard-activity-cover dashboard-activity-more-cover">{(() => { const colors = ['#6366f1','#8b5cf6','#3b82f6','#06b6d4','#10b981','#f59e0b','#ef4444','#ec4899','#14b8a6']; const picked = historicalMoreCovers; return Array.from({length:9}, (_,i) => { const act = picked[i]; const cover = act?.game_cover; return <div key={i} className="dashboard-activity-more-tile" style={cover ? {backgroundImage:`url(${cover})`} : {background:colors[i%9]}} /> }) })()}</div><div className="dashboard-activity-body"><h3>查看更多</h3><p>还有 {historicalActivities.length - HISTORICAL_VISIBLE} 个历史活动</p></div></a>}</>) : <div className="dashboard-empty">{dashboard.historical_activities === undefined ? '活动卡片加载中，请耐心等候' : '暂无历史活动。'}</div>}</div></section><section className="panel partner-table"><div className="panel-head"><div><h3>曾提交作品</h3><p>已提交的知乎作品记录。</p></div><button className="outline-button compact" onClick={() => { const headers = ['稿件类型', '作品标题', '作品链接']; const rows = (dashboard.submissions || []).map(s => [s.type === 'daily' ? '日常稿件' : '活动稿件', s.article_title || s.activity_title || '-', cleanZhihuAnswerUrl(s.article_url) || '']); const csv = '\uFEFF' + [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n'); const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${dashboard.answerer.zhihu_name}作品集_${fileTimestamp()}.csv`; a.click(); URL.revokeObjectURL(url) }}>下载 Excel</button></div><div className="table-wrap"><table><thead><tr><th>稿件类型</th><th>作品标题</th><th>作品链接</th></tr></thead><tbody>{(dashboard.submissions || []).length ? (dashboard.submissions || []).map((submission, idx) => <tr key={`submission-${idx}`}><td><span className={`submission-type ${submission.type === 'daily' ? 'daily' : 'activity'}`}>{submission.type === 'daily' ? '日常稿件' : '活动稿件'}</span></td><td>{submission.article_title || submission.activity_title || '-'}</td><td>{submission.article_url ? (() => { const u = cleanZhihuAnswerUrl(submission.article_url); return <a href={u} target="_blank" rel="noreferrer" title={u} className="profile-link" style={{wordBreak:'break-all'}}>{u.length > 50 ? u.slice(0, 50) + '...' : u} <Icon name="arrow" size={13}/></a> })() : '-'}</td></tr>) : <tr><td colSpan="3" className="table-empty">尚未提交作品。</td></tr>}</tbody></table></div></section></main>
+  return <div className="partner-page"><header className="partner-header"><a className="partner-brand" href="?home"><span className="brand-mark zhihu-mark">知</span><span>GameJourney</span><small>答主看板</small></a><div className="partner-header-right">{(isPartner || answerer?.zhihu_name === '灰域信风') && <button className="reload outline" onClick={() => { window.location.href = '?partner' }}>切换到合作方看板</button>}{answerer?.zhihu_name === '灰域信风' && <button className="reload outline" onClick={() => { window.location.href = '?admin' }}>切换到管理员后台</button>}<button className="reload" onClick={loadDashboard}>刷新数据</button><button className="reload" onClick={() => { window.location.href = '?home' }}>回到封面</button><div className="dashboard-user-area" onClick={() => setDropdownOpen(!dropdownOpen)}><div className="dashboard-avatar-wrap">{answerer?.avatar_url ? <img className="dashboard-avatar-img" src={answerer.avatar_url} alt="" /> : <span className="dashboard-avatar-placeholder">{answerer?.zhihu_name?.[0] || '?'}</span>}</div>{unreadInboxCount > 0 && <span className="dashboard-avatar-dot"/>}<span className="dashboard-username">{answerer?.zhihu_name || dashboard?.answerer?.zhihu_name}<Icon name="arrow" size={12}/></span>{dropdownOpen && <><div className="dashboard-dropdown-backdrop" onClick={(e) => { e.stopPropagation(); setDropdownOpen(false) }}/><div className="dashboard-dropdown"><button onClick={() => { setDropdownOpen(false); setAvatarModalOpen(true) }}><Icon name="image" size={16}/> 修改头像</button><button onClick={() => { setDropdownOpen(false); setPwdResetModalOpen(true); setPwdResetStep('idle'); setPwdResetMsg(''); setNewPassword(''); setConfirmPassword(''); loadResetStatus() }}><Icon name="key" size={16}/> 重置密码</button><button onClick={() => { setDropdownOpen(false); setInboxModalOpen(true); loadInbox() }}><Icon name="inbox" size={16}/> 收件箱{unreadInboxCount > 0 && <span className="dashboard-dropdown-dot"/>}</button><button className="dashboard-logout-btn" onClick={async () => { await supabase.auth.signOut(); window.location.href = '?login' }}><Icon name="logout" size={16}/> 退出登录</button></div></>}</div></div></header><main className="partner-main answerer-dashboard"><section className="partner-hero dashboard-hero"><div className="partner-hero-content"><p>你好，{dashboard.answerer.zhihu_name}</p><h1>我的测评活动</h1><span>查看正在参与的活动和已提交的作品。</span><div className="answerer-stats-row"><div className="hero-shared-code"><div className="hero-shared-code-inner">{sharedCode ? <div className="hero-shared-code-card"><span className="hero-shared-code-value" title="点击复制" onClick={() => { navigator.clipboard.writeText(sharedCode.code); setSharedMsg('邀请码已复制') }}>{sharedCode.code}</span><small>生成于 {new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(sharedCode.created_at))}</small></div> : <button className="hero-shared-code-btn" onClick={generateSharedCode} disabled={generatingShared}>{generatingShared ? '生成中…' : '分享邀请码'}<small>每日可生成一个</small></button>}{sharedMsg && <span className="hero-shared-code-msg" style={sharedMsg.includes('已生成') || sharedMsg.includes('已复制') ? undefined : { color: '#fca5a5' }}>{sharedMsg}</span>}</div></div><div className="answerer-stats"><div className="answerer-stats-left"><div className="answerer-tier-row"><span className="answerer-tier-icon">Lv{tierInfo.tier}</span><div><span className="answerer-tier-title">{tierInfo.title}</span><span className="answerer-tier-points">{points} 积分</span></div></div><div className="answerer-tier-progress"><div className="answerer-progress-bar"><div className="answerer-progress-fill" style={{width: progressPct + '%'}}></div></div>{tierInfo.nextTitle && <span className="answerer-next-tier">距「{tierInfo.nextTitle}」还需 {tierInfo.nextMin - points} 积分</span>}</div></div></div><div className="answerer-hero-metrics"><div className="answerer-metric answerer-metric-clickable" onClick={() => { setParticipatedModalOpen(true); loadParticipatedActivities() }} title="查看已参与活动详情"><span className="answerer-metric-value">{dashboard.participated_count || 0}</span><span className="answerer-metric-label">已参与活动</span><span className="answerer-metric-note">50 积分/个</span></div><div className="answerer-metric answerer-metric-clickable" onClick={() => { setCompletedModalOpen(true); loadCompletedActivities() }} title="查看已完成活动详情"><span className="answerer-metric-value">{dashboard.submission_count || 0}</span><span className="answerer-metric-label">已完成活动</span><span className="answerer-metric-note">300 积分/个</span></div><div className="answerer-metric"><span className="answerer-metric-value">{dashboard.daily_submission_count || 0}</span><span className="answerer-metric-label">已投稿日常回答</span><span className="answerer-metric-note">80 积分/个</span></div></div></div></div></section><section className="dashboard-daily-form"><div className="panel-head dashboard-section-head"><div><h3>今日创作投稿（非测评活动内容）</h3><p>任何知乎游戏领域回答都可以投稿，可提升积分；每日可投稿1条；灌水投稿会导致账户扣分甚至封禁。</p></div></div><form onSubmit={submitDaily}><div className="daily-form-fields"><input type="url" placeholder="知乎回答链接（必填，不收今日之前老投稿）" value={dailyUrl} onChange={(e) => setDailyUrl(e.target.value)} required/><input type="text" placeholder="作品标题（必填，不收今日之前老投稿）" value={dailyTitle} onChange={(e) => setDailyTitle(e.target.value)} required/><button type="submit" className="primary" disabled={dailySubmitting}>{dailySubmitting ? '投稿中…' : '提交投稿'}</button></div>{dailyMsg && <p className="daily-form-msg">{dailyMsg}</p>}</form></section><section><div className="panel-head dashboard-section-head"><div><h3>正在参与</h3><p>点击活动卡片回到申领页。</p></div></div><div className="dashboard-activity-cards">{dashboard.activities.length ? dashboard.activities.map((activity) => <a className="dashboard-activity-card" href={`?apply=${activity.id}`} key={activity.id}><div className="dashboard-activity-cover">{activity.game_cover ? <img src={activity.game_cover} alt={activity.game_name} loading="lazy"/> : <span>{activity.game_name?.[0] || '游'}</span>}</div><div className="dashboard-activity-body"><p>{activity.game_name}</p><h3>{activity.title}</h3><div><span className={`pill stage-${getPersonalStage(activity) === 'key_distribution' ? 'orange' : getPersonalStage(activity) === 'delivery' ? 'purple' : getPersonalStage(activity) === 'completed' ? 'green' : 'blue'}`}>{stageLabel[getPersonalStage(activity)] || getPersonalStage(activity)}</span>{getPersonalStage(activity) === 'delivery' && activity.delivery_deadline && <span className="dashboard-deadline">距截稿还剩 {daysLeft(activity.delivery_deadline)} 天</span>}</div></div></a>) : <div className="dashboard-empty">暂无正在参与的活动。</div>}</div></section><section><div className="panel-head dashboard-section-head"><div><h3>更多体验活动</h3><p>后台已上线的活动，点击卡片前往报名。</p></div></div><div className="dashboard-activity-cards">{moreActivities.length ? moreActivities.map((activity) => <a className="dashboard-activity-card" href={`?apply=${activity.id}`} key={activity.id}><div className="dashboard-activity-cover">{activity.game_cover ? <img src={activity.game_cover} alt={activity.game_name} loading="lazy"/> : <span>{activity.game_name?.[0] || '游'}</span>}</div><div className="dashboard-activity-body"><p>{activity.game_name}</p><h3>{activity.title}</h3><div><span className={`pill stage-${activity.status === 'key_distribution' ? 'orange' : activity.status === 'delivery' ? 'purple' : activity.status === 'completed' ? 'green' : 'blue'}`}>{stageLabel[activity.status] || activity.status}</span>{activity.status === 'delivery' && activity.delivery_deadline && <span className="dashboard-deadline">距截稿还剩 {daysLeft(activity.delivery_deadline)} 天</span>}</div></div></a>) : <div className="dashboard-empty">{dashboard.more_activities === undefined ? '活动卡片加载中，请耐心等候' : '暂无更多可体验的活动。'}</div>}</div></section><section><div className="panel-head dashboard-section-head"><div><h3>历史活动</h3><p>招募已结束的活动回顾。</p></div></div><div className="dashboard-activity-cards">{historicalActivities.length ? (<>{historicalActivities.slice(0, HISTORICAL_VISIBLE).map((activity) => <a className="dashboard-activity-card" href={`?apply=${activity.id}`} key={activity.id}><div className="dashboard-activity-cover">{activity.game_cover ? <img src={activity.game_cover} alt={activity.game_name} loading="lazy"/> : <span>{activity.game_name?.[0] || '游'}</span>}</div><div className="dashboard-activity-body"><p>{activity.game_name}</p><h3>{activity.title}</h3><div>{activity.application_status === 'rejected' ? <span className="pill muted">未能入选</span> : activity.has_delivery ? <span className="pill stage-green">成功参与</span> : <span className={`pill stage-${activity.status === 'key_distribution' ? 'orange' : activity.status === 'delivery' ? 'purple' : activity.status === 'completed' ? 'green' : 'blue'}`}>{stageLabel[activity.status] || activity.status}</span>}</div></div></a>)}{historicalActivities.length > HISTORICAL_VISIBLE && <a className="dashboard-activity-card dashboard-activity-more" href="?home" style={{textDecoration:'none'}}><div className="dashboard-activity-cover dashboard-activity-more-cover">{(() => { const colors = ['#6366f1','#8b5cf6','#3b82f6','#06b6d4','#10b981','#f59e0b','#ef4444','#ec4899','#14b8a6']; const picked = historicalMoreCovers; return Array.from({length:9}, (_,i) => { const act = picked[i]; const cover = act?.game_cover; return <div key={i} className="dashboard-activity-more-tile" style={cover ? {backgroundImage:`url(${cover})`} : {background:colors[i%9]}} /> }) })()}</div><div className="dashboard-activity-body"><h3>查看更多</h3><p>还有 {historicalActivities.length - HISTORICAL_VISIBLE} 个历史活动</p></div></a>}</>) : <div className="dashboard-empty">{dashboard.historical_activities === undefined ? '活动卡片加载中，请耐心等候' : '暂无历史活动。'}</div>}</div></section><section className="panel partner-table"><div className="panel-head"><div><h3>曾提交作品</h3><p>已提交的知乎作品记录。</p></div><button className="outline-button compact" onClick={() => { const headers = ['稿件类型', '作品标题', '作品链接']; const rows = (dashboard.submissions || []).map(s => [s.type === 'daily' ? '日常稿件' : '活动稿件', s.article_title || s.activity_title || '-', cleanZhihuAnswerUrl(s.article_url) || '']); const csv = '\uFEFF' + [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n'); const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${dashboard.answerer.zhihu_name}作品集_${fileTimestamp()}.csv`; a.click(); URL.revokeObjectURL(url) }}>下载 Excel</button></div><div className="table-wrap"><table><thead><tr><th>稿件类型</th><th>作品标题</th><th>作品链接</th></tr></thead><tbody>{(dashboard.submissions || []).length ? (dashboard.submissions || []).map((submission, idx) => <tr key={`submission-${idx}`}><td><span className={`submission-type ${submission.type === 'daily' ? 'daily' : 'activity'}`}>{submission.type === 'daily' ? '日常稿件' : '活动稿件'}</span></td><td>{submission.article_title || submission.activity_title || '-'}</td><td>{submission.article_url ? (() => { const u = cleanZhihuAnswerUrl(submission.article_url); return <a href={u} target="_blank" rel="noreferrer" title={u} className="profile-link" style={{wordBreak:'break-all'}}>{u.length > 50 ? u.slice(0, 50) + '...' : u} <Icon name="arrow" size={13}/></a> })() : '-'}</td></tr>) : <tr><td colSpan="3" className="table-empty">尚未提交作品。</td></tr>}</tbody></table></div></section></main>
     {dailySuccessOpen && <Modal title="投稿成功" onClose={() => setDailySuccessOpen(false)}><div className="daily-success-modal"><div className="step-message-icon success"><Icon name="check" size={24}/></div><p>今日创作投稿已提交</p><span>管理员审核后会进行后续处理。</span><button className="primary" onClick={() => setDailySuccessOpen(false)}>知道了</button></div></Modal>}
     {avatarModalOpen && <Modal title="修改头像" onClose={() => { setAvatarModalOpen(false); setAvatarMsg(''); setAvatarFile(null) }}>
       <div className="avatar-upload-body">
@@ -2248,7 +2256,7 @@ function ClaimPage({ activityId, authCode }) {
   const [registering, setRegistering] = useState(false)
   const [notice, setNotice] = useState('')
   const [activeShot, setActiveShot] = useState(0)
-  const [answerer, setAnswerer] = useState(() => getAnswererSession())
+  const [answerer, setAnswerer] = useState(null)
   const [moreActivities, setMoreActivities] = useState([])
   const [platformStock, setPlatformStock] = useState({})
   const isExempted = useMemo(() => {
@@ -2269,6 +2277,8 @@ function ClaimPage({ activityId, authCode }) {
 
   useEffect(() => {
     const init = async () => {
+      const currentAnswerer = await getCurrentAnswerer()
+      setAnswerer(currentAnswerer)
       const { data: act, error: actErr } = await supabase.from('keyflow_activities').select('*').eq('id', activityId).single()
       if (actErr) { setError('该申领页不存在或已失效。'); setLoading(false); return }
       setActivity(act)
@@ -2291,7 +2301,6 @@ function ClaimPage({ activityId, authCode }) {
           .limit(4)
         if (recruiting) setMoreActivities(recruiting)
       }
-      const currentAnswerer = getAnswererSession()
       const applicationQuery = currentAnswerer?.id
         ? supabase.from('keyflow_applications').select('*, keyflow_deliveries(id, status, article_url, article_title), keyflow_keys(claimed_at)').eq('activity_id', activityId).eq('answerer_id', currentAnswerer.id).maybeSingle()
         : null
@@ -2340,7 +2349,7 @@ function ClaimPage({ activityId, authCode }) {
       setError('活动已完结，无法报名')
       return
     }
-    const curAnswerer = answerer || getAnswererSession()
+    const curAnswerer = answerer || await getCurrentAnswerer()
     if (curAnswerer) {
       // 已登录答主：直接创建报名（无需邀请码）
       setRegistering(true)
@@ -2529,7 +2538,7 @@ function ClaimPage({ activityId, authCode }) {
 }
 
 function RegisterPage({ aid, redirect }) {
-  const [banner, setBanner] = useState(() => getCachedBanner() || defaultRegisterBanner)
+  const [banner, setBanner] = useState(() => getCachedBanner())
   const [form, setForm] = useState({ invitation_code: '', zhihu_name: '', account_address: '', wechat_id: '', password: '', confirm_password: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -2594,35 +2603,40 @@ function RegisterPage({ aid, redirect }) {
     if (form.password.length < 6) { setError('密码至少 6 位'); return }
     if (form.password !== form.confirm_password) { setError('两次输入的密码不一致'); return }
     setLoading(true)
-    const { data, error: rpcErr } = await supabase.rpc('keyflow_register_answerer', {
-      p_code: form.invitation_code.trim(),
-      p_zhihu_name: form.zhihu_name.trim(),
-      p_account_address: form.account_address.trim(),
-      p_wechat_id: form.wechat_id.trim(),
-      p_password: form.password,
+    const { data: bootstrapData, error: bootstrapError } = await supabase.functions.invoke('answerer-auth-bootstrap', {
+      body: {
+        action: 'register',
+        code: form.invitation_code.trim(),
+        zhihu_name: form.zhihu_name.trim(),
+        account_address: form.account_address.trim(),
+        wechat_id: form.wechat_id.trim(),
+        password: form.password,
+      },
     })
-    setLoading(false)
-    if (rpcErr) {
-      const dupMatch = rpcErr.message.match(/duplicate_zhihu_name:\s*(.+)$/)
-      if (dupMatch) {
-        const suggestionMatch = rpcErr.message.match(new RegExp('"([^"]+)"$'))
-        setError(dupMatch[1])
-        setNameSuggestion(suggestionMatch ? suggestionMatch[1] : null)
-        return
-      }
-      if (rpcErr.message.startsWith('duplicate_account_address:')) {
-        setError(rpcErr.message.replace('duplicate_account_address: ', ''))
-        return
-      }
-      setError(rpcErr.message); return
+    if (bootstrapError || !bootstrapData?.internal_email) {
+      setLoading(false)
+      setError(bootstrapData?.message || bootstrapError?.message || '注册失败，请稍后重试')
+      return
     }
-    localStorage.setItem(SESSION_KEY, JSON.stringify(data))
+    const { error: authError } = await supabase.auth.signInWithPassword({
+      email: bootstrapData.internal_email,
+      password: form.password,
+    })
+    if (authError) { setLoading(false); setError('认证登录失败，请稍后重试'); return }
+    const { data: profile, error: profileError } = await supabase.rpc('keyflow_my_answerer_profile')
+    setLoading(false)
+    if (profileError || !profile?.length) {
+      await supabase.auth.signOut()
+      setError('答主资料绑定失败，请稍后重试')
+      return
+    }
     toast('注册成功')
+    const answerer = profile[0]
     let dst
     if (redirect === 'partner') dst = '?partner'
     else if (aid) dst = `?apply=${aid}`
     else {
-      const { data: isPartner } = await supabase.rpc('keyflow_is_partner', { p_answerer_id: data.id })
+      const { data: isPartner } = await supabase.rpc('keyflow_is_partner', { p_answerer_id: answerer.id })
       dst = isPartner ? '?partner' : '?dashboard'
     }
     window.setTimeout(() => { window.location.href = dst }, 800)
@@ -2631,7 +2645,7 @@ function RegisterPage({ aid, redirect }) {
   return <div className="register-page-wrapper">
     <div className="register-card">
       <div className="register-banner">
-        <div className="register-banner-bg" style={{ backgroundImage: `url(${banner})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
+        {banner && <div className="register-banner-bg" style={{ backgroundImage: `url(${banner})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />}
         <div className="register-banner-content">
           <span className="brand-mark zhihu-mark">知</span>
           <h1>加入知乎游戏体验计划</h1>
@@ -2648,7 +2662,7 @@ function RegisterPage({ aid, redirect }) {
           </label>
           <label className="register-field">
             <span>知乎用户名<em>*</em></span>
-            <input required value={form.zhihu_name} placeholder="请和你的知乎昵称保持一致，登录页面的唯一账号" onChange={(e) => setForm({ ...form, zhihu_name: e.target.value })} />
+            <input required value={form.zhihu_name} placeholder="用于登录和资料展示" onChange={(e) => setForm({ ...form, zhihu_name: e.target.value })} />
             {nameHint?.type === 'checking' && <span className="register-field-hint checking">检测中…</span>}
             {nameHint?.type === 'taken' && <span className="register-field-hint taken">该用户名已被使用，建议 <button type="button" className="register-suggestion-btn" onClick={() => { setForm({ ...form, zhihu_name: nameHint.suggestion }); setNameHint(null); }}>使用「{nameHint.suggestion}」</button></span>}
           </label>
@@ -2681,7 +2695,7 @@ function RegisterPage({ aid, redirect }) {
 }
 
 function LoginPage({ aid, redirect, token }) {
-  const [banner, setBanner] = useState(() => getCachedBanner() || defaultRegisterBanner)
+  const [banner, setBanner] = useState(() => getCachedBanner())
   const [form, setForm] = useState({ zhihu_name: '', password: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -2699,17 +2713,31 @@ function LoginPage({ aid, redirect, token }) {
     if (!form.zhihu_name.trim()) { setError('请输入知乎用户名'); return }
     if (!form.password) { setError('请输入密码'); return }
     setLoading(true)
-    const { data, error: rpcErr } = await supabase.rpc('keyflow_login_answerer', {
-      p_zhihu_name: form.zhihu_name.trim(),
-      p_password: form.password,
+    const { data: bootstrapData, error: bootstrapError } = await supabase.functions.invoke('answerer-auth-bootstrap', {
+      body: { action: 'login', zhihu_name: form.zhihu_name.trim(), password: form.password },
     })
+    if (bootstrapError || !bootstrapData?.internal_email) {
+      setLoading(false)
+      setError(bootstrapData?.message || bootstrapError?.message || '登录失败，请稍后重试')
+      return
+    }
+    const { error: authError } = await supabase.auth.signInWithPassword({
+      email: bootstrapData.internal_email,
+      password: form.password,
+    })
+    if (authError) { setLoading(false); setError('认证登录失败，请稍后重试'); return }
+    const { data: profile, error: profileError } = await supabase.rpc('keyflow_my_answerer_profile')
     setLoading(false)
-    if (rpcErr) { setError(rpcErr.message); return }
-    localStorage.setItem(SESSION_KEY, JSON.stringify(data))
+    if (profileError || !profile?.length) {
+      await supabase.auth.signOut()
+      setError('该 Auth 账号尚未绑定答主资料。旧账号请完成迁移后再登录。')
+      return
+    }
+    const answerer = profile[0]
     if (redirect === 'partner') window.location.href = token ? `?partner=${token}` : '?partner'
     else if (aid) window.location.href = `?apply=${aid}`
     else {
-      const { data: isPartner } = await supabase.rpc('keyflow_is_partner', { p_answerer_id: data.id })
+      const { data: isPartner } = await supabase.rpc('keyflow_is_partner', { p_answerer_id: answerer.id })
       window.location.href = isPartner ? '?partner' : '?dashboard'
     }
   }
@@ -2817,7 +2845,7 @@ function LoginPage({ aid, redirect, token }) {
   return <div className="register-page-wrapper">
     <div className="register-card">
       <div className="register-banner">
-        <div className="register-banner-bg" style={{ backgroundImage: `url(${banner})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
+        {banner && <div className="register-banner-bg" style={{ backgroundImage: `url(${banner})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />}
         <div className="register-banner-content">
           <span className="brand-mark zhihu-mark">知</span>
           <h1>答主登录</h1>
@@ -2847,37 +2875,22 @@ function LoginPage({ aid, redirect, token }) {
 function HomePage() {
   const [activities, setActivities] = useState([])
   const [loading, setLoading] = useState(true)
-  const [authMode, setAuthMode] = useState('login')
-  const [user, setUser] = useState(() => {
-    try { const s = JSON.parse(localStorage.getItem(SESSION_KEY)); return s?.id ? s : null }
-    catch { return null }
-  })
+  const [user, setUser] = useState(null)
   const [isPartner, setIsPartner] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
 
   useEffect(() => {
-    let cancelled = false
-    try {
-      const session = JSON.parse(localStorage.getItem(ADMIN_SESSION_KEY))
-      if (session?.id) {
-        supabase.from('keyflow_admin_users').select('id').eq('id', session.id).maybeSingle()
-          .then(({ data }) => { if (!cancelled && data) setIsAdmin(true) })
-      }
-    } catch {}
-    return () => { cancelled = true }
+    let active = true
+    const loadIdentity = async () => {
+      const profile = await getCurrentAnswerer()
+      const { data: admin } = await supabase.rpc('keyflow_is_admin')
+      if (active) { setUser(profile); setIsAdmin(!!admin) }
+    }
+    loadIdentity()
+    return () => { active = false }
   }, [])
   const loggedIn = !!user
   const [banner, setBanner] = useState(() => getCachedBanner() || defaultRegisterBanner)
-  const [loginForm, setLoginForm] = useState({ zhihu_name: '', password: '' })
-  const [loginLoading, setLoginLoading] = useState(false)
-  const [loginError, setLoginError] = useState('')
-  const [regForm, setRegForm] = useState({ invitation_code: '', zhihu_name: '', account_address: '', wechat_id: '', password: '', confirm_password: '' })
-  const [regLoading, setRegLoading] = useState(false)
-  const [regError, setRegError] = useState('')
-  const [nameHint, setNameHint] = useState(null)
-  const [addressHint, setAddressHint] = useState(null)
-  const nameTimer = useRef(null)
-  const addressTimer = useRef(null)
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const dropdownTimer = useRef(null)
   const [notice, setNotice] = useState('')
@@ -2915,7 +2928,7 @@ function HomePage() {
   useEffect(() => {
     if (!user?.id) return
     supabase.rpc('keyflow_is_partner', { p_answerer_id: user.id }).then(({ data }) => { setIsPartner(!!data) })
-  }, [])
+  }, [user?.id])
 
   useEffect(() => {
     const cached = getCachedBanner()
@@ -2924,71 +2937,11 @@ function HomePage() {
       .then(({ data }) => { if (data?.image_data?.length > 100) { setBanner(data.image_data); setCachedBanner(data.image_data) } })
   }, [])
 
-  useEffect(() => {
-    const name = regForm.zhihu_name.trim()
-    if (!name || name.length < 2) { setNameHint(null); return }
-    clearTimeout(nameTimer.current)
-    setNameHint({ type: 'checking' })
-    nameTimer.current = setTimeout(async () => {
-      const { data, error } = await supabase.rpc('keyflow_check_zhihu_name', { p_name: name })
-      if (error) { setNameHint(null); return }
-      setNameHint(data?.exists ? { type: 'taken', suggestion: data.suggestion } : null)
-    }, 500)
-    return () => clearTimeout(nameTimer.current)
-  }, [regForm.zhihu_name])
-
-  useEffect(() => {
-    const addr = regForm.account_address.trim()
-    if (!addr || addr.length < 10) { setAddressHint(null); return }
-    clearTimeout(addressTimer.current)
-    setAddressHint({ type: 'checking' })
-    addressTimer.current = setTimeout(async () => {
-      const { data, error } = await supabase.rpc('keyflow_check_account_address', { p_address: addr })
-      if (error) { setAddressHint(null); return }
-      setAddressHint(data?.exists ? { type: 'taken', zhihu_name: data.zhihu_name } : null)
-    }, 500)
-    return () => clearTimeout(addressTimer.current)
-  }, [regForm.account_address])
-
-  const handleLogin = async (e) => {
-    e.preventDefault(); setLoginError('')
-    if (!loginForm.zhihu_name.trim()) { setLoginError('请输入知乎用户名'); return }
-    if (!loginForm.password) { setLoginError('请输入密码'); return }
-    setLoginLoading(true)
-    const { data, error } = await supabase.rpc('keyflow_login_answerer', { p_zhihu_name: loginForm.zhihu_name.trim(), p_password: loginForm.password })
-    setLoginLoading(false)
-    if (error) { setLoginError(error.message); return }
-    localStorage.setItem(SESSION_KEY, JSON.stringify(data))
-    toast('登录成功')
-    window.setTimeout(() => { window.location.href = '?dashboard' }, 800)
-  }
-
-  const handleRegister = async (e) => {
-    e.preventDefault(); setRegError('')
-    if (!regForm.invitation_code.trim()) { setRegError('请输入邀请码'); return }
-    if (!regForm.zhihu_name.trim()) { setRegError('请输入知乎用户名'); return }
-    if (!regForm.account_address.trim()) { setRegError('请输入知乎主页地址'); return }
-    if (!regForm.wechat_id.trim()) { setRegError('请输入微信号'); return }
-    if (regForm.password.length < 6) { setRegError('密码至少 6 位'); return }
-    if (regForm.password !== regForm.confirm_password) { setRegError('两次输入的密码不一致'); return }
-    setRegLoading(true)
-    const { data, error } = await supabase.rpc('keyflow_register_answerer', {
-      p_code: regForm.invitation_code.trim(), p_zhihu_name: regForm.zhihu_name.trim(),
-      p_account_address: regForm.account_address.trim(), p_wechat_id: regForm.wechat_id.trim(), p_password: regForm.password,
-    })
-    setRegLoading(false)
-    if (error) { setRegError(error.message); return }
-    localStorage.setItem(SESSION_KEY, JSON.stringify(data))
-    toast('注册成功')
-    window.setTimeout(() => { window.location.href = '?dashboard' }, 800)
-  }
-
   const STAGE_LABEL = { recruiting: '招募中', key_distribution: '发key中', delivery: '创作中', completed: '已完结' }
   const STAGE_COLOR = { recruiting: 'stage-blue', key_distribution: 'stage-orange', delivery: 'stage-purple', completed: 'stage-green' }
 
   const handleCardClick = (activityId) => {
-    const session = (() => { try { return JSON.parse(localStorage.getItem(SESSION_KEY)) } catch { return null } })()
-    if (session?.id) { window.location.href = `?apply=${activityId}`; return }
+    if (user?.id) { window.location.href = `?apply=${activityId}`; return }
     window.location.href = window.location.pathname + `?login&aid=${activityId}`
   }
 
@@ -3022,9 +2975,7 @@ function HomePage() {
     const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(filePath)
     const { error: updateErr } = await supabase.from('keyflow_answerers').update({ avatar_url: publicUrl, updated_at: new Date().toISOString() }).eq('id', user.id)
     if (updateErr) { setAvatarUploading(false); return }
-    const session = { ...user, avatar_url: publicUrl }
-    localStorage.setItem(SESSION_KEY, JSON.stringify(session))
-    setUser(session)
+    setUser(currentUser => ({ ...currentUser, avatar_url: publicUrl }))
     setAvatarUploading(false)
     setAvatarModalOpen(false)
     toast('头像已更新')
@@ -3069,7 +3020,7 @@ function HomePage() {
     setPwdResetLoading(false)
     if (rpcErr) { setPwdResetMsg(rpcErr.message); return }
     setPwdResetStep('done')
-    setTimeout(() => { localStorage.removeItem(SESSION_KEY); window.location.href = '?login' }, 2000)
+    setTimeout(() => { window.location.href = '?login' }, 2000)
   }
 
   const loadInbox = async () => {
@@ -3097,8 +3048,8 @@ function HomePage() {
     }
   }, [pwdResetStep])
 
-  const doLogout = () => {
-    localStorage.removeItem(SESSION_KEY)
+  const doLogout = async () => {
+    await supabase.auth.signOut()
     window.location.href = '?login'
   }
 
@@ -3172,36 +3123,10 @@ function HomePage() {
     {!loggedIn && <aside className="home-auth">
       <div className="home-auth-bg" style={{ backgroundImage: `url(${banner})` }} />
       <div className="home-auth-content">
-        <div className="home-auth-tabs">
-          <button className={`home-auth-tab ${authMode === 'login' ? 'active' : ''}`} onClick={() => { setAuthMode('login'); setLoginError(''); setRegError('') }}>登录</button>
-          <button className={`home-auth-tab ${authMode === 'register' ? 'active' : ''}`} onClick={() => { setAuthMode('register'); setLoginError(''); setRegError('') }}>注册</button>
-        </div>
-        {authMode === 'login' ? (
-          <form className="home-auth-form" onSubmit={handleLogin}>
-            <h2>欢迎回来</h2>
-            <p className="home-auth-sub">登录后即可领取 Key 和提交测评作品。</p>
-            <label className="home-field"><span>知乎用户名</span><input required value={loginForm.zhihu_name} placeholder="输入注册时的知乎用户名" onChange={(e) => setLoginForm({ ...loginForm, zhihu_name: e.target.value })} /></label>
-            <label className="home-field"><span>密码</span><input type="password" required value={loginForm.password} placeholder="输入密码" onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} /></label>
-            {loginError && <p className="home-auth-error">{loginError}</p>}
-            <button className="home-auth-submit" disabled={loginLoading}>{loginLoading ? '登录中…' : '登录'}</button>
-            <p className="home-auth-switch">还没有账号？<button type="button" onClick={() => { setAuthMode('register'); setLoginError('') }}>立即注册</button></p>
-            <a className="home-auth-forgot" href={window.location.pathname + '?login'}>忘记密码？</a>
-          </form>
-        ) : (
-          <form className="home-auth-form" onSubmit={handleRegister}>
-            <h2>加入计划</h2>
-            <p className="home-auth-sub">邀请码由知乎运营或已注册答主提供，每个邀请码仅可使用一次。</p>
-            <label className="home-field"><span>邀请码（联系知乎运营或已注册答主获得）</span><input required value={regForm.invitation_code} placeholder="KF-XXXXXXXX" onChange={(e) => setRegForm({ ...regForm, invitation_code: e.target.value })} /></label>
-            <label className="home-field"><span>知乎用户名</span><input required value={regForm.zhihu_name} placeholder="请和你的知乎昵称保持一致，登录页面的唯一账号" onChange={(e) => setRegForm({ ...regForm, zhihu_name: e.target.value })} />{nameHint?.type === 'checking' && <span className="home-field-hint checking">检测中…</span>}{nameHint?.type === 'taken' && <span className="home-field-hint taken">该用户名已被使用，建议 <button type="button" className="home-suggestion-btn" onClick={() => { setRegForm({ ...regForm, zhihu_name: nameHint.suggestion }); setNameHint(null) }}>使用「{nameHint.suggestion}」</button></span>}</label>
-            <label className="home-field"><span>知乎主页地址</span><input type="url" required value={regForm.account_address} placeholder="https://www.zhihu.com/people/xxxxxx" onChange={(e) => setRegForm({ ...regForm, account_address: e.target.value })} />{addressHint?.type === 'checking' && <span className="home-field-hint checking">检测中…</span>}{addressHint?.type === 'taken' && <span className="home-field-hint warn">该主页地址已被用户「{addressHint.zhihu_name}」使用，你确定这是你的知乎账户吗？</span>}</label>
-            <label className="home-field"><span>微信号</span><input required value={regForm.wechat_id} placeholder="即你的微信唯一ID，不是微信名；如ID无效则账户会被封禁" onChange={(e) => setRegForm({ ...regForm, wechat_id: e.target.value })} /></label>
-            <label className="home-field"><span>密码</span><input type="password" required value={regForm.password} placeholder="至少 6 位字符" onChange={(e) => setRegForm({ ...regForm, password: e.target.value })} /></label>
-            <label className="home-field"><span>再次输入密码</span><input type="password" required value={regForm.confirm_password} placeholder="请再次输入密码" onChange={(e) => setRegForm({ ...regForm, confirm_password: e.target.value })} /></label>
-            {regError && <p className="home-auth-error">{regError}</p>}
-            <button className="home-auth-submit" disabled={regLoading}>{regLoading ? '注册中…' : '注册'}</button>
-            <p className="home-auth-switch">已有账号？<button type="button" onClick={() => { setAuthMode('login'); setRegError('') }}>去登录</button></p>
-          </form>
-        )}
+        <h2>加入 GameJourney</h2>
+        <p className="home-auth-sub">登录后即可领取 Key 和提交测评作品。</p>
+        <a className="home-auth-submit" href={window.location.pathname + '?login'}>登录</a>
+        <p className="home-auth-switch">还没有账号？<a href={window.location.pathname + '?register'}>立即注册</a></p>
       </div>
     </aside>}
     {notice && <div className="toast"><Icon name="check" size={17} />{notice}</div>}
@@ -3301,7 +3226,7 @@ function PartnerManagement({ codes, answerers, setAnswerers, activities, setActi
     const text = remarkDraft.trim()
     setAnswerers(prev => prev.map(a => a.id === partnerId ? { ...a, remark: text } : a))
     setEditingRemarkId(null)
-    const { error } = await supabase.from('keyflow_answerers').update({ remark: text }).eq('id', partnerId)
+    const { error } = await supabase.rpc('keyflow_admin_update_answerer_remark', { p_answerer_id: partnerId, p_remark: text })
     if (error) { toast('保存备注失败：' + error.message); onRefresh() }
   }
 
@@ -3353,15 +3278,15 @@ function PartnerManagement({ codes, answerers, setAnswerers, activities, setActi
     <section className="metrics answerer-overview"><div className="metric"><strong>{unusedCodes.length}</strong><span>可用邀请码</span></div><div className="metric"><strong>{usedCount}</strong><span>已使用</span></div><div className="metric"><strong>{partners.length}</strong><span>注册合作方</span></div></section>
     <section className="panel"><div className="panel-head"><div><h3>合作方邀请码管理</h3><p>合作方专用邀请码，通过该邀请码注册的用户会归入合作方列表。</p></div><div className="inv-gen-row"><button className="primary compact" onClick={generate} disabled={generating}>{generating ? '生成中…' : '批量生成新的邀请码'}</button><button className="outline-button compact" onClick={downloadPastCodes}>下载过往邀请码</button></div></div>{displayCodes.length ? <div className="invite-grid"><div className="invite-col">{displayCodes.slice(0, 5).map((code) => { const isUsed = code.application_id || code.answerer_id; const isCopied = copiedIds.has(code.id); return <div key={code.id} className={`invite-card${isUsed ? ' used' : ''}${isCopied ? ' copied' : ''}`} onClick={() => !isUsed && copyCode(code.code, code.id)} title={isUsed ? '已使用' : '点击复制'}><span className="invite-card-num">{code.code}</span>{isUsed ? <span className="invite-card-used-badge">已使用</span> : <small>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium' }).format(new Date(code.created_at))}</small>}</div> })}</div><div className="invite-col">{displayCodes.slice(5, 10).map((code) => { const isUsed = code.application_id || code.answerer_id; const isCopied = copiedIds.has(code.id); return <div key={code.id} className={`invite-card${isUsed ? ' used' : ''}${isCopied ? ' copied' : ''}`} onClick={() => !isUsed && copyCode(code.code, code.id)} title={isUsed ? '已使用' : '点击复制'}><span className="invite-card-num">{code.code}</span>{isUsed ? <span className="invite-card-used-badge">已使用</span> : <small>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium' }).format(new Date(code.created_at))}</small>}</div> })}</div></div> : <p className="table-empty" style={{ padding: 'var(--sp-8) 0', textAlign: 'center' }}>暂无可用的合作方邀请码，点击「生成」创建新一批。</p>}</section>
     <section className="panel"><div className="panel-head"><div><h3>注册合作方列表</h3><p>所有通过合作方邀请码注册的用户。</p></div><button className="outline-button compact" onClick={() => {
-      const headers = ['编号', '知乎用户名', '备注', '知乎主页地址', '微信号', '注册时间']
-      const rows = partners.map((p) => [p.serial_number != null ? String(p.serial_number).padStart(3, '0') : '—', p.zhihu_name, p.remark || '', p.account_address || '未填写', p.wechat_id || '未填写', new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(p.created_at))])
+      const headers = ['编号', '知乎用户名', '备注', '知乎主页地址', '注册时间']
+      const rows = partners.map((p) => [p.serial_number != null ? String(p.serial_number).padStart(3, '0') : '—', p.zhihu_name, p.remark || '', p.account_address || '未填写', new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(p.created_at))])
       const csv = '\uFEFF' + [headers, ...rows].map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n')
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a'); a.href = url; a.download = `注册合作方列表_${fileTimestamp()}.csv`; a.click()
       URL.revokeObjectURL(url)
       toast('合作方列表已下载')
-    }}>下载 Excel</button></div><div className="table-wrap"><table><thead><tr><th>#</th><th>知乎用户名</th><th>备注</th><th>知乎主页地址</th><th>微信号</th><th>注册时间</th><th>操作</th></tr></thead><tbody>{partners.length ? partners.map((partner) => { const linkedCount = activities.filter(a => a.partner_answerer_id === partner.id).length; return <tr key={partner.id}><td><span className="serial-number">{partner.serial_number != null ? String(partner.serial_number).padStart(3, '0') : '—'}</span></td><td><div className="person">{partner.avatar_url ? <img className="person-avatar-img" src={partner.avatar_url} alt="" onClick={() => onViewAnswererParticipation(partner)} title="查看活动参与记录" style={{cursor:'pointer'}} /> : <span className="person-avatar" onClick={() => onViewAnswererParticipation(partner)} title="查看活动参与记录" style={{cursor:'pointer'}}>{partner.zhihu_name[0]}</span>}<div><strong>{partner.zhihu_name}</strong><small>合作方</small></div></div></td><td className="remark-cell" onClick={() => startEditRemark(partner)}>{editingRemarkId === partner.id ? <input ref={remarkRef} className="remark-input" value={remarkDraft} onChange={(e) => setRemarkDraft(e.target.value)} onBlur={() => saveRemark(partner.id)} onKeyDown={(e) => { if (e.key === 'Enter') saveRemark(partner.id); if (e.key === 'Escape') setEditingRemarkId(null) }} onClick={(e) => e.stopPropagation()} /> : <span className="remark-text">{partner.remark || <span className="remark-placeholder">点击添加备注</span>}</span>}</td><td>{partner.account_address ? <a className="profile-link" href={partner.account_address} target="_blank" rel="noreferrer">查看主页</a> : '未填写'}</td><td>{partner.wechat_id || '未填写'}</td><td>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(partner.created_at))}</td><td><button className="outline-button compact" onClick={() => setManagePartner(partner)}>管理活动{linkedCount > 0 ? ` (${linkedCount})` : ''}</button></td></tr> }) : <tr><td colSpan="7" className="table-empty">暂无注册合作方。</td></tr>}</tbody></table></div></section>
+    }}>下载 Excel</button></div><div className="table-wrap"><table><thead><tr><th>#</th><th>知乎用户名</th><th>备注</th><th>知乎主页地址</th><th>注册时间</th><th>操作</th></tr></thead><tbody>{partners.length ? partners.map((partner) => { const linkedCount = activities.filter(a => a.partner_answerer_id === partner.id).length; return <tr key={partner.id}><td><span className="serial-number">{partner.serial_number != null ? String(partner.serial_number).padStart(3, '0') : '—'}</span></td><td><div className="person">{partner.avatar_url ? <img className="person-avatar-img" src={partner.avatar_url} alt="" onClick={() => onViewAnswererParticipation(partner)} title="查看活动参与记录" style={{cursor:'pointer'}} /> : <span className="person-avatar" onClick={() => onViewAnswererParticipation(partner)} title="查看活动参与记录" style={{cursor:'pointer'}}>{partner.zhihu_name[0]}</span>}<div><strong>{partner.zhihu_name}</strong><small>合作方</small></div></div></td><td className="remark-cell" onClick={() => startEditRemark(partner)}>{editingRemarkId === partner.id ? <input ref={remarkRef} className="remark-input" value={remarkDraft} onChange={(e) => setRemarkDraft(e.target.value)} onBlur={() => saveRemark(partner.id)} onKeyDown={(e) => { if (e.key === 'Enter') saveRemark(partner.id); if (e.key === 'Escape') setEditingRemarkId(null) }} onClick={(e) => e.stopPropagation()} /> : <span className="remark-text">{partner.remark || <span className="remark-placeholder">点击添加备注</span>}</span>}</td><td>{partner.account_address ? <a className="profile-link" href={partner.account_address} target="_blank" rel="noreferrer">查看主页</a> : '未填写'}</td><td>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(partner.created_at))}</td><td><button className="outline-button compact" onClick={() => setManagePartner(partner)}>管理活动{linkedCount > 0 ? ` (${linkedCount})` : ''}</button></td></tr> }) : <tr><td colSpan="6" className="table-empty">暂无注册合作方。</td></tr>}</tbody></table></div></section>
     {managePartner && <PartnerActivityModal partner={managePartner} activities={activities} setActivities={setActivities} answerers={answerers} onClose={() => setManagePartner(null)} toast={toast} />}
     {notice && <div className="toast"><Icon name="check" size={17}/>{notice}</div>}
   </div>
@@ -3481,7 +3406,7 @@ function AnswererManagement({ codes, answerers, setAnswerers, activities, applic
     const text = remarkDraft.trim()
     setAnswerers(prev => prev.map(a => a.id === answererId ? { ...a, remark: text } : a))
     setEditingRemarkId(null)
-    const { error } = await supabase.from('keyflow_answerers').update({ remark: text }).eq('id', answererId)
+    const { error } = await supabase.rpc('keyflow_admin_update_answerer_remark', { p_answerer_id: answererId, p_remark: text })
     if (error) toast('保存备注失败：' + error.message)
   }
 
@@ -3518,7 +3443,7 @@ function AnswererManagement({ codes, answerers, setAnswerers, activities, applic
 
   const filteredAnswerers = useMemo(() => {
     if (!search.trim()) return answerers
-    return answerers.filter(a => matchesSearch(`${a.zhihu_name || ''} ${a.wechat_id || ''} ${a.account_address || ''}`, search))
+    return answerers.filter(a => matchesSearch(`${a.zhihu_name || ''} ${a.account_address || ''}`, search))
   }, [answerers, search])
 
   const answererCodes = codes.filter(c => c.code_type === 'answerer')
@@ -3544,7 +3469,7 @@ function AnswererManagement({ codes, answerers, setAnswerers, activities, applic
 
   const deleteAnswerer = async () => {
     if (!confirmDeleteId) return
-    const { error: requestError } = await supabase.from('keyflow_answerers').delete().eq('id', confirmDeleteId)
+    const { error: requestError } = await supabase.rpc('keyflow_admin_delete_answerer', { p_answerer_id: confirmDeleteId })
     setConfirmDeleteId(null)
     if (requestError) return toast('删除失败：' + requestError.message)
     onDeleteAnswerer(confirmDeleteId)
@@ -3604,14 +3529,14 @@ function AnswererManagement({ codes, answerers, setAnswerers, activities, applic
     </section>
 
     <section className="panel">
-      <div className="panel-head"><div><h3>注册答主列表</h3><p>所有通过邀请码注册的答主账号。</p></div><div style={{ display: 'flex', gap: 'var(--sp-3)', alignItems: 'center' }}><div className="partner-search-wrap" style={{ background: '#fff', minWidth: 220, gap: 'var(--sp-1)', padding: 'var(--sp-1) var(--sp-2)' }}><Icon name="search" size={14} /><input className="partner-search-input" placeholder="搜索答主名称、微信或主页…" value={search} onChange={e => setSearch(e.target.value)} />{search && <button className="partner-search-clear" onClick={() => setSearch('')}><Icon name="close" size={14} /></button>}</div><button className="outline-button compact" onClick={() => {
-        const headers = ['注册用户ID', '知乎用户名', '备注', '知乎主页地址', '微信号', '活动参与次数', '成功完成次数', '完成率', '延迟提交', '上次提交作品', '注册时间']
+      <div className="panel-head"><div><h3>注册答主列表</h3><p>所有通过邀请码注册的答主账号。</p></div><div style={{ display: 'flex', gap: 'var(--sp-3)', alignItems: 'center' }}><div className="partner-search-wrap" style={{ background: '#fff', minWidth: 220, gap: 'var(--sp-1)', padding: 'var(--sp-1) var(--sp-2)' }}><Icon name="search" size={14} /><input className="partner-search-input" placeholder="搜索答主名称或主页…" value={search} onChange={e => setSearch(e.target.value)} />{search && <button className="partner-search-clear" onClick={() => setSearch('')}><Icon name="close" size={14} /></button>}</div><button className="outline-button compact" onClick={() => {
+        const headers = ['注册用户ID', '知乎用户名', '备注', '知乎主页地址', '活动参与次数', '成功完成次数', '完成率', '延迟提交', '上次提交作品', '注册时间']
         const rows = answerers.map((a) => {
           const records = participationByAnswerer[a.id] || []
           const selectedRecords = records.filter((r) => r.status === 'selected')
           const completed = records.filter((r) => (r.all_deliveries || []).some(d => d.article_url)).length
           const rate = selectedRecords.length ? `${Math.round(completed / selectedRecords.length * 100)}%` : '—'
-          return [a.serial_number != null ? String(a.serial_number).padStart(3, '0') : '—', a.zhihu_name, a.remark || '', a.account_address || '未填写', a.wechat_id || '未填写', `${selectedRecords.length}`, `${completed}`, rate, `${delayedByAnswerer[a.id] || 0}`, formatLastSubmission(lastSubmissionByAnswerer[a.id]), new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(a.created_at))]
+          return [a.serial_number != null ? String(a.serial_number).padStart(3, '0') : '—', a.zhihu_name, a.remark || '', a.account_address || '未填写', `${selectedRecords.length}`, `${completed}`, rate, `${delayedByAnswerer[a.id] || 0}`, formatLastSubmission(lastSubmissionByAnswerer[a.id]), new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(a.created_at))]
         })
         const csv = '\uFEFF' + [headers, ...rows].map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n')
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
@@ -3620,14 +3545,14 @@ function AnswererManagement({ codes, answerers, setAnswerers, activities, applic
         URL.revokeObjectURL(url)
         toast('答主列表已下载')
       }}>下载 Excel</button></div></div>
-      <div className="table-wrap answerer-table-wrap"><table className="answerer-table"><colgroup><col className="answerer-col-id" /><col className="answerer-col-name" /><col className="answerer-col-remark" /><col className="answerer-col-profile" /><col className="answerer-col-wechat" /><col className="answerer-col-count" /><col className="answerer-col-count" /><col className="answerer-col-rate" /><col className="answerer-col-delay" /><col className="answerer-col-submission" /><col className="answerer-col-records" /><col className="answerer-col-created" /><col className="answerer-col-action" /></colgroup><thead><tr><th>#</th><th>知乎用户名</th><th>备注</th><th>知乎主页地址</th><th>微信号</th><th>活动参与次数</th><th>成功完成次数</th><th>完成率</th><th>延迟提交</th><th>上次提交作品</th><th>参与记录</th><th>注册时间</th><th>操作</th></tr></thead><tbody>{filteredAnswerers.length ? filteredAnswerers.map((a) => {
+      <div className="table-wrap answerer-table-wrap"><table className="answerer-table"><colgroup><col className="answerer-col-id" /><col className="answerer-col-name" /><col className="answerer-col-remark" /><col className="answerer-col-profile" /><col className="answerer-col-count" /><col className="answerer-col-count" /><col className="answerer-col-rate" /><col className="answerer-col-delay" /><col className="answerer-col-submission" /><col className="answerer-col-records" /><col className="answerer-col-created" /><col className="answerer-col-action" /></colgroup><thead><tr><th>#</th><th>知乎用户名</th><th>备注</th><th>知乎主页地址</th><th>活动参与次数</th><th>成功完成次数</th><th>完成率</th><th>延迟提交</th><th>上次提交作品</th><th>参与记录</th><th>注册时间</th><th>操作</th></tr></thead><tbody>{filteredAnswerers.length ? filteredAnswerers.map((a) => {
         const records = participationByAnswerer[a.id] || []
         const selectedRecords = records.filter((r) => r.status === 'selected')
         const completed = records.filter((r) => (r.all_deliveries || []).some(d => d.article_url)).length
         const rate = selectedRecords.length ? `${Math.round(completed / selectedRecords.length * 100)}%` : '—'
         const delayedTotal = delayedByAnswerer[a.id] || 0
-        return <tr key={a.id}><td><span className="serial-number">{a.serial_number != null ? String(a.serial_number).padStart(3, '0') : '—'}</span></td><td><div className="person">{a.avatar_url ? <img className="person-avatar-img" src={a.avatar_url} alt="" onClick={() => onViewAnswererParticipation(a)} title="查看活动参与记录" style={{cursor:'pointer'}} /> : <span className="person-avatar" onClick={() => onViewAnswererParticipation(a)} title="查看活动参与记录" style={{cursor:'pointer'}}>{a.zhihu_name[0]}</span>}<div><strong>{a.zhihu_name}</strong></div></div></td><td className="remark-cell" onClick={() => startEditRemark(a)}>{editingRemarkId === a.id ? <input ref={remarkRef} className="remark-input" value={remarkDraft} onChange={(e) => setRemarkDraft(e.target.value)} onBlur={() => saveRemark(a.id)} onKeyDown={(e) => { if (e.key === 'Enter') saveRemark(a.id); if (e.key === 'Escape') setEditingRemarkId(null) }} onClick={(e) => e.stopPropagation()} /> : <span className="remark-text">{a.remark || <span className="remark-placeholder">点击添加备注</span>}</span>}</td><td>{a.account_address ? <a className="profile-link" href={a.account_address} target="_blank" rel="noreferrer">查看主页</a> : <span style={{ color: 'var(--c-ink-4)', fontSize: 'var(--fs-meta)' }}>未填写</span>}</td><td className="wechat-copy-cell" onClick={() => { if (a.wechat_id) { navigator.clipboard.writeText(a.wechat_id); toast('微信号已复制') } }} title={a.wechat_id ? '点击复制微信号' : ''}>{a.wechat_id || '未填写'}</td><td>{selectedRecords.length}</td><td>{completed}</td><td><span className={`${rate !== '—' && (() => { const r = parseInt(rate); return r <= 25 ? 'highlight-red' : r >= 90 ? 'highlight-green' : ''; })()}`}>{rate}</span></td><td><span className={`history-count ${delayedTotal > 0 ? 'highlight-red' : ''}`}>{delayedTotal} <small>次</small></span></td><td>{formatLastSubmission(lastSubmissionByAnswerer[a.id])}</td><td><button className="outline-button compact" onClick={() => onViewAnswererParticipation(a)}>查看记录</button></td><td>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(a.created_at))}</td><td><button className="delete-action" onClick={() => setConfirmDeleteId(a.id)}>删除</button></td></tr>
-      }) : <tr><td colSpan="13" className="table-empty">暂无注册答主。</td></tr>}</tbody></table></div>
+        return <tr key={a.id}><td><span className="serial-number">{a.serial_number != null ? String(a.serial_number).padStart(3, '0') : '—'}</span></td><td><div className="person">{a.avatar_url ? <img className="person-avatar-img" src={a.avatar_url} alt="" onClick={() => onViewAnswererParticipation(a)} title="查看活动参与记录" style={{cursor:'pointer'}} /> : <span className="person-avatar" onClick={() => onViewAnswererParticipation(a)} title="查看活动参与记录" style={{cursor:'pointer'}}>{a.zhihu_name[0]}</span>}<div><strong>{a.zhihu_name}</strong></div></div></td><td className="remark-cell" onClick={() => startEditRemark(a)}>{editingRemarkId === a.id ? <input ref={remarkRef} className="remark-input" value={remarkDraft} onChange={(e) => setRemarkDraft(e.target.value)} onBlur={() => saveRemark(a.id)} onKeyDown={(e) => { if (e.key === 'Enter') saveRemark(a.id); if (e.key === 'Escape') setEditingRemarkId(null) }} onClick={(e) => e.stopPropagation()} /> : <span className="remark-text">{a.remark || <span className="remark-placeholder">点击添加备注</span>}</span>}</td><td>{a.account_address ? <a className="profile-link" href={a.account_address} target="_blank" rel="noreferrer">查看主页</a> : <span style={{ color: 'var(--c-ink-4)', fontSize: 'var(--fs-meta)' }}>未填写</span>}</td><td>{selectedRecords.length}</td><td>{completed}</td><td><span className={`${rate !== '—' && (() => { const r = parseInt(rate); return r <= 25 ? 'highlight-red' : r >= 90 ? 'highlight-green' : ''; })()}`}>{rate}</span></td><td><span className={`history-count ${delayedTotal > 0 ? 'highlight-red' : ''}`}>{delayedTotal} <small>次</small></span></td><td>{formatLastSubmission(lastSubmissionByAnswerer[a.id])}</td><td><button className="outline-button compact" onClick={() => onViewAnswererParticipation(a)}>查看记录</button></td><td>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(a.created_at))}</td><td><button className="delete-action" onClick={() => setConfirmDeleteId(a.id)}>删除</button></td></tr>
+      }) : <tr><td colSpan="12" className="table-empty">暂无注册答主。</td></tr>}</tbody></table></div>
     </section>
     {confirmDeleteId && <ConfirmDialog message="确定要删除该答主吗？此操作不可撤销。" onConfirm={deleteAnswerer} onCancel={() => setConfirmDeleteId(null)} />}
     {notice && <div className="toast"><Icon name="check" size={17}/>{notice}</div>}
@@ -3992,7 +3917,7 @@ function InboxPage({ messages, requests, answerers, onRefresh, onDeleteMessages,
   // --- compose helpers ---
   const filteredAnswerers = useMemo(() => {
     if (!search.trim()) return answerers
-    return answerers.filter(a => matchesSearch(`${a.zhihu_name || ''} ${a.wechat_id || ''} ${a.account_address || ''}`, search))
+    return answerers.filter(a => matchesSearch(`${a.zhihu_name || ''} ${a.account_address || ''}`, search))
   }, [answerers, search])
 
   const toggleSelect = (id) => {
@@ -4142,7 +4067,6 @@ function InboxPage({ messages, requests, answerers, onRefresh, onDeleteMessages,
                 <input type="checkbox" checked={selectedIds.has(a.id)} onChange={() => toggleSelect(a.id)} />
                 <span className="messaging-answerer-avatar">{a.avatar_url ? <img src={a.avatar_url} alt="" /> : <span className="person-avatar">{a.zhihu_name?.[0] || '?'}</span>}</span>
                 <span className="messaging-answerer-name">{a.zhihu_name}</span>
-                {a.wechat_id && <span className="messaging-answerer-wechat">{a.wechat_id}</span>}
               </label>
             )) : <div className="messaging-answerer-empty">没有匹配的答主</div>}
           </div>
