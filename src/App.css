@@ -1464,10 +1464,10 @@ span.stage-green { background: #dcfce7; color: #15803d; }
 
 /* --- 动态背景 --- */
 .home-bg { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
-.home-orb { position: absolute; border-radius: 50%; filter: blur(90px); opacity: .45; animation: home-orb-float 22s ease-in-out infinite; }
-.home-orb-1 { width: 520px; height: 520px; background: #1e3a8a; top: -120px; left: -80px; }
-.home-orb-2 { width: 420px; height: 420px; background: #0e7490; bottom: -60px; right: 28%; animation-delay: -7s; }
-.home-orb-3 { width: 360px; height: 360px; background: #7c3aed; top: 35%; right: -80px; animation-delay: -14s; }
+.home-orb { position: absolute; animation: home-orb-float 22s ease-in-out infinite; }
+.home-orb-1 { width: 520px; height: 520px; background: radial-gradient(circle, rgba(30,58,138,.45) 0%, transparent 68%); top: -120px; left: -80px; }
+.home-orb-2 { width: 420px; height: 420px; background: radial-gradient(circle, rgba(14,116,144,.45) 0%, transparent 68%); bottom: -60px; right: 28%; animation-delay: -7s; }
+.home-orb-3 { width: 360px; height: 360px; background: radial-gradient(circle, rgba(124,58,237,.45) 0%, transparent 68%); top: 35%; right: -80px; animation-delay: -14s; }
 @keyframes home-orb-float {
   0%,100% { transform: translate(0,0) scale(1); }
   33% { transform: translate(40px,-50px) scale(1.12); }
@@ -1659,7 +1659,7 @@ span.stage-green { background: #dcfce7; color: #15803d; }
 .home-auth {
   width: 420px; flex-shrink: 0; position: sticky; top: 0; height: 100vh; z-index: 1;
   border-left: 1px solid rgba(255,255,255,.08);
-  background: rgba(10,14,23,.5); backdrop-filter: blur(24px);
+  background: rgba(10,14,23,.55); backdrop-filter: blur(8px);
   display: flex; flex-direction: column;
 }
 .home-auth-bg { position: absolute; inset: 0; background-size: cover; background-position: center; opacity: .1; z-index: -1; }
