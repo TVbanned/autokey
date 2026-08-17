@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [master, 080802, 0810, 081002, 081003, 081004, 081005]
+    branches: [master, 080802, 0810, 081002, 081003, 081004, 081005, 0817]
 
 permissions:
   contents: read
