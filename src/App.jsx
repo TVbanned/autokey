@@ -8,6 +8,11 @@ const AdminLoginPage = lazy(() => import('./AdminLoginPage.jsx'))
 
 const ADMIN_SESSION_KEY = 'keyflow_admin_session'
 const BANNER_CACHE_KEY = 'keyflow_banner'
+
+const getAdminToken = () => {
+  try { return JSON.parse(localStorage.getItem(ADMIN_SESSION_KEY))?.session_token || null } catch { return null }
+}
+const isPasswordResetApprovalExpired = (request) => !request?.reviewed_at || Date.now() - new Date(request.reviewed_at).getTime() > 30 * 60 * 1000
 const HOME_ACTIVITIES_CACHE_KEY = 'keyflow_home_activities'
 
 const getCachedBanner = () => {
@@ -65,7 +70,8 @@ const migrateAvatarToStorage = async (answererId, avatarUrl) => {
       .upload(filePath, blob, { upsert: true, contentType: mimeType })
     if (uploadErr) return avatarUrl
     const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(filePath)
-    await supabase.from('keyflow_answerers').update({ avatar_url: publicUrl }).eq('id', answererId)
+    const { error: updateErr } = await supabase.rpc('keyflow_answerer_update_avatar', { p_answerer_id: answererId, p_avatar_url: publicUrl })
+    if (updateErr) return avatarUrl
     return publicUrl
   } catch { return avatarUrl }
 }
@@ -515,7 +521,7 @@ function App() {
         supabase.from('keyflow_daily_submissions').select('id, answerer_id, article_url, article_title, submitted_at, created_at, reviewed, processed, featured').order('submitted_at', { ascending: false }).limit(1000),
         supabase.from('keyflow_keys').select('id, activity_id, platform, application_id, created_at, claimed_at').order('created_at', { ascending: false }).limit(1000),
         supabase.from('keyflow_invitation_codes').select('id, code, code_type, application_id, answerer_id, created_at, used_at').order('created_at', { ascending: false }).order('id').limit(1000),
-        supabase.from('keyflow_answerers').select('id, serial_number, zhihu_name, account_address, wechat_id, remark, created_at, updated_at').order('created_at', { ascending: false }).limit(1000),
+        supabase.rpc('keyflow_admin_answerer_summaries', { p_token: getAdminToken() }),
         supabase.from('keyflow_inbox').select('id, title, body, status, to_id, type, created_at, read_at').neq('type', 'system').order('created_at', { ascending: false }).limit(1000),
         supabase.from('keyflow_password_reset_requests').select('id, answerer_id, status, requested_at, reviewed_at, admin_note').order('requested_at', { ascending: false }).limit(1000),
       ]).then(([d, ds, k, ic, a, ib, r]) => {
@@ -523,18 +529,11 @@ function App() {
         if (failure) setError(failure.message)
         else {
           setDeliveries(d.data || []); setDailySubmissions(ds.data || []); setKeys(k.data || []); setInvitationCodes(ic.data || []); setAnswerers(a.data || []); setInboxMessages(ib.data || []); setPasswordResetRequests(r.data || [])
-          // 延后异步加载头像，base64 格式自动迁移到 Supabase Storage
-          supabase.from('keyflow_answerers').select('id, avatar_url').limit(1000).then(async ({ data: avatarData }) => {
-            if (avatarData) {
-              const migrated = await Promise.all(avatarData.map(async (a) => {
-                if (a.avatar_url && a.avatar_url.startsWith('data:')) {
-                  a.avatar_url = await migrateAvatarToStorage(a.id, a.avatar_url)
-                }
-                return a
-              }))
-              setAnswerers(prev => prev.map(aa => { const m = migrated.find(dd => dd.id === aa.id); return m && m.avatar_url ? { ...aa, avatar_url: m.avatar_url } : aa }))
-            }
-          })
+          // 延后迁移 base64 头像，答主列表由管理员 RPC 返回。
+          Promise.all((a.data || []).map(async (answerer) => ({
+            ...answerer,
+            avatar_url: await migrateAvatarToStorage(answerer.id, answerer.avatar_url),
+          }))).then((migrated) => setAnswerers(migrated))
         }
       }).catch((e) => {
         console.error('辅助数据加载失败:', e)
@@ -1033,6 +1032,7 @@ function App() {
 
   // 管理员登录门控：无 session 或显式访问 ?admin 时显示登录页
   const adminSession = (() => { try { return JSON.parse(localStorage.getItem(ADMIN_SESSION_KEY)) } catch { return null } })()
+  const adminToken = getAdminToken()
   const adminLoginMode = urlParams.get('admin') !== null
   if (adminLoginMode || !adminSession) return <Suspense fallback={<div className="admin-login-wrapper"><div className="admin-login-card"><p style={{textAlign:'center',padding:'2rem',color:'var(--c-ink-3)'}}>加载中…</p></div></div>}><AdminLoginPage /></Suspense>
 
@@ -1048,7 +1048,7 @@ function App() {
         <button className={`sidebar-inbox-btn ${active === '收件箱' ? 'active' : ''}`} onClick={() => setActive('收件箱')} title="收件箱">
           <Icon name="inbox" size={20}/>
           <span>收件箱</span>
-          {inboxMessages.filter(m => m.type !== 'private_message' && m.type !== 'system' && m.status === 'unread').length > 0 && <b className="nav-alert">{inboxMessages.filter(m => m.type !== 'private_message' && m.type !== 'system' && m.status === 'unread').length}</b>}
+          {inboxMessages.filter(m => m.type === 'password_reset' && m.status === 'unread').length > 0 && <b className="nav-alert">{inboxMessages.filter(m => m.type === 'password_reset' && m.status === 'unread').length}</b>}
         </button>
       </div>
       <div className="profile">
@@ -1075,7 +1075,7 @@ function App() {
           </div>
           <section className="stage-progression"><div className="stage-header"><div><h3>阶段推进</h3><span>点击圆点或文字一键切换至对应阶段。</span></div></div><div className="stage-timeline">{STAGES.map((stage, i) => { const currentIdx = STAGES.indexOf(selectedActivity?.status || 'recruiting'); const isCurrent = i === currentIdx; const isPast = i < currentIdx; return <div key={stage} className={`stage-node ${isCurrent ? 'current' : ''} ${isPast ? 'past' : ''}`}><button className="stage-dot-btn" disabled={isCurrent || advancing} onClick={() => goToStage(stage)} title={`切换到：${STAGE_LABEL[stage]}`}><span className="stage-dot"/></button><button className="stage-label" disabled={isCurrent || advancing} onClick={() => goToStage(stage)}>{STAGE_LABEL[stage]}</button></div> })}</div></section>
           <section className="panel applicants-panel"><div className="panel-head"><div><h3>答主报名</h3><p>查看答主报名、Key 领取和内容提交状态。</p></div><button className="primary compact" onClick={() => setApplicationModal(true)}><Icon name="plus" size={15}/> 新增报名</button></div><div className="table-wrap"><table><thead><tr><th>答主</th><th>查看主页</th><th className="th-sort" onClick={() => toggleOverviewSort('status')}>入选状态{overviewSort?.key === 'status' ? <span className="th-sort-arrow">{overviewSort.dir === -1 ? '↑' : '↓'}</span> : null}</th>{(() => { const ap = Array.isArray(selectedActivity?.platforms) && selectedActivity.platforms.length ? selectedActivity.platforms : ['steam']; return ap.length > 1 || ap[0] !== 'steam' ? <th>版本</th> : null })()}<th className="th-sort" onClick={() => toggleOverviewSort('claimed')}>是否领取 Key{overviewSort?.key === 'claimed' ? <span className="th-sort-arrow">{overviewSort.dir === -1 ? '↑' : '↓'}</span> : null}</th><th className="th-sort" onClick={() => toggleOverviewSort('delivered')}>是否提交内容{overviewSort?.key === 'delivered' ? <span className="th-sort-arrow">{overviewSort.dir === -1 ? '↑' : '↓'}</span> : null}</th><th>合作方推荐</th><th>操作</th></tr></thead><tbody>{overviewApplications.length ? overviewApplications.map((person) => <tr key={person.id}><td><div className="person">{answererByName[person.zhihu_name]?.avatar_url ? <img className="person-avatar-img" src={answererByName[person.zhihu_name].avatar_url} alt="" onClick={() => { const a = answererByName[person.zhihu_name]; if (a) setSelectedAnswerer(a) }} title="查看活动参与记录" style={{cursor:'pointer'}} /> : <span className="person-avatar" onClick={() => { const a = answererByName[person.zhihu_name]; if (a) setSelectedAnswerer(a) }} title="查看活动参与记录" style={{cursor:'pointer'}}>{person.zhihu_name[0]}</span>}<div><strong>{person.zhihu_name}</strong><small>知乎答主</small></div></div></td><td><a className="profile-link" href={person.profile_url} target="_blank" rel="noreferrer">查看主页</a></td><td><span className={`pill ${person.status === 'selected' ? 'success' : person.status === 'pending' ? 'warning' : 'muted'}`}>{statusLabel[person.status]}</span></td>{(() => { const ap = Array.isArray(selectedActivity?.platforms) && selectedActivity.platforms.length ? selectedActivity.platforms : ['steam']; return ap.length > 1 || ap[0] !== 'steam' ? <td><span className="pill">{platformLabel[person.selected_platform] || 'Steam'}</span></td> : null })()}<td><span className={`pill ${person.keyflow_keys?.claimed_at || exemptedIds.includes(person.answerer_id) ? 'success' : 'muted'}`}>{person.keyflow_keys?.claimed_at || exemptedIds.includes(person.answerer_id) ? '已领取' : '未领取'}</span></td><td><button className={`pill pill-link ${(Array.isArray(person.keyflow_deliveries) ? person.keyflow_deliveries.length > 0 : person.keyflow_deliveries?.id) ? 'success' : 'muted'}`} onClick={() => setActive('交付验收')}>{(Array.isArray(person.keyflow_deliveries) ? person.keyflow_deliveries.length > 0 : person.keyflow_deliveries?.id) ? '已提交' : '未提交'}</button></td><td>{person.partner_recommended ? <span className="highlight-red">推荐</span> : '—'}</td><td><div className="review-actions">{person.status === 'pending' ? <><button className="select-action" onClick={() => reviewApplication(person.id, 'selected')}>入选</button><button className="reject-action" onClick={() => reviewApplication(person.id, 'rejected')}>不选</button></> : <button className="reset-action" disabled={!!person.keyflow_keys?.claimed_at} onClick={() => reviewApplication(person.id, 'pending')}>重新筛选</button>}</div></td></tr>) : <tr><td colSpan={(() => { const ap = Array.isArray(selectedActivity?.platforms) && selectedActivity.platforms.length ? selectedActivity.platforms : ['steam']; return ap.length > 1 || ap[0] !== 'steam' ? 8 : 7 })()} className="table-empty">还没有报名记录。可添加测试报名，或后续将表单公开给答主填写。</td></tr>}</tbody></table></div></section>
-        </> : active === '活动看板' ? <div className="activity-cards">{filteredBoardActivities.map((item) => { const apps = applications.filter((a) => a.activity_id === item.id); const creatingCount = apps.filter(a => a.status === 'selected' && a.keyflow_keys?.claimed_at).length; const deliveredCount = apps.filter(a => Array.isArray(a.keyflow_deliveries) ? a.keyflow_deliveries.length > 0 : a.keyflow_deliveries?.id).length; const mainQuestionUrl = item.main_question?.match(/https?:\/\/[^\s]+/)?.[0]; return <div key={item.id} className={`activity-card ${item.id === selectedId ? 'selected' : ''}`} onClick={() => { setSelectedId(item.id); setActive('活动概览') }}><button className="activity-card-delete" title="删除活动" onClick={(e) => deleteActivity(item.id, e)}><Icon name="close" size={14}/></button><button className={`activity-card-fav ${item.is_favorite ? 'active' : ''}`} title={item.is_favorite ? '取消收藏' : '收藏'} onClick={(e) => toggleFavorite(item.id, item.is_favorite, e)}><Icon name="star" size={14}/></button><div className="activity-card-cover">{item.game_cover ? <img src={item.game_cover} alt={item.game_name}/> : <span>{item.game_name[0]}</span>}</div><div className="activity-card-body"><p className="activity-card-game">{item.game_name}</p><h3>{item.title}</h3><div className="activity-card-meta"><span className={`pill ${STAGE_COLOR[item.status] || ''}`}>{STAGE_LABEL[item.status] || item.status}</span><span>{item.status === 'delivery' ? `${creatingCount} 人创作中` : item.status === 'completed' ? `${deliveredCount} 篇作品` : <>{apps.length} 报名{apps.filter(a => a.status === 'pending').length > 0 && <span className="text-red"> {apps.filter(a => a.status === 'pending').length} 未处理</span>}</>}</span></div><small className={(item.status === 'recruiting' && item.application_deadline && new Date(item.application_deadline) < new Date()) ? 'text-red' : ''}>{getStatusTimeText(item, apps)}</small><div className="activity-card-actions"><div className="activity-card-online" onClick={(e) => toggleOnline(item.id, item.is_online !== false, e)} title={item.is_online !== false ? '已上线，点击下线' : '未上线，点击上线'}><span className={`online-toggle ${item.is_online !== false ? 'active' : ''}`}><span className="online-toggle-knob"/></span><span className="online-label">{item.is_online !== false ? '已上线' : '未上线'}</span></div>{mainQuestionUrl ? <a className="main-question-link" href={mainQuestionUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>跳转主问题</a> : <span className="main-question-unconfigured">暂未配置主问题</span>}</div></div></div> })}</div> : active === '答主报名' ? <ApplicationsPage activity={selectedActivity} applications={filteredApplications} answerers={answerers} authorStats={authorStats} statusLabel={statusLabel} onSelectActivity={openDrawer} onAddApplication={() => setApplicationModal(true)} onReviewApplication={reviewApplication} onDeleteApplication={deleteApplication} toast={toast} participationByAnswerer={participationByAnswerer} onViewAnswererParticipation={setSelectedAnswerer} /> : active === 'Key 管理' ? <KeyManagement activity={selectedActivity} input={keyInput} parsedKeys={parsedKeys} platformCounts={platformCounts} importedKeys={keys.filter((item) => item.activity_id === selectedActivity?.id)} importing={keyImporting} onInput={setKeyInput} onImport={importKeys} onDeleteKeys={deleteKeys} onSelectActivity={openDrawer} applications={filteredApplications} toast={toast}/> : active === '交付验收' ? <DeliveriesPage activity={selectedActivity} deliveries={activityDeliveries} applications={filteredApplications} answerers={answerers} statusLabel={deliveryStatusLabel} notes={deliveryNotes} onNoteChange={(id, value) => setDeliveryNotes((items) => ({ ...items, [id]: value }))} onReview={reviewDelivery} onSelectActivity={openDrawer} pendingCount={pendingDeliveries} approvedCount={approvedDeliveries} revisionCount={revisionDeliveries} toast={toast} participationByAnswerer={participationByAnswerer} onViewAnswererParticipation={setSelectedAnswerer} /> : active === '答主管理' ? <AnswererManagement codes={invitationCodes} answerers={answerers} setAnswerers={setAnswerers} activities={activities} applications={applications} deliveries={deliveries} dailySubmissions={dailySubmissions} onAddCodes={prependCodes} onDeleteAnswerer={(id) => setAnswerers((items) => items.filter((item) => item.id !== id))} participationByAnswerer={participationByAnswerer} onViewAnswererParticipation={setSelectedAnswerer} /> : active === '合作方管理' ? <PartnerManagement codes={invitationCodes} answerers={answerers} setAnswerers={setAnswerers} activities={activities} setActivities={setActivities} onAddCodes={prependCodes} onRefresh={loadData} participationByAnswerer={participationByAnswerer} onViewAnswererParticipation={setSelectedAnswerer} /> : active === '全部活动投稿' ? <AllActivitySubmissionsPage deliveries={deliveries} applications={applications} activities={activities} answerers={answerers} toast={toast} /> : active === '答主日常投稿' ? <DailySubmissionsPage submissions={dailySubmissions} answerers={answerers} toast={toast} setDailySubmissions={setDailySubmissions} participationByAnswerer={participationByAnswerer} onViewAnswererParticipation={setSelectedAnswerer} /> : active === '剩余KEY管理' ? <RemainingKeyManagement keys={keys} activities={activities} toast={toast} onDeleteKeys={deleteKeys} onClaimKey={claimKeyRemotely} /> : active === '页面编辑' ? <PageEditor asset={pageAsset} loading={pageAssetLoading} saving={pageAssetSaving} onSelectFile={handlePageAssetFile} onSave={savePageAsset} /> : active === '收件箱' ? <InboxPage messages={inboxMessages} requests={passwordResetRequests} answerers={answerers} onRefresh={loadData} onDeleteMessages={(ids) => { const deletedIds = new Set(ids); setInboxMessages((items) => items.filter((item) => !deletedIds.has(item.id))) }} toast={toast} setConfirmState={setConfirmState} /> : <div className="empty-state"><div className="empty-icon"><Icon name="clock" size={26}/></div><h2>{active}即将开放</h2><p>请先完成活动与答主报名管理。</p></div>}
+        </> : active === '活动看板' ? <div className="activity-cards">{filteredBoardActivities.map((item) => { const apps = applications.filter((a) => a.activity_id === item.id); const creatingCount = apps.filter(a => a.status === 'selected' && a.keyflow_keys?.claimed_at).length; const deliveredCount = apps.filter(a => Array.isArray(a.keyflow_deliveries) ? a.keyflow_deliveries.length > 0 : a.keyflow_deliveries?.id).length; const mainQuestionUrl = item.main_question?.match(/https?:\/\/[^\s]+/)?.[0]; return <div key={item.id} className={`activity-card ${item.id === selectedId ? 'selected' : ''}`} onClick={() => { setSelectedId(item.id); setActive('活动概览') }}><button className="activity-card-delete" title="删除活动" onClick={(e) => deleteActivity(item.id, e)}><Icon name="close" size={14}/></button><button className={`activity-card-fav ${item.is_favorite ? 'active' : ''}`} title={item.is_favorite ? '取消收藏' : '收藏'} onClick={(e) => toggleFavorite(item.id, item.is_favorite, e)}><Icon name="star" size={14}/></button><div className="activity-card-cover">{item.game_cover ? <img src={item.game_cover} alt={item.game_name}/> : <span>{item.game_name[0]}</span>}</div><div className="activity-card-body"><p className="activity-card-game">{item.game_name}</p><h3>{item.title}</h3><div className="activity-card-meta"><span className={`pill ${STAGE_COLOR[item.status] || ''}`}>{STAGE_LABEL[item.status] || item.status}</span><span>{item.status === 'delivery' ? `${creatingCount} 人创作中` : item.status === 'completed' ? `${deliveredCount} 篇作品` : <>{apps.length} 报名{apps.filter(a => a.status === 'pending').length > 0 && <span className="text-red"> {apps.filter(a => a.status === 'pending').length} 未处理</span>}</>}</span></div><small className={(item.status === 'recruiting' && item.application_deadline && new Date(item.application_deadline) < new Date()) ? 'text-red' : ''}>{getStatusTimeText(item, apps)}</small><div className="activity-card-actions"><div className="activity-card-online" onClick={(e) => toggleOnline(item.id, item.is_online !== false, e)} title={item.is_online !== false ? '已上线，点击下线' : '未上线，点击上线'}><span className={`online-toggle ${item.is_online !== false ? 'active' : ''}`}><span className="online-toggle-knob"/></span><span className="online-label">{item.is_online !== false ? '已上线' : '未上线'}</span></div>{mainQuestionUrl ? <a className="main-question-link" href={mainQuestionUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>跳转主问题</a> : <span className="main-question-unconfigured">暂未配置主问题</span>}</div></div></div> })}</div> : active === '答主报名' ? <ApplicationsPage activity={selectedActivity} applications={filteredApplications} answerers={answerers} authorStats={authorStats} statusLabel={statusLabel} onSelectActivity={openDrawer} onAddApplication={() => setApplicationModal(true)} onReviewApplication={reviewApplication} onDeleteApplication={deleteApplication} toast={toast} participationByAnswerer={participationByAnswerer} onViewAnswererParticipation={setSelectedAnswerer} /> : active === 'Key 管理' ? <KeyManagement activity={selectedActivity} input={keyInput} parsedKeys={parsedKeys} platformCounts={platformCounts} importedKeys={keys.filter((item) => item.activity_id === selectedActivity?.id)} importing={keyImporting} onInput={setKeyInput} onImport={importKeys} onDeleteKeys={deleteKeys} onSelectActivity={openDrawer} applications={filteredApplications} toast={toast}/> : active === '交付验收' ? <DeliveriesPage activity={selectedActivity} deliveries={activityDeliveries} applications={filteredApplications} answerers={answerers} statusLabel={deliveryStatusLabel} notes={deliveryNotes} onNoteChange={(id, value) => setDeliveryNotes((items) => ({ ...items, [id]: value }))} onReview={reviewDelivery} onSelectActivity={openDrawer} pendingCount={pendingDeliveries} approvedCount={approvedDeliveries} revisionCount={revisionDeliveries} toast={toast} participationByAnswerer={participationByAnswerer} onViewAnswererParticipation={setSelectedAnswerer} /> : active === '答主管理' ? <AnswererManagement codes={invitationCodes} answerers={answerers} setAnswerers={setAnswerers} activities={activities} applications={applications} deliveries={deliveries} dailySubmissions={dailySubmissions} onAddCodes={prependCodes} onDeleteAnswerer={(id) => setAnswerers((items) => items.filter((item) => item.id !== id))} adminToken={adminToken} participationByAnswerer={participationByAnswerer} onViewAnswererParticipation={setSelectedAnswerer} /> : active === '合作方管理' ? <PartnerManagement codes={invitationCodes} answerers={answerers} setAnswerers={setAnswerers} activities={activities} setActivities={setActivities} onAddCodes={prependCodes} onRefresh={loadData} adminToken={adminToken} participationByAnswerer={participationByAnswerer} onViewAnswererParticipation={setSelectedAnswerer} /> : active === '全部活动投稿' ? <AllActivitySubmissionsPage deliveries={deliveries} applications={applications} activities={activities} answerers={answerers} toast={toast} /> : active === '答主日常投稿' ? <DailySubmissionsPage submissions={dailySubmissions} answerers={answerers} toast={toast} setDailySubmissions={setDailySubmissions} participationByAnswerer={participationByAnswerer} onViewAnswererParticipation={setSelectedAnswerer} /> : active === '剩余KEY管理' ? <RemainingKeyManagement keys={keys} activities={activities} toast={toast} onDeleteKeys={deleteKeys} onClaimKey={claimKeyRemotely} /> : active === '页面编辑' ? <PageEditor asset={pageAsset} loading={pageAssetLoading} saving={pageAssetSaving} onSelectFile={handlePageAssetFile} onSave={savePageAsset} /> : active === '收件箱' ? <InboxPage messages={inboxMessages} requests={passwordResetRequests} answerers={answerers} adminToken={adminToken} onRefresh={loadData} onMessageRead={(id) => setInboxMessages((items) => items.map((item) => item.id === id ? { ...item, status: 'read', read_at: new Date().toISOString() } : item))} onDeleteMessages={(ids) => { const deletedIds = new Set(ids); setInboxMessages((items) => items.filter((item) => !deletedIds.has(item.id))) }} toast={toast} setConfirmState={setConfirmState} /> : <div className="empty-state"><div className="empty-icon"><Icon name="clock" size={26}/></div><h2>{active}即将开放</h2><p>请先完成活动与答主报名管理。</p></div>}
       </section>
         {selectedAnswerer && <AnswererParticipationModal answerer={selectedAnswerer} records={participationByAnswerer[selectedAnswerer.id] || []} onClose={() => setSelectedAnswerer(null)} toast={toast} />}
       </main>
@@ -1262,7 +1262,7 @@ function PartnerPage({ token }) {
       .upload(filePath, avatarFile, { upsert: true })
     if (uploadErr) { setAvatarUploading(false); return }
     const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(filePath)
-    const { error: updateErr } = await supabase.from('keyflow_answerers').update({ avatar_url: publicUrl, updated_at: new Date().toISOString() }).eq('id', answerer.id)
+    const { error: updateErr } = await supabase.rpc('keyflow_answerer_update_avatar', { p_answerer_id: answerer.id, p_avatar_url: publicUrl })
     if (updateErr) { setAvatarUploading(false); return }
     const session = { ...answerer, avatar_url: publicUrl }
     localStorage.setItem(SESSION_KEY, JSON.stringify(session))
@@ -1303,7 +1303,10 @@ function PartnerPage({ token }) {
       .order('requested_at', { ascending: false }).limit(1).maybeSingle()
     if (data) {
       if (data.status === 'pending') setPwdResetStep('pending')
-      else if (data.status === 'approved') setPwdResetStep('approved')
+      else if (data.status === 'approved') {
+        if (isPasswordResetApprovalExpired(data)) { setPwdResetStep('idle'); setPwdResetMsg('审批已过期，请重新提交密码重置申请。') }
+        else setPwdResetStep('approved')
+      }
       else if (data.status === 'rejected') { setPwdResetStep('rejected'); setPwdResetMsg(data.admin_note || '管理员拒绝了你的密码重置申请。') }
     }
   }
@@ -1322,7 +1325,10 @@ function PartnerPage({ token }) {
   const checkResetStatus = async () => {
     const { data } = await supabase.from('keyflow_password_reset_requests').select('*').eq('answerer_id', answerer.id).order('requested_at', { ascending: false }).limit(1).maybeSingle()
     if (data) {
-      if (data.status === 'approved') setPwdResetStep('approved')
+      if (data.status === 'approved') {
+        if (isPasswordResetApprovalExpired(data)) { setPwdResetStep('idle'); setPwdResetMsg('审批已过期，请重新提交密码重置申请。') }
+        else setPwdResetStep('approved')
+      }
       else if (data.status === 'rejected') { setPwdResetStep('rejected'); setPwdResetMsg(data.admin_note || '管理员拒绝了你的密码重置申请。') }
       else if (data.status === 'completed') setPwdResetStep('done')
     }
@@ -1898,7 +1904,7 @@ function AnswererDashboard() {
       .upload(filePath, avatarFile, { upsert: true })
     if (uploadErr) { setAvatarUploading(false); setAvatarMsg(uploadErr.message); return }
     const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(filePath)
-    const { error: updateErr } = await supabase.from('keyflow_answerers').update({ avatar_url: publicUrl, updated_at: new Date().toISOString() }).eq('id', answerer.id)
+    const { error: updateErr } = await supabase.rpc('keyflow_answerer_update_avatar', { p_answerer_id: answerer.id, p_avatar_url: publicUrl })
     if (updateErr) { setAvatarUploading(false); return }
     const session = { ...answerer, avatar_url: publicUrl }
     localStorage.setItem(SESSION_KEY, JSON.stringify(session))
@@ -1914,7 +1920,10 @@ function AnswererDashboard() {
       .order('requested_at', { ascending: false }).limit(1).maybeSingle()
     if (data) {
       if (data.status === 'pending') setPwdResetStep('pending')
-      else if (data.status === 'approved') setPwdResetStep('approved')
+      else if (data.status === 'approved') {
+        if (isPasswordResetApprovalExpired(data)) { setPwdResetStep('idle'); setPwdResetMsg('审批已过期，请重新提交密码重置申请。') }
+        else setPwdResetStep('approved')
+      }
       else if (data.status === 'rejected') { setPwdResetStep('rejected'); setPwdResetMsg(data.admin_note || '管理员拒绝了你的密码重置申请。') }
       // completed 不处理：用户已重置过密码，再次打开应显示 idle 重新发起流程
     }
@@ -1935,7 +1944,10 @@ function AnswererDashboard() {
   const checkResetStatus = async () => {
     const { data } = await supabase.from('keyflow_password_reset_requests').select('*').eq('answerer_id', answerer.id).order('requested_at', { ascending: false }).limit(1).maybeSingle()
     if (data) {
-      if (data.status === 'approved') setPwdResetStep('approved')
+      if (data.status === 'approved') {
+        if (isPasswordResetApprovalExpired(data)) { setPwdResetStep('idle'); setPwdResetMsg('审批已过期，请重新提交密码重置申请。') }
+        else setPwdResetStep('approved')
+      }
       else if (data.status === 'rejected') { setPwdResetStep('rejected'); setPwdResetMsg(data.admin_note || '管理员拒绝了你的密码重置申请。') }
       else if (data.status === 'completed') setPwdResetStep('done')
     }
@@ -2718,10 +2730,10 @@ function LoginPage({ aid, redirect, token }) {
     e.preventDefault(); setForgotMsg('')
     if (!forgotName.trim()) { setForgotMsg('请输入知乎用户名'); return }
     setForgotLoading(true)
-    const { data: answerer } = await supabase.from('keyflow_answerers').select('id').eq('zhihu_name', forgotName.trim()).maybeSingle()
-    if (!answerer) { setForgotLoading(false); setForgotMsg('未找到该用户名，请确认输入'); return }
-    setForgotAnswererId(answerer.id)
-    const { error: rpcErr } = await supabase.rpc('keyflow_request_password_reset', { p_answerer_id: answerer.id })
+    const { data: answererId, error: lookupErr } = await supabase.rpc('keyflow_answerer_id_by_zhihu_name', { p_zhihu_name: forgotName.trim() })
+    if (lookupErr || !answererId) { setForgotLoading(false); setForgotMsg('未找到该用户名，请确认输入'); return }
+    setForgotAnswererId(answererId)
+    const { error: rpcErr } = await supabase.rpc('keyflow_request_password_reset', { p_answerer_id: answererId })
     setForgotLoading(false)
     if (rpcErr) {
       if (rpcErr.message.includes('已有一个待处理')) { setForgotStep('pending'); return }
@@ -2736,7 +2748,10 @@ function LoginPage({ aid, redirect, token }) {
       .select('*').eq('answerer_id', forgotAnswererId)
       .order('requested_at', { ascending: false }).limit(1).maybeSingle()
     if (data) {
-      if (data.status === 'approved') setForgotStep('approved')
+      if (data.status === 'approved') {
+        if (isPasswordResetApprovalExpired(data)) { setForgotStep('idle'); setForgotMsg('审批已过期，请重新提交密码重置申请。') }
+        else setForgotStep('approved')
+      }
       else if (data.status === 'rejected') { setForgotStep('rejected'); setForgotMsg(data.admin_note || '管理员拒绝了你的密码重置申请。') }
     }
   }
@@ -3020,7 +3035,7 @@ function HomePage() {
       .upload(filePath, avatarFile, { upsert: true })
     if (uploadErr) { setAvatarUploading(false); return }
     const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(filePath)
-    const { error: updateErr } = await supabase.from('keyflow_answerers').update({ avatar_url: publicUrl, updated_at: new Date().toISOString() }).eq('id', user.id)
+    const { error: updateErr } = await supabase.rpc('keyflow_answerer_update_avatar', { p_answerer_id: user.id, p_avatar_url: publicUrl })
     if (updateErr) { setAvatarUploading(false); return }
     const session = { ...user, avatar_url: publicUrl }
     localStorage.setItem(SESSION_KEY, JSON.stringify(session))
@@ -3037,7 +3052,10 @@ function HomePage() {
       .order('requested_at', { ascending: false }).limit(1).maybeSingle()
     if (data) {
       if (data.status === 'pending') setPwdResetStep('pending')
-      else if (data.status === 'approved') setPwdResetStep('approved')
+      else if (data.status === 'approved') {
+        if (isPasswordResetApprovalExpired(data)) { setPwdResetStep('idle'); setPwdResetMsg('审批已过期，请重新提交密码重置申请。') }
+        else setPwdResetStep('approved')
+      }
       else if (data.status === 'rejected') { setPwdResetStep('rejected'); setPwdResetMsg(data.admin_note || '管理员拒绝了你的密码重置申请。') }
     }
   }
@@ -3054,7 +3072,10 @@ function HomePage() {
     if (!user?.id) return
     const { data } = await supabase.from('keyflow_password_reset_requests').select('*').eq('answerer_id', user.id).order('requested_at', { ascending: false }).limit(1).maybeSingle()
     if (data) {
-      if (data.status === 'approved') setPwdResetStep('approved')
+      if (data.status === 'approved') {
+        if (isPasswordResetApprovalExpired(data)) { setPwdResetStep('idle'); setPwdResetMsg('审批已过期，请重新提交密码重置申请。') }
+        else setPwdResetStep('approved')
+      }
       else if (data.status === 'rejected') { setPwdResetStep('rejected'); setPwdResetMsg(data.admin_note || '管理员拒绝了你的密码重置申请。') }
       else if (data.status === 'completed') setPwdResetStep('done')
     }
@@ -3288,7 +3309,7 @@ function AnswererParticipationModal({ answerer, records, onClose, toast }) {
   </Modal>
 }
 
-function PartnerManagement({ codes, answerers, setAnswerers, activities, setActivities, onAddCodes, onRefresh, participationByAnswerer, onViewAnswererParticipation }) {
+function PartnerManagement({ codes, answerers, setAnswerers, activities, setActivities, onAddCodes, onRefresh, adminToken, participationByAnswerer, onViewAnswererParticipation }) {
   const [generating, setGenerating] = useState(false)
   const [notice, setNotice] = useState('')
   const [managePartner, setManagePartner] = useState(null) // partner being managed
@@ -3301,7 +3322,7 @@ function PartnerManagement({ codes, answerers, setAnswerers, activities, setActi
     const text = remarkDraft.trim()
     setAnswerers(prev => prev.map(a => a.id === partnerId ? { ...a, remark: text } : a))
     setEditingRemarkId(null)
-    const { error } = await supabase.from('keyflow_answerers').update({ remark: text }).eq('id', partnerId)
+    const { error } = await supabase.rpc('keyflow_admin_update_answerer_remark', { p_token: adminToken, p_answerer_id: partnerId, p_remark: text })
     if (error) { toast('保存备注失败：' + error.message); onRefresh() }
   }
 
@@ -3467,7 +3488,7 @@ function PartnerActivityModal({ partner, activities, setActivities, answerers, o
   </Modal>
 }
 
-function AnswererManagement({ codes, answerers, setAnswerers, activities, applications, deliveries, dailySubmissions, onAddCodes, onDeleteAnswerer, participationByAnswerer, onViewAnswererParticipation }) {
+function AnswererManagement({ codes, answerers, setAnswerers, activities, applications, deliveries, dailySubmissions, onAddCodes, onDeleteAnswerer, adminToken, participationByAnswerer, onViewAnswererParticipation }) {
   const [generating, setGenerating] = useState(false)
   const [notice, setNotice] = useState('')
   const [confirmDeleteId, setConfirmDeleteId] = useState(null)
@@ -3481,7 +3502,7 @@ function AnswererManagement({ codes, answerers, setAnswerers, activities, applic
     const text = remarkDraft.trim()
     setAnswerers(prev => prev.map(a => a.id === answererId ? { ...a, remark: text } : a))
     setEditingRemarkId(null)
-    const { error } = await supabase.from('keyflow_answerers').update({ remark: text }).eq('id', answererId)
+    const { error } = await supabase.rpc('keyflow_admin_update_answerer_remark', { p_token: adminToken, p_answerer_id: answererId, p_remark: text })
     if (error) toast('保存备注失败：' + error.message)
   }
 
@@ -3544,7 +3565,7 @@ function AnswererManagement({ codes, answerers, setAnswerers, activities, applic
 
   const deleteAnswerer = async () => {
     if (!confirmDeleteId) return
-    const { error: requestError } = await supabase.from('keyflow_answerers').delete().eq('id', confirmDeleteId)
+    const { error: requestError } = await supabase.rpc('keyflow_admin_delete_answerer', { p_token: adminToken, p_answerer_id: confirmDeleteId })
     setConfirmDeleteId(null)
     if (requestError) return toast('删除失败：' + requestError.message)
     onDeleteAnswerer(confirmDeleteId)
@@ -3970,7 +3991,7 @@ function DailySubmissionsPage({ submissions, answerers, toast, setDailySubmissio
   </section>
 }
 
-function InboxPage({ messages, requests, answerers, onRefresh, onDeleteMessages, toast, setConfirmState }) {
+function InboxPage({ messages, requests, answerers, adminToken, onRefresh, onMessageRead, onDeleteMessages, toast, setConfirmState }) {
   const [tab, setTab] = useState('inbox')
   const [expandedId, setExpandedId] = useState(null)
   const [reviewLoading, setReviewLoading] = useState(null)
@@ -4067,11 +4088,25 @@ function InboxPage({ messages, requests, answerers, onRefresh, onDeleteMessages,
     return requests.find(r => r.answerer_id === answererId && r.status === 'pending') || null
   }
 
+  const markMessageRead = async (msg) => {
+    if (msg._type === 'sent_batch' || msg.status !== 'unread') return
+    const { error } = await supabase.from('keyflow_inbox').update({ status: 'read', read_at: new Date().toISOString() }).eq('id', msg.id)
+    if (!error) onMessageRead(msg.id)
+  }
+
+  const markAllRead = async () => {
+    const unreadIds = messages.filter(m => m._type !== 'sent_batch' && m.status === 'unread').map(m => m.id)
+    if (!unreadIds.length) return
+    const { error } = await supabase.from('keyflow_inbox').update({ status: 'read', read_at: new Date().toISOString() }).in('id', unreadIds)
+    if (error) return toast(error.message)
+    unreadIds.forEach(onMessageRead)
+  }
+
   const handleReview = async (msg, approved) => {
     const request = getRequestByAnswererId(msg.from_id)
     if (!request) { toast('未找到对应的密码重置申请'); return }
     setReviewLoading(msg.id)
-    const { error } = await supabase.rpc('keyflow_review_password_reset', { p_request_id: request.id, p_approved: approved })
+    const { error } = await supabase.rpc('keyflow_review_password_reset', { p_token: adminToken, p_request_id: request.id, p_approved: approved })
     setReviewLoading(null)
     if (error) { toast(error.message); return }
     toast(approved ? '已通过密码重置申请' : '已拒绝密码重置申请')
@@ -4106,7 +4141,7 @@ function InboxPage({ messages, requests, answerers, onRefresh, onDeleteMessages,
     })
   }
 
-  const unreadCount = messages.filter(m => m.type !== 'private_message' && m.status === 'unread').length
+  const unreadCount = messages.filter(m => m.status === 'unread').length
 
   return <div>
     <section className="panel">
@@ -4117,6 +4152,7 @@ function InboxPage({ messages, requests, answerers, onRefresh, onDeleteMessages,
         </div>
         {tab === 'inbox' && <div style={{ display: 'flex', gap: 'var(--sp-2)' }}>
           <button className="outline-button compact" onClick={onRefresh}>刷新</button>
+          {unreadCount > 0 && <button className="outline-button compact" onClick={markAllRead}>全部标为已读 ({unreadCount})</button>}
           <button className="outline-button compact" onClick={() => {
             const rows = messages.filter(m => m.type === 'private_message').map(m => [m.title, m.body, answererById[m.to_id]?.zhihu_name || '未知', m.created_at, m.status])
             const csv = '\uFEFF' + [['标题', '内容', '接收人', '发送时间', '状态'], ...rows].map(row => row.map(cell => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(',')).join('\n')
@@ -4169,7 +4205,7 @@ function InboxPage({ messages, requests, answerers, onRefresh, onDeleteMessages,
           const isExpanded = expandedId === msg._key
           const request = isSent ? null : getRequestByAnswererId(msg.from_id)
           return <div key={msg._key} className={`inbox-item ${!isSent && msg.status === 'unread' ? 'unread' : ''} ${isExpanded ? 'expanded' : ''}`}>
-            <div className="inbox-item-header" onClick={() => setExpandedId(isExpanded ? null : msg._key)}>
+            <div className="inbox-item-header" onClick={() => { if (!isExpanded) markMessageRead(msg); setExpandedId(isExpanded ? null : msg._key) }}>
               <div className="inbox-item-left">
                 <span className={`inbox-item-dot ${!isSent && msg.status === 'unread' ? 'active' : ''}`}/>
                 <div>
