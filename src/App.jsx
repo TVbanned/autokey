@@ -11,6 +11,12 @@ const getAdminToken = () => {
   try { return JSON.parse(localStorage.getItem(ADMIN_SESSION_KEY))?.session_token || null }
   catch { return null }
 }
+const PWD_RESET_APPROVAL_WINDOW_MS = 30 * 60 * 1000
+const isPwdResetApprovalExpired = (req) => {
+  if (!req || req.status !== 'approved') return false
+  if (!req.reviewed_at) return true
+  return Date.now() - new Date(req.reviewed_at).getTime() > PWD_RESET_APPROVAL_WINDOW_MS
+}
 const BANNER_CACHE_KEY = 'keyflow_banner'
 const HOME_ACTIVITIES_CACHE_KEY = 'keyflow_home_activities'
 
@@ -914,7 +920,7 @@ function App() {
         <button className={`sidebar-inbox-btn ${active === '收件箱' ? 'active' : ''}`} onClick={() => setActive('收件箱')} title="收件箱">
           <Icon name="inbox" size={20}/>
           <span>收件箱</span>
-          {inboxMessages.filter(m => m.type !== 'private_message' && m.status === 'unread').length > 0 && <b className="nav-alert">{inboxMessages.filter(m => m.type !== 'private_message' && m.status === 'unread').length}</b>}
+          {inboxMessages.filter(m => m.type === 'password_reset' && m.status === 'unread').length > 0 && <b className="nav-alert">{inboxMessages.filter(m => m.type === 'password_reset' && m.status === 'unread').length}</b>}
         </button>
       </div>
       <div className="profile">
@@ -1169,7 +1175,7 @@ function PartnerPage({ token }) {
       .order('requested_at', { ascending: false }).limit(1).maybeSingle()
     if (data) {
       if (data.status === 'pending') setPwdResetStep('pending')
-      else if (data.status === 'approved') setPwdResetStep('approved')
+      else if (data.status === 'approved') setPwdResetStep(isPwdResetApprovalExpired(data) ? 'idle' : 'approved')
       else if (data.status === 'rejected') { setPwdResetStep('rejected'); setPwdResetMsg(data.admin_note || '管理员拒绝了你的密码重置申请。') }
     }
   }
@@ -1188,7 +1194,7 @@ function PartnerPage({ token }) {
   const checkResetStatus = async () => {
     const { data } = await supabase.from('keyflow_password_reset_requests').select('*').eq('answerer_id', answerer.id).order('requested_at', { ascending: false }).limit(1).maybeSingle()
     if (data) {
-      if (data.status === 'approved') setPwdResetStep('approved')
+      if (data.status === 'approved') setPwdResetStep(isPwdResetApprovalExpired(data) ? 'idle' : 'approved')
       else if (data.status === 'rejected') { setPwdResetStep('rejected'); setPwdResetMsg(data.admin_note || '管理员拒绝了你的密码重置申请。') }
       else if (data.status === 'completed') setPwdResetStep('done')
     }
@@ -1227,7 +1233,7 @@ function PartnerPage({ token }) {
   if (!token) {
     const stageLabel = { recruiting: '招募中', key_distribution: '发 Key 中', delivery: '交付/创作中', completed: '项目完结' }
     const daysLeft = (deadline) => Math.max(0, Math.ceil((new Date(deadline) - new Date()) / 86400000))
-    return <div className="partner-page"><header className="partner-header"><a className="partner-brand" href="?home"><span className="brand-mark zhihu-mark">知</span><span>GameJourney</span><small>合作方协作页</small></a><div className="partner-header-right"><button className="reload outline" onClick={() => { window.location.href = '?dashboard' }}>切换到答主看板</button>{answerer?.zhihu_name === '灰域信风' && <button className="reload outline" onClick={() => { window.location.href = '?admin' }}>切换到管理员后台</button>}<div className="dashboard-user-area" onClick={() => setDropdownOpen(!dropdownOpen)}><div className="dashboard-avatar-wrap">{answerer?.avatar_url ? <img className="dashboard-avatar-img" src={answerer.avatar_url} alt="" /> : <span className="dashboard-avatar-placeholder">{answerer?.zhihu_name?.[0] || '?'}</span>}</div>{unreadInboxCount > 0 && <span className="dashboard-avatar-dot"/>}<span className="dashboard-username">{answerer?.zhihu_name}<Icon name="arrow" size={12}/></span>{dropdownOpen && <><div className="dashboard-dropdown-backdrop" onClick={(e) => { e.stopPropagation(); setDropdownOpen(false) }}/><div className="dashboard-dropdown"><button onClick={() => { setDropdownOpen(false); setAvatarModalOpen(true) }}><Icon name="image" size={16}/> 修改头像</button><button onClick={() => { setDropdownOpen(false); setPwdResetModalOpen(true); setPwdResetStep('idle'); setPwdResetMsg(''); setNewPassword(''); setConfirmPassword(''); loadResetStatus() }}><Icon name="key" size={16}/> 重置密码</button><button onClick={() => { setDropdownOpen(false); setInboxModalOpen(true); loadInbox() }}><Icon name="inbox" size={16}/> 收件箱{unreadInboxCount > 0 && <span className="dashboard-dropdown-dot"/>}</button><button className="dashboard-logout-btn" onClick={() => { localStorage.removeItem(SESSION_KEY); window.location.href = '?login' }}><Icon name="logout" size={16}/> 退出登录</button></div></>}</div></div></header><main className="partner-main"><section className="partner-hero" style={{ '--partner-hero-rgb': heroColor }}><div className="partner-hero-content"><h1>我的合作活动</h1><span>点击进入活动协作页查看详情。</span></div></section><section className="dashboard-activity-cards">{partnerActivities === null ? <div className="partner-loading">正在加载活动列表…</div> : !partnerActivities.length ? <div className="panel" style={{gridColumn:'1/-1'}}><div className="step-message"><p>暂无关联的合作活动</p><span>请联系运营人员将你关联到对应活动。</span></div></div> : partnerActivities.map((activity) => <a className="dashboard-activity-card" href={`?partner=${activity.partner_token}`} key={activity.id}><div className="dashboard-activity-cover">{activity.game_cover ? <img src={activity.game_cover} alt={activity.game_name} loading="lazy"/> : <span>{activity.game_name?.[0] || '游'}</span>}</div><div className="dashboard-activity-body"><p>{activity.game_name}</p><h3>{activity.title}</h3><div><span className={`pill stage-${activity.status === 'key_distribution' ? 'orange' : activity.status === 'delivery' ? 'purple' : activity.status === 'completed' ? 'green' : 'blue'}`}>{stageLabel[activity.status] || activity.status}</span>{activity.delivery_deadline && <span className="dashboard-deadline">截稿还剩 {daysLeft(activity.delivery_deadline)} 天</span>}</div></div></a>)}</section></main>
+    return <div className="partner-page"><header className="partner-header"><a className="partner-brand" href="?home"><span className="brand-mark zhihu-mark">知</span><span>GameJourney</span><small>合作方协作页</small></a><div className="partner-header-right"><button className="reload outline" onClick={() => { window.location.href = '?dashboard' }}>切换到答主看板</button>{answerer?.zhihu_name === '灰域信风' && <button className="reload outline" onClick={() => { window.location.href = '?admin' }}>切换到管理员后台</button>}<div className="dashboard-user-area" onClick={() => setDropdownOpen(!dropdownOpen)}><div className="dashboard-avatar-wrap">{answerer?.avatar_url ? <img className="dashboard-avatar-img" src={answerer.avatar_url} alt="" /> : <span className="dashboard-avatar-placeholder">{answerer?.zhihu_name?.[0] || '?'}</span>}</div>{unreadInboxCount > 0 && <span className="dashboard-avatar-dot"/>}<span className="dashboard-username">{answerer?.zhihu_name}<Icon name="arrow" size={12}/></span>{dropdownOpen && <><div className="dashboard-dropdown-backdrop" onClick={(e) => { e.stopPropagation(); setDropdownOpen(false) }}/><div className="dashboard-dropdown"><button onClick={() => { setDropdownOpen(false); setAvatarModalOpen(true) }}><Icon name="image" size={16}/> 修改头像</button><button onClick={() => { setDropdownOpen(false); setPwdResetModalOpen(true); setPwdResetStep('idle'); setPwdResetMsg(''); setNewPassword(''); setConfirmPassword(''); loadResetStatus() }}><Icon name="key" size={16}/> 重置密码</button><button onClick={() => { setDropdownOpen(false); setInboxModalOpen(true); loadInbox() }}><Icon name="inbox" size={16}/> 收件箱{unreadInboxCount > 0 && <span className="dashboard-dropdown-dot"/>}</button><button className="dashboard-logout-btn" onClick={() => { localStorage.removeItem(SESSION_KEY); window.location.href = '?login' }}><Icon name="logout" size={16}/> 退出登录</button></div></>}</div></div></header><main className="partner-main"><section className="partner-hero" style={{ '--partner-hero-rgb': heroColor }}><div className="partner-hero-content"><h1>我的合作活动</h1><span>点击进入活动协作页查看详情。</span></div></section><section className="dashboard-activity-cards">{partnerActivities === null ? <div className="partner-loading">正在加载活动列表…</div> : !partnerActivities.length ? <div className="panel" style={{gridColumn:'1/-1'}}><div className="step-message"><p>暂无关联的合作活动</p><span>请联系运营人员将你关联到对应活动。</span></div></div> : partnerActivities.map((activity) => <a className="dashboard-activity-card" href={`?partner=${activity.partner_token}`} key={activity.id}><div className="dashboard-activity-cover">{activity.game_cover ? <img src={activity.game_cover} alt={activity.game_name} loading="lazy"/> : <span>{activity.game_name?.[0] || '游'}</span>}</div><div className="dashboard-activity-body"><p>{activity.game_name}</p><h3>{activity.title}</h3><div><span className={`pill stage-${activity.status === 'key_distribution' ? 'orange' : activity.status === 'delivery' ? 'purple' : activity.status === 'completed' ? 'green' : 'blue'}`}>{stageLabel[activity.status] || activity.status}</span>{activity.status === 'recruiting' && <span className="dashboard-deadline">已报名 {activity.application_count || 0} 人</span>}{activity.status === 'key_distribution' && <span className="dashboard-deadline">已入选 {activity.selected_count || 0} 人</span>}{activity.status === 'delivery' && activity.delivery_deadline && <span className="dashboard-deadline">截稿还剩 {daysLeft(activity.delivery_deadline)} 天</span>}</div></div></a>)}</section></main>
       {pwdResetModalOpen && <Modal title="重置密码" onClose={() => { setPwdResetModalOpen(false); setPwdResetStep('idle'); setPwdResetMsg(''); setNewPassword(''); setConfirmPassword('') }}>
         <div className="pwd-reset-body">
           {pwdResetStep === 'idle' && <div className="pwd-reset-step"><div className="pwd-reset-step-icon"><Icon name="key" size={24}/></div><p className="pwd-reset-step-title">申请密码重置</p><p className="pwd-reset-step-desc">将向管理员提交密码重置申请。管理员审核通过后，你可以在此页面设置新密码。</p><button className="primary" onClick={requestPasswordReset} disabled={pwdResetLoading}>{pwdResetLoading ? '提交中…' : '提交申请'}</button></div>}
@@ -1753,7 +1759,7 @@ function AnswererDashboard() {
       .order('requested_at', { ascending: false }).limit(1).maybeSingle()
     if (data) {
       if (data.status === 'pending') setPwdResetStep('pending')
-      else if (data.status === 'approved') setPwdResetStep('approved')
+      else if (data.status === 'approved') setPwdResetStep(isPwdResetApprovalExpired(data) ? 'idle' : 'approved')
       else if (data.status === 'rejected') { setPwdResetStep('rejected'); setPwdResetMsg(data.admin_note || '管理员拒绝了你的密码重置申请。') }
       // completed 不处理：用户已重置过密码，再次打开应显示 idle 重新发起流程
     }
@@ -1774,7 +1780,7 @@ function AnswererDashboard() {
   const checkResetStatus = async () => {
     const { data } = await supabase.from('keyflow_password_reset_requests').select('*').eq('answerer_id', answerer.id).order('requested_at', { ascending: false }).limit(1).maybeSingle()
     if (data) {
-      if (data.status === 'approved') setPwdResetStep('approved')
+      if (data.status === 'approved') setPwdResetStep(isPwdResetApprovalExpired(data) ? 'idle' : 'approved')
       else if (data.status === 'rejected') { setPwdResetStep('rejected'); setPwdResetMsg(data.admin_note || '管理员拒绝了你的密码重置申请。') }
       else if (data.status === 'completed') setPwdResetStep('done')
     }
@@ -2571,7 +2577,7 @@ function LoginPage({ aid, redirect, token }) {
       .select('*').eq('answerer_id', forgotAnswererId)
       .order('requested_at', { ascending: false }).limit(1).maybeSingle()
     if (data) {
-      if (data.status === 'approved') setForgotStep('approved')
+      if (data.status === 'approved') setForgotStep(isPwdResetApprovalExpired(data) ? 'idle' : 'approved')
       else if (data.status === 'rejected') { setForgotStep('rejected'); setForgotMsg(data.admin_note || '管理员拒绝了你的密码重置申请。') }
     }
   }
@@ -2872,7 +2878,7 @@ function HomePage() {
       .order('requested_at', { ascending: false }).limit(1).maybeSingle()
     if (data) {
       if (data.status === 'pending') setPwdResetStep('pending')
-      else if (data.status === 'approved') setPwdResetStep('approved')
+      else if (data.status === 'approved') setPwdResetStep(isPwdResetApprovalExpired(data) ? 'idle' : 'approved')
       else if (data.status === 'rejected') { setPwdResetStep('rejected'); setPwdResetMsg(data.admin_note || '管理员拒绝了你的密码重置申请。') }
     }
   }
@@ -2889,7 +2895,7 @@ function HomePage() {
     if (!user?.id) return
     const { data } = await supabase.from('keyflow_password_reset_requests').select('*').eq('answerer_id', user.id).order('requested_at', { ascending: false }).limit(1).maybeSingle()
     if (data) {
-      if (data.status === 'approved') setPwdResetStep('approved')
+      if (data.status === 'approved') setPwdResetStep(isPwdResetApprovalExpired(data) ? 'idle' : 'approved')
       else if (data.status === 'rejected') { setPwdResetStep('rejected'); setPwdResetMsg(data.admin_note || '管理员拒绝了你的密码重置申请。') }
       else if (data.status === 'completed') setPwdResetStep('done')
     }
@@ -3790,7 +3796,7 @@ function InboxPage({ messages, requests, answerers, onRefresh, onDeleteMessages,
     const request = getRequestByAnswererId(msg.from_id)
     if (!request) { toast('未找到对应的密码重置申请'); return }
     setReviewLoading(msg.id)
-    const { error } = await supabase.rpc('keyflow_review_password_reset', { p_request_id: request.id, p_approved: approved })
+    const { error } = await supabase.rpc('keyflow_review_password_reset', { p_token: getAdminToken(), p_request_id: request.id, p_approved: approved })
     setReviewLoading(null)
     if (error) { toast(error.message); return }
     toast(approved ? '已通过密码重置申请' : '已拒绝密码重置申请')
