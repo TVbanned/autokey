@@ -7,6 +7,10 @@ import './App.css'
 const AdminLoginPage = lazy(() => import('./AdminLoginPage.jsx'))
 
 const ADMIN_SESSION_KEY = 'keyflow_admin_session'
+const getAdminToken = () => {
+  try { return JSON.parse(localStorage.getItem(ADMIN_SESSION_KEY))?.session_token || null }
+  catch { return null }
+}
 const BANNER_CACHE_KEY = 'keyflow_banner'
 const HOME_ACTIVITIES_CACHE_KEY = 'keyflow_home_activities'
 
@@ -59,7 +63,7 @@ const migrateAvatarToStorage = async (answererId, avatarUrl) => {
       .upload(filePath, blob, { upsert: true, contentType: mimeType })
     if (uploadErr) return avatarUrl
     const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(filePath)
-    await supabase.from('keyflow_answerers').update({ avatar_url: publicUrl }).eq('id', answererId)
+    await supabase.rpc('keyflow_answerer_update_avatar', { p_answerer_id: answererId, p_avatar_url: publicUrl })
     return publicUrl
   } catch { return avatarUrl }
 }
@@ -428,16 +432,21 @@ function App() {
   const loadData = async () => {
     setLoading(true); setError('')
     try {
+      const adminToken = getAdminToken()
       // 所有查询同时发起，不互相等待
       const pAct = supabase.from('keyflow_activities').select('*').order('created_at', { ascending: false }).limit(1000)
       const pApp = supabase.from('keyflow_applications').select('*, keyflow_keys(claimed_at), keyflow_deliveries(id, status, article_url, article_title)').order('submitted_at', { ascending: false }).limit(1000)
+      // 答主列表走管理员 RPC；无 token（公开页/答主端）时跳过
+      const pAns = adminToken
+        ? supabase.rpc('keyflow_admin_answerer_summaries', { p_token: adminToken })
+        : Promise.resolve({ data: [], error: null })
       // 其余数据用 then 处理，不阻塞 loading 状态
       Promise.all([
         supabase.from('keyflow_deliveries').select('id, application_id, status, article_url, article_title, reviewer_note, reviewed_at, submitted_at').limit(1000),
         supabase.from('keyflow_daily_submissions').select('id, answerer_id, article_url, article_title, submitted_at, created_at, reviewed, processed, featured').order('submitted_at', { ascending: false }).limit(1000),
         supabase.from('keyflow_keys').select('id, activity_id, platform, application_id, created_at, claimed_at').order('created_at', { ascending: false }).limit(1000),
         supabase.from('keyflow_invitation_codes').select('id, code, code_type, application_id, answerer_id, created_at, used_at').order('created_at', { ascending: false }).order('id').limit(1000),
-        supabase.from('keyflow_answerers').select('id, serial_number, zhihu_name, account_address, wechat_id, remark, created_at, updated_at').order('created_at', { ascending: false }).limit(1000),
+        pAns,
         supabase.from('keyflow_inbox').select('id, title, body, status, to_id, type, created_at, read_at').order('created_at', { ascending: false }).limit(1000),
         supabase.from('keyflow_password_reset_requests').select('id, answerer_id, status, requested_at, reviewed_at, admin_note').order('requested_at', { ascending: false }).limit(1000),
       ]).then(([d, ds, k, ic, a, ib, r]) => {
@@ -445,18 +454,18 @@ function App() {
         if (failure) setError(failure.message)
         else {
           setDeliveries(d.data || []); setDailySubmissions(ds.data || []); setKeys(k.data || []); setInvitationCodes(ic.data || []); setAnswerers(a.data || []); setInboxMessages(ib.data || []); setPasswordResetRequests(r.data || [])
-          // 延后异步加载头像，base64 格式自动迁移到 Supabase Storage
-          supabase.from('keyflow_answerers').select('id, avatar_url').limit(1000).then(async ({ data: avatarData }) => {
-            if (avatarData) {
-              const migrated = await Promise.all(avatarData.map(async (a) => {
-                if (a.avatar_url && a.avatar_url.startsWith('data:')) {
-                  a.avatar_url = await migrateAvatarToStorage(a.id, a.avatar_url)
-                }
-                return a
-              }))
+          // 延后异步迁移 base64 头像到 Supabase Storage（summaries 已返回 avatar_url）
+          const answererData = a.data || []
+          if (answererData.length) {
+            Promise.all(answererData.map(async (x) => {
+              if (x.avatar_url && x.avatar_url.startsWith('data:')) {
+                x.avatar_url = await migrateAvatarToStorage(x.id, x.avatar_url)
+              }
+              return x
+            })).then((migrated) => {
               setAnswerers(prev => prev.map(aa => { const m = migrated.find(dd => dd.id === aa.id); return m && m.avatar_url ? { ...aa, avatar_url: m.avatar_url } : aa }))
-            }
-          })
+            }).catch((e) => console.error('头像迁移失败:', e))
+          }
         }
       }).catch((e) => {
         console.error('辅助数据加载失败:', e)
@@ -1119,7 +1128,7 @@ function PartnerPage({ token }) {
       .upload(filePath, avatarFile, { upsert: true })
     if (uploadErr) { setAvatarUploading(false); return }
     const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(filePath)
-    const { error: updateErr } = await supabase.from('keyflow_answerers').update({ avatar_url: publicUrl, updated_at: new Date().toISOString() }).eq('id', answerer.id)
+    const { error: updateErr } = await supabase.rpc('keyflow_answerer_update_avatar', { p_answerer_id: answerer.id, p_avatar_url: publicUrl })
     if (updateErr) { setAvatarUploading(false); return }
     const session = { ...answerer, avatar_url: publicUrl }
     localStorage.setItem(SESSION_KEY, JSON.stringify(session))
@@ -1728,7 +1737,7 @@ function AnswererDashboard() {
       .upload(filePath, avatarFile, { upsert: true })
     if (uploadErr) { setAvatarUploading(false); setAvatarMsg(uploadErr.message); return }
     const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(filePath)
-    const { error: updateErr } = await supabase.from('keyflow_answerers').update({ avatar_url: publicUrl, updated_at: new Date().toISOString() }).eq('id', answerer.id)
+    const { error: updateErr } = await supabase.rpc('keyflow_answerer_update_avatar', { p_answerer_id: answerer.id, p_avatar_url: publicUrl })
     if (updateErr) { setAvatarUploading(false); return }
     const session = { ...answerer, avatar_url: publicUrl }
     localStorage.setItem(SESSION_KEY, JSON.stringify(session))
@@ -2544,10 +2553,10 @@ function LoginPage({ aid, redirect, token }) {
     e.preventDefault(); setForgotMsg('')
     if (!forgotName.trim()) { setForgotMsg('请输入知乎用户名'); return }
     setForgotLoading(true)
-    const { data: answerer } = await supabase.from('keyflow_answerers').select('id').eq('zhihu_name', forgotName.trim()).maybeSingle()
-    if (!answerer) { setForgotLoading(false); setForgotMsg('未找到该用户名，请确认输入'); return }
-    setForgotAnswererId(answerer.id)
-    const { error: rpcErr } = await supabase.rpc('keyflow_request_password_reset', { p_answerer_id: answerer.id })
+    const { data: answererId } = await supabase.rpc('keyflow_answerer_id_by_zhihu_name', { p_zhihu_name: forgotName.trim() })
+    if (!answererId) { setForgotLoading(false); setForgotMsg('未找到该用户名，请确认输入'); return }
+    setForgotAnswererId(answererId)
+    const { error: rpcErr } = await supabase.rpc('keyflow_request_password_reset', { p_answerer_id: answererId })
     setForgotLoading(false)
     if (rpcErr) {
       if (rpcErr.message.includes('已有一个待处理')) { setForgotStep('pending'); return }
@@ -2846,7 +2855,7 @@ function HomePage() {
       .upload(filePath, avatarFile, { upsert: true })
     if (uploadErr) { setAvatarUploading(false); return }
     const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(filePath)
-    const { error: updateErr } = await supabase.from('keyflow_answerers').update({ avatar_url: publicUrl, updated_at: new Date().toISOString() }).eq('id', user.id)
+    const { error: updateErr } = await supabase.rpc('keyflow_answerer_update_avatar', { p_answerer_id: user.id, p_avatar_url: publicUrl })
     if (updateErr) { setAvatarUploading(false); return }
     const session = { ...user, avatar_url: publicUrl }
     localStorage.setItem(SESSION_KEY, JSON.stringify(session))
@@ -3127,7 +3136,7 @@ function PartnerManagement({ codes, answerers, setAnswerers, activities, onAddCo
     const text = remarkDraft.trim()
     setAnswerers(prev => prev.map(a => a.id === partnerId ? { ...a, remark: text } : a))
     setEditingRemarkId(null)
-    const { error } = await supabase.from('keyflow_answerers').update({ remark: text }).eq('id', partnerId)
+    const { error } = await supabase.rpc('keyflow_admin_update_answerer_remark', { p_token: getAdminToken(), p_answerer_id: partnerId, p_remark: text })
     if (error) { toast('保存备注失败：' + error.message); onRefresh() }
   }
 
@@ -3305,7 +3314,7 @@ function AnswererManagement({ codes, answerers, setAnswerers, activities, applic
     const text = remarkDraft.trim()
     setAnswerers(prev => prev.map(a => a.id === answererId ? { ...a, remark: text } : a))
     setEditingRemarkId(null)
-    const { error } = await supabase.from('keyflow_answerers').update({ remark: text }).eq('id', answererId)
+    const { error } = await supabase.rpc('keyflow_admin_update_answerer_remark', { p_token: getAdminToken(), p_answerer_id: answererId, p_remark: text })
     if (error) toast('保存备注失败：' + error.message)
   }
 
@@ -3368,7 +3377,7 @@ function AnswererManagement({ codes, answerers, setAnswerers, activities, applic
 
   const deleteAnswerer = async () => {
     if (!confirmDeleteId) return
-    const { error: requestError } = await supabase.from('keyflow_answerers').delete().eq('id', confirmDeleteId)
+    const { error: requestError } = await supabase.rpc('keyflow_admin_delete_answerer', { p_token: getAdminToken(), p_answerer_id: confirmDeleteId })
     setConfirmDeleteId(null)
     if (requestError) return toast('删除失败：' + requestError.message)
     onDeleteAnswerer(confirmDeleteId)
