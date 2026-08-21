@@ -792,6 +792,9 @@ span.stage-green { background: #dcfce7; color: #15803d; }
 .page-file-button { position: relative; overflow: hidden; cursor: pointer; }
 .page-file-button input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .page-editor-hint { margin-top: var(--sp-3); color: var(--c-ink-4); font-size: var(--fs-meta); }
+.page-editor-toggle-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); }
+.page-editor-toggle-row h4 { font-size: var(--fs-body); color: var(--c-ink); margin-bottom: var(--sp-1); }
+.page-editor-toggle-row p { color: var(--c-ink-4); font-size: var(--fs-meta); }
 @media (max-width: 560px) { .page-editor-actions > * { flex: 1; }.page-editor-body { padding: var(--sp-4); } }
 
 /* === Admin Login Page === */
@@ -1811,6 +1814,16 @@ span.stage-green { background: #dcfce7; color: #15803d; }
 .inbox-compose-area {
   padding: var(--sp-4);
 }
+
+/* === Answerer Badges === */
+.answerer-badges-panel { margin-bottom: var(--sp-5); padding: var(--sp-4); }
+.answerer-badge-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: var(--sp-3); }
+.answerer-badge { display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); text-align: center; }
+.answerer-badge-img { width: 72px; height: 72px; border-radius: var(--r-md); overflow: hidden; background: var(--c-surface-2); border: 1px solid var(--c-border); }
+.answerer-badge-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.answerer-badge-name { max-width: 100%; font-size: var(--fs-meta); color: var(--c-ink-2); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.answerer-badge-status { font-size: 10px; color: var(--c-ink-4); }
+.answerer-badge.earned .answerer-badge-status { color: var(--c-success); }
 
 /* === Daily Submission Form === */
 .dashboard-daily-form { margin-bottom: var(--sp-5); }
