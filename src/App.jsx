@@ -567,7 +567,7 @@ function App() {
         supabase.from('keyflow_keys').select('id, activity_id, platform, application_id, created_at, claimed_at').order('created_at', { ascending: false }).limit(1000),
         supabase.from('keyflow_invitation_codes').select('id, code, code_type, application_id, answerer_id, created_at, used_at').order('created_at', { ascending: false }).order('id').limit(1000),
         supabase.rpc('keyflow_admin_answerer_summaries', { p_token: getAdminToken() }),
-        supabase.from('keyflow_inbox').select('id, title, body, status, to_id, type, created_at, read_at').neq('type', 'system').order('created_at', { ascending: false }).limit(1000),
+        supabase.from('keyflow_inbox').select('id, title, body, status, from_id, to_id, type, created_at, read_at').neq('type', 'system').order('created_at', { ascending: false }).limit(1000),
         supabase.from('keyflow_password_reset_requests').select('id, answerer_id, status, requested_at, reviewed_at, admin_note').order('requested_at', { ascending: false }).limit(1000),
       ]).then(([d, ds, dq, k, ic, a, ib, r]) => {
         const failure = d.error || ds.error || dq.error || k.error || ic.error || a.error || ib.error || r.error
