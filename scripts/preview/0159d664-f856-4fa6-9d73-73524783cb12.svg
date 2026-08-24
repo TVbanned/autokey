@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="75%">
+      <stop offset="0%" stop-color="#12324e"/>
+      <stop offset="55%" stop-color="#0b1f33"/>
+      <stop offset="100%" stop-color="#05101d"/>
+    </radialGradient>
+    <linearGradient id="hexGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#bfe3ff"/>
+      <stop offset="45%" stop-color="#5aa8e0"/>
+      <stop offset="100%" stop-color="#1d5e94"/>
+    </linearGradient>
+    <linearGradient id="hexGrad2" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%" stop-color="#8fcdf5"/>
+      <stop offset="55%" stop-color="#3d8cc9"/>
+      <stop offset="100%" stop-color="#144a78"/>
+    </linearGradient>
+    <linearGradient id="tower" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#dff1ff"/>
+      <stop offset="100%" stop-color="#4d9bd4"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="10"/>
+    </filter>
+    <filter id="soft2" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="4"/>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <circle cx="256" cy="230" r="190" fill="#2f7fc0" opacity="0.18" filter="url(#soft)"/>
+  <ellipse cx="256" cy="392" rx="150" ry="26" fill="#000000" opacity="0.5" filter="url(#soft)"/>
+
+  <!-- abstract city skyline inside hexagon -->
+  <g opacity="0.9">
+    <rect x="228" y="238" width="14" height="78" rx="3" fill="url(#tower)" opacity="0.85"/>
+    <rect x="248" y="212" width="16" height="104" rx="3" fill="url(#tower)"/>
+    <rect x="270" y="230" width="13" height="86" rx="3" fill="url(#tower)" opacity="0.85"/>
+    <rect x="238" y="258" width="8" height="58" rx="2" fill="#9ed2f2" opacity="0.6"/>
+    <rect x="284" y="256" width="8" height="60" rx="2" fill="#9ed2f2" opacity="0.6"/>
+    <rect x="250" y="196" width="12" height="18" rx="2" fill="#e6f5ff" opacity="0.9"/>
+    <rect x="236" y="316" width="52" height="8" rx="4" fill="#cde9fb" opacity="0.5"/>
+  </g>
+
+  <!-- hexagonal open-ring mark (C motif) -->
+  <g>
+    <path d="M256 96 L338 143 L338 185 L256 138 L174 185 L174 143 Z" fill="url(#hexGrad)"/>
+    <path d="M174 143 L174 281 L256 328 L256 374 L132 302 L132 122 Z" fill="url(#hexGrad2)"/>
+    <path d="M338 281 L338 237 L380 261 L380 302 L256 374 L256 328 Z" fill="url(#hexGrad)"/>
+    <path d="M256 96 L338 143 L338 158 L256 111 Z" fill="url(#sheen)" opacity="0.7"/>
+    <path d="M132 122 L132 302 L146 294 L146 130 Z" fill="#ffffff" opacity="0.18" filter="url(#soft2)"/>
+  </g>
+
+  <!-- inner hex edge glow -->
+  <path d="M256 138 L338 185 L338 237 L380 261 L380 302 L256 374 L132 302 L132 122 L256 55 L380 122 L380 185" fill="none" stroke="#8fd0f7" stroke-width="2" opacity="0.25" filter="url(#soft2)"/>
+
+  <ellipse cx="256" cy="150" rx="120" ry="30" fill="#ffffff" opacity="0.08" filter="url(#soft)"/>
+</svg>

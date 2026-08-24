@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="75%">
+      <stop offset="0%" stop-color="#3a3f46"/>
+      <stop offset="55%" stop-color="#23272c"/>
+      <stop offset="100%" stop-color="#101216"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#e8c56a"/>
+      <stop offset="45%" stop-color="#9a742e"/>
+      <stop offset="75%" stop-color="#d9b455"/>
+      <stop offset="100%" stop-color="#6e5018"/>
+    </linearGradient>
+    <linearGradient id="blade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f4f6f8"/>
+      <stop offset="40%" stop-color="#c3cbd2"/>
+      <stop offset="100%" stop-color="#7e878f"/>
+    </linearGradient>
+    <linearGradient id="blade2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#dfe4e9"/>
+      <stop offset="50%" stop-color="#9aa3ab"/>
+      <stop offset="100%" stop-color="#5d656d"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f0d488"/>
+      <stop offset="50%" stop-color="#b8892f"/>
+      <stop offset="100%" stop-color="#7a5a1c"/>
+    </linearGradient>
+    <linearGradient id="ribbon" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#c33a35"/>
+      <stop offset="100%" stop-color="#7c1614"/>
+    </linearGradient>
+    <filter id="blurS" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="7"/>
+    </filter>
+    <filter id="blurL" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" fill="url(#bg)"/>
+
+  <!-- ink mist -->
+  <ellipse cx="256" cy="410" rx="150" ry="26" fill="#000000" opacity="0.45" filter="url(#blurL)"/>
+  <ellipse cx="150" cy="120" rx="90" ry="50" fill="#4c545e" opacity="0.25" filter="url(#blurL)"/>
+
+  <!-- outer ring shadow -->
+  <circle cx="256" cy="262" r="186" fill="none" stroke="#000" stroke-width="10" opacity="0.5" filter="url(#blurS)"/>
+  <!-- outer ring -->
+  <circle cx="256" cy="256" r="186" fill="none" stroke="url(#ring)" stroke-width="9"/>
+  <circle cx="256" cy="256" r="172" fill="none" stroke="#d9b455" stroke-width="2" opacity="0.35"/>
+
+  <!-- soft top highlight -->
+  <path d="M120 150 A186 186 0 0 1 392 150" fill="none" stroke="#ffffff" stroke-width="4" opacity="0.18" filter="url(#blurS)"/>
+
+  <!-- sword (straight, jian) tilted -->
+  <g transform="rotate(38 256 250)">
+    <rect x="248" y="120" width="16" height="200" rx="4" fill="url(#blade)"/>
+    <polygon points="248,120 264,120 256,92" fill="url(#blade)"/>
+    <rect x="255" y="122" width="3" height="196" fill="#ffffff" opacity="0.5"/>
+    <rect x="228" y="318" width="56" height="12" rx="5" fill="url(#gold)"/>
+    <rect x="250" y="330" width="12" height="52" rx="5" fill="#2b2118"/>
+    <rect x="252" y="330" width="4" height="52" fill="#6b5a3a" opacity="0.6"/>
+    <circle cx="256" cy="392" r="9" fill="url(#gold)"/>
+  </g>
+
+  <!-- saber (dao, curved) tilted opposite -->
+  <g transform="rotate(-38 256 250)">
+    <path d="M246 320 L242 130 Q244 96 268 84 Q258 110 260 140 L266 320 Z" fill="url(#blade2)"/>
+    <path d="M252 300 L250 130 Q252 104 262 92" fill="none" stroke="#ffffff" stroke-width="2.5" opacity="0.55"/>
+    <rect x="228" y="318" width="56" height="12" rx="5" fill="url(#gold)"/>
+    <rect x="250" y="330" width="12" height="52" rx="5" fill="#2b2118"/>
+    <rect x="252" y="330" width="4" height="52" fill="#6b5a3a" opacity="0.6"/>
+    <circle cx="256" cy="392" r="9" fill="url(#gold)"/>
+  </g>
+
+  <!-- crossing glow -->
+  <circle cx="256" cy="236" r="34" fill="#f0d488" opacity="0.22" filter="url(#blurL)"/>
+
+  <!-- red ribbon sash across lower -->
+  <path d="M96 332 Q256 372 416 332 L416 362 Q256 402 96 362 Z" fill="url(#ribbon)"/>
+  <path d="M96 332 Q256 372 416 332 L416 340 Q256 380 96 340 Z" fill="#e06a5e" opacity="0.5"/>
+  <polygon points="120,340 92,378 128,368" fill="url(#ribbon)"/>
+  <polygon points="392,340 420,378 384,368" fill="url(#ribbon)"/>
+
+  <!-- ground shadow under ribbon -->
+  <path d="M110 372 Q256 412 402 372" fill="none" stroke="#000" stroke-width="10" opacity="0.35" filter="url(#blurS)"/>
+</svg>

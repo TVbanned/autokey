@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="42%" r="75%">
+      <stop offset="0%" stop-color="#1a2430"/>
+      <stop offset="55%" stop-color="#0d1420"/>
+      <stop offset="100%" stop-color="#060a12"/>
+    </radialGradient>
+    <linearGradient id="metal" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#8fa3b8"/>
+      <stop offset="45%" stop-color="#4a5c70"/>
+      <stop offset="100%" stop-color="#232f3d"/>
+    </linearGradient>
+    <linearGradient id="metalTop" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#c8d6e4"/>
+      <stop offset="100%" stop-color="#6d8093"/>
+    </linearGradient>
+    <radialGradient id="lens" cx="42%" cy="38%" r="70%">
+      <stop offset="0%" stop-color="#9fd8e8"/>
+      <stop offset="30%" stop-color="#3f7d99"/>
+      <stop offset="70%" stop-color="#12303f"/>
+      <stop offset="100%" stop-color="#061218"/>
+    </radialGradient>
+    <radialGradient id="iris" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#eafcff"/>
+      <stop offset="45%" stop-color="#7fd4ee"/>
+      <stop offset="100%" stop-color="#1b5a75"/>
+    </radialGradient>
+    <linearGradient id="glitch" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#9fb6ff"/>
+      <stop offset="100%" stop-color="#3d4f9e"/>
+    </linearGradient>
+    <filter id="blurS" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+    <filter id="blurM" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="12"/>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" fill="url(#bg)"/>
+
+  <!-- ambient glow behind lens -->
+  <circle cx="256" cy="252" r="130" fill="#2b5f7a" opacity="0.35" filter="url(#blurM)"/>
+
+  <!-- glitch particles -->
+  <g opacity="0.9">
+    <rect x="92" y="118" width="16" height="16" rx="3" fill="url(#glitch)" opacity="0.75" filter="url(#blurS)"/>
+    <rect x="126" y="356" width="12" height="12" rx="2" fill="url(#glitch)" opacity="0.6" filter="url(#blurS)"/>
+    <rect x="392" y="132" width="18" height="18" rx="3" fill="url(#glitch)" opacity="0.8" filter="url(#blurS)"/>
+    <rect x="368" y="368" width="12" height="12" rx="2" fill="url(#glitch)" opacity="0.55" filter="url(#blurS)"/>
+    <rect x="168" y="96" width="9" height="9" rx="2" fill="#5a70c8" opacity="0.6"/>
+    <rect x="332" y="98" width="10" height="10" rx="2" fill="#5a70c8" opacity="0.7"/>
+    <rect x="104" y="240" width="8" height="8" rx="2" fill="#5a70c8" opacity="0.5"/>
+    <rect x="404" y="262" width="9" height="9" rx="2" fill="#5a70c8" opacity="0.65"/>
+  </g>
+
+  <!-- camera body -->
+  <rect x="128" y="176" width="256" height="170" rx="22" fill="#0a0f18" opacity="0.6" filter="url(#blurM)"/>
+  <rect x="122" y="168" width="268" height="172" rx="22" fill="url(#metal)"/>
+  <rect x="122" y="168" width="268" height="60" rx="22" fill="url(#metalTop)" opacity="0.45"/>
+
+  <!-- top grip / flash bump -->
+  <rect x="196" y="148" width="120" height="26" rx="9" fill="url(#metal)"/>
+  <rect x="196" y="148" width="120" height="10" rx="5" fill="url(#metalTop)" opacity="0.6"/>
+
+  <!-- body edge highlight -->
+  <rect x="130" y="176" width="252" height="4" rx="2" fill="#d9e6f2" opacity="0.35"/>
+
+  <!-- shutter dot -->
+  <circle cx="356" cy="196" r="9" fill="#1c2836"/>
+  <circle cx="356" cy="196" r="6" fill="#3a4d61"/>
+  <circle cx="354" cy="194" r="2" fill="#b9cadb" opacity="0.8"/>
+
+  <!-- lens -->
+  <circle cx="256" cy="256" r="86" fill="#0a121a"/>
+  <circle cx="256" cy="256" r="80" fill="url(#metal)"/>
+  <circle cx="256" cy="256" r="72" fill="#0b1620"/>
+  <circle cx="256" cy="256" r="64" fill="url(#lens)"/>
+  <circle cx="256" cy="256" r="40" fill="none" stroke="#7fd4ee" stroke-width="2" opacity="0.35"/>
+
+  <!-- iris: anomalous glow -->
+  <circle cx="256" cy="256" r="26" fill="url(#iris)" opacity="0.9"/>
+  <circle cx="256" cy="256" r="26" fill="#bff0ff" opacity="0.5" filter="url(#blurS)"/>
+  <circle cx="256" cy="256" r="10" fill="#04121a"/>
+
+  <!-- glass reflection -->
+  <ellipse cx="232" cy="230" rx="26" ry="14" fill="#eafcff" opacity="0.35" filter="url(#blurS)" transform="rotate(-30 232 230)"/>
+  <path d="M300 302 A64 64 0 0 1 322 260" stroke="#9fd8e8" stroke-width="3" fill="none" opacity="0.3" stroke-linecap="round"/>
+
+  <!-- scanlines on lens -->
+  <g stroke="#0a141d" stroke-width="2" opacity="0.35">
+    <line x1="206" y1="240" x2="306" y2="240"/>
+    <line x1="202" y1="258" x2="310" y2="258"/>
+    <line x1="206" y1="276" x2="306" y2="276"/>
+  </g>
+
+  <!-- viewfinder corner brackets -->
+  <g fill="none" stroke="#8fb4cc" stroke-width="6" stroke-linecap="round" opacity="0.9">
+    <path d="M74 110 L74 84 Q74 74 84 74 L110 74"/>
+    <path d="M402 74 L428 74 Q438 74 438 84 L438 110"/>
+    <path d="M438 402 L438 428 Q438 438 428 438 L402 438"/>
+    <path d="M110 438 L84 438 Q74 438 74 428 L74 402"/>
+  </g>
+  <g fill="none" stroke="#e4f2fc" stroke-width="2" stroke-linecap="round" opacity="0.5">
+    <path d="M74 110 L74 84 Q74 74 84 74 L110 74"/>
+    <path d="M402 74 L428 74 Q438 74 438 84 L438 110"/>
+    <path d="M438 402 L438 428 Q438 74 438 84" opacity="0"/>
+    <path d="M438 402 L438 428 Q438 438 428 438 L402 438"/>
+    <path d="M110 438 L84 438 Q74 438 74 428 L74 402"/>
+  </g>
+
+  <!-- subtle rec dot -->
+  <circle cx="392" cy="392" r="5" fill="#e05252"/>
+  <circle cx="392" cy="392" r="8" fill="#e05252" opacity="0.4" filter="url(#blurS)"/>
+</svg>

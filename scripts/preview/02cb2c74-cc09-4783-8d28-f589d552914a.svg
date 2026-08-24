@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="75%">
+      <stop offset="0%" stop-color="#2b3a4a"/>
+      <stop offset="55%" stop-color="#1a2530"/>
+      <stop offset="100%" stop-color="#0d141c"/>
+    </radialGradient>
+    <radialGradient id="moon" cx="40%" cy="35%" r="70%">
+      <stop offset="0%" stop-color="#f4f7f5"/>
+      <stop offset="60%" stop-color="#cfdde0"/>
+      <stop offset="100%" stop-color="#9db4bd"/>
+    </radialGradient>
+    <linearGradient id="roof" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#4a5f6e"/>
+      <stop offset="45%" stop-color="#2c3d4b"/>
+      <stop offset="100%" stop-color="#16222d"/>
+    </linearGradient>
+    <linearGradient id="roofHi" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#7d97a6"/>
+      <stop offset="50%" stop-color="#a9c2cc"/>
+      <stop offset="100%" stop-color="#5f7a89"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#e8c98a"/>
+      <stop offset="50%" stop-color="#c9a35e"/>
+      <stop offset="100%" stop-color="#8f6f38"/>
+    </linearGradient>
+    <linearGradient id="mist" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#c8dde2" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#d8e9ec" stop-opacity=".55"/>
+      <stop offset="100%" stop-color="#c8dde2" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="mtn" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#31465a"/>
+      <stop offset="100%" stop-color="#131e29"/>
+    </linearGradient>
+    <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="10"/>
+    </filter>
+    <filter id="softSm" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="4"/>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" fill="url(#bg)"/>
+
+  <!-- halo -->
+  <circle cx="256" cy="212" r="150" fill="#8fb2bd" opacity=".12" filter="url(#soft)"/>
+  <!-- moon -->
+  <circle cx="256" cy="208" r="98" fill="url(#moon)" opacity=".9"/>
+  <circle cx="256" cy="208" r="98" fill="none" stroke="#e9f2f2" stroke-opacity=".35" stroke-width="2"/>
+
+  <!-- ground shadow -->
+  <ellipse cx="256" cy="400" rx="150" ry="20" fill="#000" opacity=".45" filter="url(#soft)"/>
+
+  <!-- mountains -->
+  <path d="M96 400 L176 300 L226 352 L256 310 L286 352 L336 300 L416 400 Z" fill="url(#mtn)" opacity=".85"/>
+  <path d="M176 300 L201 331 L190 331 L212 356 L176 300" fill="#0e1822" opacity=".5"/>
+  <path d="M336 300 L311 331 L322 331 L300 356 L336 300" fill="#0e1822" opacity=".5"/>
+
+  <!-- pagoda base platform -->
+  <path d="M176 400 L336 400 L322 380 L190 380 Z" fill="url(#roof)"/>
+  <path d="M176 400 L336 400 L332 394 L180 394 Z" fill="url(#roofHi)" opacity=".5"/>
+
+  <!-- tier 1 -->
+  <rect x="212" y="344" width="88" height="36" fill="url(#roof)"/>
+  <path d="M256 312 C238 322 208 330 190 332 C206 338 216 344 216 348 L296 348 C296 344 306 338 322 332 C304 330 274 322 256 312 Z" fill="url(#roof)"/>
+  <path d="M256 312 C240 321 214 328 196 331 L256 335 Z" fill="url(#roofHi)" opacity=".55"/>
+  <path d="M190 332 C206 338 216 344 216 348 L296 348 C296 344 306 338 322 332 C300 342 212 342 190 332 Z" fill="#0c151d" opacity=".55"/>
+
+  <!-- tier 2 -->
+  <rect x="226" y="286" width="60" height="30" fill="url(#roof)"/>
+  <path d="M256 258 C242 266 220 272 206 274 C218 279 226 284 226 288 L286 288 C286 284 294 279 306 274 C292 272 270 266 256 258 Z" fill="url(#roof)"/>
+  <path d="M256 258 C243 265 224 271 211 273 L256 277 Z" fill="url(#roofHi)" opacity=".55"/>
+  <path d="M206 274 C218 279 226 284 226 288 L286 288 C286 284 294 279 306 274 C290 282 222 282 206 274 Z" fill="#0c151d" opacity=".55"/>
+
+  <!-- tier 3 -->
+  <rect x="236" y="236" width="40" height="24" fill="url(#roof)"/>
+  <path d="M256 214 C245 220 230 225 220 226 C229 230 236 234 236 237 L276 237 C276 234 283 230 292 226 C282 225 267 220 256 214 Z" fill="url(#roof)"/>
+  <path d="M256 214 C246 219 233 224 224 226 L256 229 Z" fill="url(#roofHi)" opacity=".55"/>
+
+  <!-- golden spire -->
+  <path d="M256 168 L263 214 L249 214 Z" fill="url(#gold)"/>
+  <circle cx="256" cy="164" r="6" fill="url(#gold)"/>
+  <circle cx="256" cy="164" r="10" fill="#f0d9a8" opacity=".4" filter="url(#softSm)"/>
+
+  <!-- mist bands -->
+  <rect x="70" y="360" width="372" height="14" rx="7" fill="url(#mist)" filter="url(#softSm)"/>
+  <rect x="110" y="388" width="292" height="12" rx="6" fill="url(#mist)" opacity=".8" filter="url(#softSm)"/>
+  <rect x="150" y="246" width="212" height="9" rx="4.5" fill="url(#mist)" opacity=".45" filter="url(#softSm)"/>
+
+  <!-- faint pine silhouettes -->
+  <path d="M120 400 L132 368 L126 368 L136 344 L146 368 L140 368 L152 400 Z" fill="#101b26" opacity=".8"/>
+  <path d="M372 400 L384 372 L378 372 L388 350 L398 372 L392 372 L404 400 Z" fill="#101b26" opacity=".8"/>
+</svg>
