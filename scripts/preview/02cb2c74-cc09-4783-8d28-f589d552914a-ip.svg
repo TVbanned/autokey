@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" fill="#DCE8E2"/>
+  <!-- body robe -->
+  <path d="M340 190 C250 190 190 260 190 360 L190 512 L490 512 L490 360 C490 260 430 190 340 190 Z" fill="#33506B"/>
+  <!-- sash -->
+  <path d="M200 400 L480 340 L480 395 L200 455 Z" fill="#C9A25B"/>
+  <!-- hat -->
+  <path d="M340 78 C268 78 216 122 200 176 C196 190 206 200 222 200 L458 200 C474 200 484 190 480 176 C464 122 412 78 340 78 Z" fill="#33506B"/>
+  <circle cx="340" cy="72" r="26" fill="#C9A25B"/>
+  <!-- face -->
+  <ellipse cx="340" cy="300" rx="105" ry="88" fill="#F2E3C9"/>
+  <circle cx="305" cy="292" r="13" fill="#33506B"/>
+  <circle cx="375" cy="292" r="13" fill="#33506B"/>
+  <path d="M326 332 Q340 342 354 332" stroke="#33506B" stroke-width="8" stroke-linecap="round" fill="none"/>
+</svg>

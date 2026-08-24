@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f4ead6"/>
+      <stop offset="1" stop-color="#e0d0ac"/>
+    </linearGradient>
+    <linearGradient id="blade" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f0f2f4"/>
+      <stop offset="0.5" stop-color="#c7ccd1"/>
+      <stop offset="1" stop-color="#9aa2ab"/>
+    </linearGradient>
+    <linearGradient id="dao" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e8ebee"/>
+      <stop offset="1" stop-color="#a9b1ba"/>
+    </linearGradient>
+  </defs>
+  <circle cx="256" cy="256" r="225" fill="url(#sky)"/>
+  <circle cx="256" cy="256" r="225" fill="none" stroke="#3a2f24" stroke-width="14"/>
+  <circle cx="256" cy="256" r="203" fill="none" stroke="#b03a2e" stroke-width="4"/>
+
+  <!-- ink sun -->
+  <circle cx="330" cy="150" r="46" fill="#c0392b"/>
+  <circle cx="330" cy="150" r="46" fill="none" stroke="#8e2418" stroke-width="4"/>
+
+  <!-- distant ink mountains -->
+  <path d="M61 300 Q120 210 175 268 Q215 305 256 250 Q300 195 355 262 Q405 320 451 258 L451 340 L61 340 Z" fill="#6b6152" opacity="0.55"/>
+  <path d="M61 320 Q140 258 205 305 Q270 350 330 292 Q395 240 451 300 L451 360 L61 360 Z" fill="#4a4238" opacity="0.6"/>
+
+  <!-- pagoda rooftop silhouette -->
+  <g fill="#2e2822">
+    <path d="M150 396 Q256 356 362 396 Q340 372 256 366 Q172 372 150 396 Z"/>
+    <path d="M180 372 Q256 344 332 372 Q312 352 256 348 Q200 352 180 372 Z"/>
+    <path d="M244 344 L256 322 L268 344 Z"/>
+    <rect x="200" y="398" width="112" height="14" rx="4"/>
+  </g>
+
+  <!-- crossing blades -->
+  <!-- jian (straight sword), left-bottom to right-top -->
+  <g transform="rotate(38 256 268)">
+    <path d="M246 268 L252 118 L256 92 L260 118 L266 268 Z" fill="url(#blade)" stroke="#5b6067" stroke-width="3"/>
+    <path d="M256 112 L256 262" stroke="#8b929b" stroke-width="3"/>
+    <rect x="228" y="268" width="56" height="12" rx="5" fill="#b03a2e" stroke="#6e2018" stroke-width="3"/>
+    <rect x="249" y="280" width="14" height="52" rx="6" fill="#3a2f24"/>
+    <circle cx="256" cy="342" r="10" fill="#b03a2e" stroke="#6e2018" stroke-width="3"/>
+  </g>
+  <!-- dao (curved saber), right-bottom to left-top -->
+  <g transform="rotate(-38 256 268)">
+    <path d="M246 268 Q252 170 262 96 Q272 160 266 268 Z" fill="url(#dao)" stroke="#5b6067" stroke-width="3"/>
+    <rect x="230" y="268" width="52" height="12" rx="5" fill="#b03a2e" stroke="#6e2018" stroke-width="3"/>
+    <rect x="249" y="280" width="14" height="50" rx="6" fill="#3a2f24"/>
+    <circle cx="256" cy="340" r="10" fill="#b03a2e" stroke="#6e2018" stroke-width="3"/>
+  </g>
+
+  <!-- red tassel ribbons -->
+  <path d="M296 300 Q330 330 322 372 Q312 340 288 316 Z" fill="#c0392b"/>
+  <path d="M216 300 Q182 330 190 372 Q200 340 224 316 Z" fill="#c0392b"/>
+
+  <!-- foreground ground wash -->
+  <path d="M61 420 Q150 396 256 404 Q362 412 451 418 L451 440 Q350 468 256 466 Q150 464 61 442 Z" fill="#3a2f24" opacity="0.85"/>
+
+  <!-- falling leaves -->
+  <g fill="#8e2418">
+    <path d="M150 170 Q162 162 170 172 Q160 182 150 170 Z"/>
+    <path d="M392 220 Q404 214 410 224 Q400 232 392 220 Z"/>
+    <path d="M120 250 Q130 244 136 252 Q128 260 120 250 Z"/>
+  </g>
+</svg>

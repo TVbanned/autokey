@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <clipPath id="badgeClip">
+      <circle cx="256" cy="256" r="210"/>
+    </clipPath>
+  </defs>
+  <circle cx="256" cy="256" r="232" fill="#171B24"/>
+  <circle cx="256" cy="256" r="210" fill="#3D6E9E"/>
+  <g clip-path="url(#badgeClip)">
+    <path d="M256 96 L388 172 L388 324 L256 400 L124 324 L124 172 Z" fill="#7FB3D5"/>
+    <path d="M256 122 L372 189 L372 323 L256 390 L140 323 L140 189 Z" fill="#3D6E9E"/>
+    <rect x="164" y="270" width="26" height="86" fill="#EAF2F8"/>
+    <rect x="196" y="238" width="24" height="118" fill="#EAF2F8"/>
+    <rect x="226" y="200" width="28" height="156" fill="#EAF2F8"/>
+    <rect x="260" y="222" width="22" height="134" fill="#EAF2F8"/>
+    <rect x="288" y="176" width="30" height="180" fill="#EAF2F8"/>
+    <rect x="324" y="246" width="24" height="110" fill="#EAF2F8"/>
+    <rect x="298" y="152" width="10" height="24" fill="#EAF2F8"/>
+    <path d="M46 356 C140 340 200 356 256 372 C330 392 400 388 466 368 L466 400 C396 420 322 422 250 402 C196 388 138 372 46 388 Z" fill="#EAF2F8"/>
+    <path d="M70 372 C150 360 210 372 262 386 C330 404 390 402 442 388 L442 398 C388 412 328 414 260 396 C208 382 148 372 70 382 Z" fill="#3D6E9E"/>
+    <rect x="140" y="356" width="30" height="14" fill="#EAF2F8"/>
+    <rect x="350" y="330" width="40" height="16" fill="#EAF2F8"/>
+    <rect x="180" y="330" width="16" height="30" fill="#EAF2F8"/>
+    <rect x="360" y="300" width="14" height="34" fill="#EAF2F8"/>
+  </g>
+</svg>
