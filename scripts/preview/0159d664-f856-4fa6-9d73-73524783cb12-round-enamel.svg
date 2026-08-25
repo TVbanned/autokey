@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="goldRim" x1="0" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#F8E7B0"/>
+      <stop offset="0.45" stop-color="#C89A4A"/>
+      <stop offset="0.75" stop-color="#E8CE8E"/>
+      <stop offset="1" stop-color="#FFF1C9"/>
+    </linearGradient>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9CC3D6"/>
+      <stop offset="1" stop-color="#6E9EB4"/>
+    </linearGradient>
+    <clipPath id="badgeClip">
+      <circle cx="256" cy="256" r="198"/>
+    </clipPath>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#3A2C14" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#softShadow)">
+    <circle cx="256" cy="256" r="230" fill="url(#goldRim)"/>
+    <circle cx="256" cy="256" r="212" fill="none" stroke="#FFF3CF" stroke-opacity="0.55" stroke-width="3"/>
+    <circle cx="256" cy="256" r="198" fill="url(#sky)"/>
+  </g>
+
+  <g clip-path="url(#badgeClip)">
+    <!-- distant soft cloud band -->
+    <ellipse cx="180" cy="150" rx="90" ry="16" fill="#C4DCE8" opacity="0.5"/>
+    <ellipse cx="330" cy="120" rx="70" ry="13" fill="#C4DCE8" opacity="0.45"/>
+
+    <!-- ground / water plane -->
+    <path d="M58 256 Q160 210 256 236 Q360 264 454 220 L454 454 L58 454 Z" fill="#7FA07A"/>
+    <path d="M58 300 Q170 258 260 286 Q350 314 454 272 L454 454 L58 454 Z" fill="#6E9070"/>
+
+    <!-- curved highways -->
+    <path d="M58 380 Q200 320 300 350 Q390 376 454 340 L454 372 Q380 408 290 382 Q190 352 58 412 Z" fill="#5B6068"/>
+    <path d="M70 396 Q200 336 296 366 Q382 392 450 356" fill="none" stroke="#E8E4D8" stroke-width="5" stroke-dasharray="18 14"/>
+
+    <path d="M150 454 Q190 360 260 330 Q330 300 360 230 L384 244 Q352 316 276 348 Q210 378 174 454 Z" fill="#5B6068"/>
+    <path d="M164 448 Q200 362 268 334 Q336 306 370 236" fill="none" stroke="#E8E4D8" stroke-width="5" stroke-dasharray="16 13"/>
+
+    <!-- skyline silhouette -->
+    <g fill="#3E5566">
+      <rect x="118" y="200" width="26" height="70"/>
+      <rect x="150" y="176" width="30" height="96"/>
+      <rect x="186" y="214" width="22" height="58"/>
+      <rect x="214" y="150" width="34" height="126"/>
+      <rect x="254" y="188" width="24" height="92"/>
+      <rect x="284" y="128" width="30" height="156"/>
+      <rect x="320" y="172" width="26" height="116"/>
+      <rect x="352" y="204" width="24" height="88"/>
+      <path d="M376 226 L396 226 L396 292 L376 292 Z M384 196 L388 196 L388 226 L384 226 Z"/>
+      <path d="M224 132 L236 108 L244 132 L244 150 L224 150 Z"/>
+      <rect x="296" y="100" width="6" height="28"/>
+    </g>
+
+    <!-- window accents -->
+    <g fill="#C9D8DF" opacity="0.8">
+      <rect x="220" y="160" width="6" height="8"/><rect x="232" y="160" width="6" height="8"/>
+      <rect x="220" y="176" width="6" height="8"/><rect x="232" y="176" width="6" height="8"/>
+      <rect x="220" y="192" width="6" height="8"/><rect x="232" y="192" width="6" height="8"/>
+      <rect x="290" y="140" width="6" height="8"/><rect x="300" y="140" width="6" height="8"/>
+      <rect x="290" y="156" width="6" height="8"/><rect x="300" y="156" width="6" height="8"/>
+      <rect x="290" y="172" width="6" height="8"/><rect x="300" y="172" width="6" height="8"/>
+      <rect x="156" y="186" width="6" height="8"/><rect x="166" y="186" width="6" height="8"/>
+      <rect x="156" y="202" width="6" height="8"/><rect x="166" y="202" width="6" height="8"/>
+      <rect x="326" y="182" width="6" height="8"/><rect x="326" y="198" width="6" height="8"/>
+    </g>
+
+    <!-- construction crane accent -->
+    <g fill="#E4C87F">
+      <rect x="330" y="150" width="6" height="60"/>
+      <rect x="300" y="146" width="86" height="6"/>
+      <rect x="296" y="146" width="10" height="14"/>
+      <rect x="378" y="152" width="4" height="20"/>
+      <rect x="372" y="172" width="16" height="10"/>
+    </g>
+
+    <!-- small park trees -->
+    <g fill="#4F7350">
+      <circle cx="120" cy="330" r="14"/><circle cx="104" cy="344" r="10"/>
+      <circle cx="415" cy="310" r="13"/><circle cx="432" cy="324" r="9"/>
+    </g>
+  </g>
+
+  <!-- top metal highlight -->
+  <ellipse cx="256" cy="70" rx="150" ry="26" fill="#FFF6D8" opacity="0.35"/>
+</svg>

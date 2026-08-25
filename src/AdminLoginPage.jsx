@@ -21,7 +21,7 @@ export default function AdminLoginPage() {
     setLoading(false)
     if (rpcErr) { setError(rpcErr.message); return }
     localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(data))
-    window.location.href = window.location.pathname
+    window.location.href = window.location.pathname + '?admin'
   }
 
   return <div className="admin-login-wrapper">
@@ -41,7 +41,7 @@ export default function AdminLoginPage() {
           <input type="password" required value={password} placeholder="请输入密码" onChange={(e) => setPassword(e.target.value)} />
         </label>
         {error && <p className="admin-login-error">{error}</p>}
-        <button className="admin-login-submit" disabled={loading}>{loading ? '登录中…' : '登录'}</button>
+        <button className="admin-login-submit" type="submit" disabled={loading}>{loading ? '登录中…' : '登录'}</button>
       </form>
     </div>
   </div>

@@ -39,11 +39,18 @@ serve(async (req) => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10_000);
     let steamRes: Response;
+    let chineseSteamRes: Response | null = null;
     try {
-      steamRes = await fetch(
-        `https://store.steampowered.com/api/appdetails?appids=${value}&l=english&cc=cn`,
-        { headers: { "User-Agent": "keyflow/1.0" }, signal: controller.signal },
-      );
+      const [englishResult, chineseResult] = await Promise.all([
+        fetch(`https://store.steampowered.com/api/appdetails?appids=${value}&l=english&cc=cn`, {
+          headers: { "User-Agent": "keyflow/1.0" }, signal: controller.signal,
+        }),
+        fetch(`https://store.steampowered.com/api/appdetails?appids=${value}&l=schinese&cc=cn`, {
+          headers: { "User-Agent": "keyflow/1.0" }, signal: controller.signal,
+        }),
+      ]);
+      steamRes = englishResult;
+      chineseSteamRes = chineseResult;
     } finally {
       clearTimeout(timeout);
     }
@@ -74,6 +81,8 @@ serve(async (req) => {
       });
     }
     const game = payload?.[value]?.data;
+    const chinesePayload = chineseSteamRes?.ok ? await chineseSteamRes.json().catch(() => null) : null;
+    const chineseGame = chinesePayload?.[value]?.data;
     if (!payload?.[value]?.success || !game) {
       return new Response(JSON.stringify({ success: false, error: "Game not found" }), {
         status: 404,
@@ -89,9 +98,9 @@ serve(async (req) => {
         success: true,
         game: {
           appId: value,
-          title: game.name || "",
-          desc: game.short_description || "",
-          cover: game.header_image || "",
+          title: chineseGame?.name || game.name || "",
+          desc: chineseGame?.short_description || game.short_description || "",
+          cover: chineseGame?.header_image || game.header_image || "",
           release_date: releaseDate,
           screenshots: (game.screenshots || []).slice(0, 4).map(s =>
             (s.path_full || s.path_thumbnail || "").replace(/\.1920x1080\.jpg/, ".600x338.jpg")

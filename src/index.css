@@ -55,4 +55,4 @@
   --topbar-h: 52px;
 }
 
-html, body, #root { min-height: 100%; }
+html, body, #root { min-height: 100%; margin: 0; }

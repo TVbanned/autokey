@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="metal" x1="0" y1="0" x2="0.7" y2="1">
+      <stop offset="0" stop-color="#F8E7B0"/>
+      <stop offset="0.5" stop-color="#C89A4A"/>
+      <stop offset="1" stop-color="#FFF1C9"/>
+    </linearGradient>
+    <linearGradient id="enamel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F4EEE0"/>
+      <stop offset="1" stop-color="#E6DEC9"/>
+    </linearGradient>
+    <clipPath id="badgeClip">
+      <circle cx="256" cy="256" r="198"/>
+    </clipPath>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="5" stdDeviation="6" flood-color="#6b4e1e" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+
+  <circle cx="256" cy="256" r="230" fill="url(#metal)" filter="url(#softShadow)"/>
+  <circle cx="256" cy="256" r="216" fill="none" stroke="#FFF3CE" stroke-width="3" opacity="0.85"/>
+  <circle cx="256" cy="256" r="198" fill="url(#enamel)"/>
+
+  <g clip-path="url(#badgeClip)">
+    <!-- ink wash background mountain -->
+    <path d="M58 360 Q130 268 210 320 Q270 358 330 318 Q410 262 454 330 L454 454 L58 454 Z" fill="#C9C2B0" opacity="0.85"/>
+    <path d="M58 396 Q150 330 236 372 Q320 410 454 360 L454 454 L58 454 Z" fill="#AFA697" opacity="0.8"/>
+
+    <!-- bold ensō-like ink brush stroke -->
+    <path d="M256 96
+             A160 160 0 1 0 416 256
+             A150 150 0 0 1 396 300
+             A138 138 0 1 1 256 118
+             Z" fill="#2E2B28"/>
+    <!-- brush taper tail -->
+    <path d="M396 300 Q420 320 446 322 Q424 336 402 330 Q388 322 384 308 Z" fill="#2E2B28"/>
+    <!-- dry-brush gaps -->
+    <path d="M120 330 Q150 352 190 360 Q150 366 116 348 Z" fill="#E6DEC9"/>
+    <path d="M300 128 Q340 140 366 168 Q332 152 296 142 Z" fill="#E6DEC9"/>
+
+    <!-- sword-brush diagonal: blade like an ink brush -->
+    <g transform="rotate(38 256 256)">
+      <!-- blade -->
+      <path d="M248 116 L256 84 L264 116 L264 300 L248 300 Z" fill="#3B3835"/>
+      <path d="M256 84 L264 116 L264 300 L256 300 Z" fill="#57534D"/>
+      <!-- guard -->
+      <rect x="232" y="300" width="48" height="14" rx="6" fill="#8C8577"/>
+      <!-- handle -->
+      <rect x="246" y="314" width="20" height="72" rx="9" fill="#2E2B28"/>
+      <rect x="246" y="330" width="20" height="8" fill="#57534D"/>
+      <rect x="246" y="352" width="20" height="8" fill="#57534D"/>
+      <!-- tassel -->
+      <path d="M256 386 Q246 414 252 438 Q258 448 256 458 Q268 446 264 428 Q262 410 262 386 Z" fill="#3B7D76"/>
+    </g>
+
+    <!-- ink splash droplets -->
+    <circle cx="150" cy="200" r="9" fill="#2E2B28"/>
+    <circle cx="128" cy="232" r="5" fill="#3B3835"/>
+    <circle cx="380" cy="180" r="7" fill="#2E2B28"/>
+    <circle cx="398" cy="212" r="4" fill="#3B3835"/>
+
+    <!-- teal fox-fire accent wisp -->
+    <path d="M342 356 Q360 336 354 312 Q376 330 368 356 Q362 376 342 384 Q330 372 342 356 Z" fill="#3B7D76"/>
+
+    <!-- red seal accent -->
+    <rect x="120" y="120" width="34" height="34" rx="5" fill="#A8463C"/>
+    <rect x="128" y="128" width="18" height="18" rx="3" fill="#E6DEC9" opacity="0.85"/>
+  </g>
+
+  <!-- subtle top metallic highlight -->
+  <path d="M96 160 A190 190 0 0 1 416 160 A208 208 0 0 0 96 160 Z" fill="#FFF6D8" opacity="0.35"/>
+</svg>

@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F8E7B0"/>
+      <stop offset="0.5" stop-color="#C89A4A"/>
+      <stop offset="1" stop-color="#FFF1C9"/>
+    </linearGradient>
+    <linearGradient id="enamelBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3E4A52"/>
+      <stop offset="1" stop-color="#2C343B"/>
+    </linearGradient>
+    <linearGradient id="topSheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="badgeClip">
+      <circle cx="256" cy="256" r="198"/>
+    </clipPath>
+  </defs>
+
+  <circle cx="256" cy="256" r="230" fill="url(#gold)"/>
+  <circle cx="256" cy="256" r="230" fill="none" stroke="#8A6A2E" stroke-opacity="0.25" stroke-width="2"/>
+  <circle cx="256" cy="256" r="206" fill="none" stroke="#FFF4D6" stroke-width="3" stroke-opacity="0.85"/>
+  <circle cx="256" cy="256" r="198" fill="url(#enamelBg)"/>
+
+  <g clip-path="url(#badgeClip)">
+    <!-- 空无一人的街道：纵深路面与两侧楼房剪影 -->
+    <path d="M120 470 L228 330 L284 330 L392 470 Z" fill="#242B31"/>
+    <path d="M250 470 L254 340 L258 340 L262 470 Z" fill="#4A555E"/>
+    <path d="M60 470 L60 250 L150 210 L222 330 L120 470 Z" fill="#39434B"/>
+    <path d="M452 470 L452 250 L362 210 L290 330 L392 470 Z" fill="#39434B"/>
+    <rect x="92" y="270" width="26" height="34" rx="3" fill="#2B333A"/>
+    <rect x="134" y="250" width="24" height="32" rx="3" fill="#2B333A"/>
+    <rect x="394" y="270" width="26" height="34" rx="3" fill="#2B333A"/>
+    <rect x="356" y="250" width="24" height="32" rx="3" fill="#2B333A"/>
+    <path d="M150 210 L256 150 L362 210 L362 226 L256 172 L150 226 Z" fill="#313A42"/>
+
+    <!-- 取景框四角（相机视角） -->
+    <path d="M108 168 L108 128 Q108 118 118 118 L158 118 L158 132 L122 132 L122 168 Z" fill="#D8CDB4"/>
+    <path d="M404 168 L404 128 Q404 118 394 118 L354 118 L354 132 L390 132 L390 168 Z" fill="#D8CDB4"/>
+    <path d="M108 344 L108 384 Q108 394 118 394 L158 394 L158 380 L122 380 L122 344 Z" fill="#D8CDB4"/>
+    <path d="M404 344 L404 384 Q404 394 394 394 L354 394 L354 380 L390 380 L390 344 Z" fill="#D8CDB4"/>
+
+    <!-- 相机主体 -->
+    <rect x="176" y="216" width="160" height="104" rx="16" fill="#C9BC9C"/>
+    <rect x="176" y="216" width="160" height="26" rx="13" fill="#B3A586"/>
+    <rect x="196" y="202" width="40" height="18" rx="6" fill="#B3A586"/>
+    <rect x="300" y="206" width="22" height="10" rx="4" fill="#8E2F35"/>
+    <rect x="188" y="252" width="18" height="44" rx="6" fill="#A8977A"/>
+
+    <!-- 镜头与异常之眼 -->
+    <circle cx="256" cy="268" r="40" fill="#566069"/>
+    <circle cx="256" cy="268" r="30" fill="#2E363D"/>
+    <circle cx="256" cy="268" r="18" fill="#8E2F35"/>
+    <circle cx="256" cy="268" r="8" fill="#1E2429"/>
+    <circle cx="248" cy="260" r="5" fill="#E8DCC0" opacity="0.7"/>
+
+    <!-- 异常光点 -->
+    <circle cx="150" cy="170" r="6" fill="#C9BC9C" opacity="0.55"/>
+    <circle cx="372" cy="190" r="5" fill="#C9BC9C" opacity="0.45"/>
+    <circle cx="340" cy="360" r="4" fill="#8E2F35" opacity="0.6"/>
+  </g>
+
+  <circle cx="256" cy="256" r="198" fill="none" stroke="#1A2126" stroke-opacity="0.25" stroke-width="3"/>
+  <ellipse cx="256" cy="130" rx="150" ry="52" fill="url(#topSheen)"/>
+</svg>

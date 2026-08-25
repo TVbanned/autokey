@@ -36,3 +36,6 @@ supabase/.temp/
 
 # debug
 .dbg/
+
+# ssh 私钥，严禁提交
+OpenClaw.pem

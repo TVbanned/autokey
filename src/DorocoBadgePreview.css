@@ -1,0 +1,20 @@
+:root { background: #071b1b; }
+.doroco-page { min-height: 100vh; overflow: hidden; position: relative; padding: 32px clamp(24px, 7vw, 112px); color: #eff9ed; background: radial-gradient(circle at 78% 45%, #155c58 0, #0b3432 29%, #071b1b 68%); font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+.doroco-page::before { content: ''; position: absolute; inset: 0; pointer-events: none; opacity: .32; background-image: linear-gradient(rgba(226, 190, 99, .05) 1px, transparent 1px), linear-gradient(90deg, rgba(226, 190, 99, .05) 1px, transparent 1px); background-size: 42px 42px; mask-image: radial-gradient(circle at 70% 48%, black, transparent 72%); }
+.doroco-back { position: relative; z-index: 1; color: rgba(238, 249, 237, .72); font-size: 14px; text-decoration: none; transition: color .2s ease; }
+.doroco-back:hover { color: #f4d782; }
+.doroco-layout { position: relative; z-index: 1; display: grid; grid-template-columns: minmax(280px, .75fr) minmax(420px, 1.25fr); align-items: center; max-width: 1250px; min-height: calc(100vh - 84px); margin: 0 auto; gap: clamp(20px, 6vw, 104px); }
+.doroco-copy { max-width: 440px; }
+.doroco-kicker { margin: 0 0 20px; color: #f0cb77; font-size: 11px; font-weight: 700; letter-spacing: .18em; }
+.doroco-copy h1 { margin: 0; color: #fff4d3; font-size: clamp(48px, 6vw, 82px); letter-spacing: -.07em; line-height: .98; }
+.doroco-copy > p:not(.doroco-kicker) { margin: 28px 0; color: rgba(231, 245, 231, .74); font-size: 16px; line-height: 1.9; }
+.doroco-notes { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 28px; }
+.doroco-notes span { padding: 7px 11px; border: 1px solid rgba(239, 203, 119, .38); border-radius: 999px; color: #f4d782; background: rgba(255, 240, 190, .07); font-size: 12px; }
+.doroco-copy small { color: rgba(208, 240, 219, .58); font-size: 13px; }
+.doroco-stage { position: relative; display: grid; place-items: center; min-width: 0; }
+.doroco-glow { position: absolute; width: 78%; aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle, rgba(255, 210, 103, .34), rgba(82, 238, 182, .16) 38%, transparent 69%); filter: blur(8px); animation: dorocoGlow 3.8s ease-in-out infinite alternate; }
+.doroco-canvas { position: relative; width: min(100%, 680px); aspect-ratio: 1; cursor: grab; touch-action: none; }
+.doroco-canvas:active { cursor: grabbing; }
+.doroco-canvas canvas { display: block; width: 100%; height: 100%; }
+@keyframes dorocoGlow { from { transform: scale(.93); opacity: .7; } to { transform: scale(1.08); opacity: 1; } }
+@media (max-width: 760px) { .doroco-page { padding: 24px; } .doroco-layout { grid-template-columns: 1fr; min-height: auto; padding: 58px 0 36px; gap: 24px; } .doroco-copy { max-width: none; } .doroco-copy h1 { font-size: 52px; } .doroco-copy > p:not(.doroco-kicker) { margin: 20px 0; } .doroco-stage { order: -1; } .doroco-canvas { width: min(100%, 460px); } }

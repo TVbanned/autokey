@@ -1,8 +1,8 @@
 import { lazy, Suspense, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import DorocoBadgePreview from './DorocoBadgePreview.jsx'
 import { supabase } from './supabase'
 import { matchesSearch } from './pinyin.js'
 import { trackAnswererDashboardView, trackPageView } from './analytics.js'
-import defaultRegisterBanner from './assets/hero.png'
 import './App.css'
 
 const AdminLoginPage = lazy(() => import('./AdminLoginPage.jsx'))
@@ -14,6 +14,7 @@ const getAdminToken = () => {
   try { return JSON.parse(localStorage.getItem(ADMIN_SESSION_KEY))?.session_token || null } catch { return null }
 }
 const isPasswordResetApprovalExpired = (request) => !request?.reviewed_at || Date.now() - new Date(request.reviewed_at).getTime() > 30 * 60 * 1000
+const PWD_RESET_FORGOT_KEY = 'keyflow_pwd_reset_forgot'
 const HOME_ACTIVITIES_CACHE_KEY = 'keyflow_home_activities'
 
 const getCachedBanner = () => {
@@ -77,6 +78,51 @@ const migrateAvatarToStorage = async (answererId, avatarUrl) => {
   } catch { return avatarUrl }
 }
 
+// 客户端压缩图片：等比缩放到 maxDim 内并转 WebP，降低存储体积与出站流量（egress）
+async function compressImageFile(file, maxDim = 256, quality = 0.85) {
+  const dataUrl = await new Promise((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => resolve(r.result)
+    r.onerror = () => reject(new Error('图片读取失败'))
+    r.readAsDataURL(file)
+  })
+  const img = await new Promise((resolve, reject) => {
+    const i = new Image()
+    i.onload = () => resolve(i)
+    i.onerror = () => reject(new Error('图片解析失败'))
+    i.src = dataUrl
+  })
+  const scale = Math.min(1, maxDim / Math.max(img.width, img.height))
+  const width = Math.max(1, Math.round(img.width * scale))
+  const height = Math.max(1, Math.round(img.height * scale))
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  canvas.getContext('2d').drawImage(img, 0, 0, width, height)
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', quality))
+  if (!blob) return file
+  const isPng = blob.type === 'image/png'
+  const mime = isPng ? 'image/png' : 'image/webp'
+  const ext = isPng ? 'png' : 'webp'
+  const base = (file.name || 'avatar').replace(/\.[^.]+$/, '')
+  return new File([blob], `${base}.${ext}`, { type: mime })
+}
+
+async function uploadMediaFile(file, token, kind) {
+  if (!token) throw new Error('登录状态已过期，请重新登录后重试')
+  const form = new FormData()
+  form.append('file', file)
+  form.append('kind', kind)
+  const response = await fetch('https://palewinds.com/media-upload.php', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  })
+  const result = await response.json().catch(() => ({}))
+  if (!response.ok || !result.url) throw new Error(result.error || '图片上传失败')
+  return result.url
+}
+
 // 模块级预取：JS 解析时立即发出请求，与 React 渲染并行，首访不再空等
 let _homeActivitiesData = null
 const _homeActivitiesPromise = supabase.from('keyflow_activities')
@@ -136,6 +182,7 @@ function Icon({ name, size = 18 }) {
     logout: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></>,
     alert: <><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></>,
     star: <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>,
+    wrench: <><path d="M14.7 6.3a4 4 0 0 0-5.2 5.2L3.5 17.5a2.12 2.12 0 1 0 3 3l6-6a4 4 0 0 0 5.2-5.2l-2.2 2.2-2.5-.5-.5-2.5z"/></>,
   }
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>
 }
@@ -265,7 +312,6 @@ async function fetchZhihuAnswerWordCount(articleUrl) {
 async function fetchSteamInfo(url) {
   const appid = parseSteamAppId(url)
   if (!appid) return { success: false, error: '无法解析 Steam 商店地址，请检查 URL 格式' }
-  const capsule = `https://cdn.cloudflare.steamstatic.com/steam/apps/${appid}/capsule_236x236.jpg`
   try {
     const { data, error } = await supabase.functions.invoke('steam-appdetails', { body: { appId: appid } })
     if (error) {
@@ -278,9 +324,14 @@ async function fetchSteamInfo(url) {
     }
     if (!data?.success) return { success: false, error: data?.error || 'Steam 元数据抓取失败，请稍后重试' }
     const g = data.game || {}
+    const coverResult = await fetch('https://palewinds.com/steam-cover.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ appId: appid, sourceUrl: g.cover || '' }),
+    }).then(async (response) => ({ ok: response.ok, ...(await response.json().catch(() => ({})) ) }))
     return {
       success: true,
-      cover: g.cover || capsule,
+      cover: coverResult.ok && coverResult.url ? coverResult.url : g.cover || '',
       description: g.desc || '',
       game_name: g.title || '',
       release_date: g.release_date || null,
@@ -1060,7 +1111,7 @@ function App() {
 
   const STAGE_COLOR = { recruiting: 'stage-blue', key_distribution: 'stage-orange', delivery: 'stage-purple', completed: 'stage-green' }
 
-  const nav = [['活动看板', 'calendar'], ['活动概览', 'grid'], ['答主报名', 'users'], ['Key 管理', 'key'], ['交付验收', 'file'], ['答主管理', 'ticket'], ['合作方管理', 'users'], ['数据概览', 'grid'], ['全部活动投稿', 'file'], ['答主日常投稿', 'file'], ['日常问题&回答运营', 'calendar'], ['剩余KEY管理', 'key'], ['页面编辑', 'image']]
+  const nav = [['活动看板', 'calendar'], ['活动概览', 'grid'], ['答主报名', 'users'], ['Key 管理', 'key'], ['交付验收', 'file'], ['答主管理', 'ticket'], ['合作方管理', 'users'], ['数据概览', 'grid'], ['全部活动投稿', 'file'], ['答主日常投稿', 'file'], ['日常问题&回答运营', 'calendar'], ['剩余KEY管理', 'key'], ['页面编辑', 'image'], ['小工具', 'wrench']]
   const statusLabel = { pending: '待筛选', selected: '已入选', rejected: '未入选' }
   const deliveryStatusLabel = { pending: '待审核', approved: '已通过', revision_required: '需修改', rejected: '未通过' }
   const activityDeliveries = deliveries.filter((item) => filteredApplications.some((application) => application.id === item.application_id))
@@ -1069,8 +1120,10 @@ function App() {
   const revisionDeliveries = activityDeliveries.filter((item) => item.status === 'revision_required').length
 
   const urlParams = new URLSearchParams(window.location.search)
-  const homeMode = urlParams.get('home') !== null
-  if (homeMode) return <HomePage />
+  const pathname = window.location.pathname.replace(/\/+$/, '')
+
+  const homePath = pathname === '/autokey/home' || pathname === '/autokey'
+  if (urlParams.get('badge3d') === 'doroco') return <DorocoBadgePreview />
   const registerMode = urlParams.get('register') !== null
   if (registerMode) return <RegisterPage aid={urlParams.get('aid')} redirect={urlParams.get('redirect')} />
   const loginMode = urlParams.get('login') !== null
@@ -1086,11 +1139,13 @@ function App() {
     if (activityId) return <ClaimPage activityId={activityId} authCode={authCode} />
   }
 
-  // 管理员登录门控：无 session 或显式访问 ?admin 时显示登录页
+  const homeMode = !urlParams.has('admin') && (homePath || urlParams.get('home') !== null)
+  if (homeMode) return <HomePage />
+
+  // 管理员登录门控：无有效会话时显示登录页。
   const adminSession = (() => { try { return JSON.parse(localStorage.getItem(ADMIN_SESSION_KEY)) } catch { return null } })()
   const adminToken = getAdminToken()
-  const adminLoginMode = urlParams.get('admin') !== null
-  if (adminLoginMode || !adminSession) return <Suspense fallback={<div className="admin-login-wrapper"><div className="admin-login-card"><p style={{textAlign:'center',padding:'2rem',color:'var(--c-ink-3)'}}>加载中…</p></div></div>}><AdminLoginPage /></Suspense>
+  if (!adminSession) return <Suspense fallback={<div className="admin-login-wrapper"><div className="admin-login-card"><p style={{textAlign:'center',padding:'2rem',color:'var(--c-ink-3)'}}>加载中…</p></div></div>}><AdminLoginPage /></Suspense>
 
   const claimLink = selectedActivity ? `${window.location.origin}${window.location.pathname}?apply=${selectedActivity.id}` : ''
   const partnerLink = selectedActivity?.partner_token ? `${window.location.origin}${window.location.pathname}?partner=${selectedActivity.partner_token}` : ''
@@ -1119,9 +1174,9 @@ function App() {
     <main>
       <header className="topbar"><a className="mobile-brand" href={window.location.pathname + '?home'}><span className="brand-mark zhihu-mark">知</span> GameJourney</a><div className="crumb">工作台 <span>/</span> {active}</div><div className="topbar-links"><a className="topbar-link-btn" href={window.location.pathname + '?partner'} target="_blank">合作方看板</a><a className="topbar-link-btn" href={window.location.pathname + '?dashboard'} target="_blank">答主看板</a><a className="topbar-link-btn" href={window.location.pathname + '?home'} target="_blank">展示页</a><button className="reload" onClick={loadData}>刷新数据</button></div></header>
       <section className="content">
-        <div className="page-title"><div><p className="eyebrow">真实数据工作台</p><h1>{active}{active === '活动看板' && <span className="board-game-count"> 当前已有 <b>{activities.length}</b> 款游戏入库</span>}{['活动概览', '答主报名', 'Key 管理', '交付验收'].includes(active) && selectedActivity?.game_name && <><span className="title-divider">|</span>{selectedActivity.game_name}</>}</h1><p className="subtitle">{active === '页面编辑' ? '管理注册页面的展示资源，保存后会实时同步。' : '活动、报名、Key 与交付数据均实时保存至 Supabase。'}</p></div>{active === '答主报名' ? <div style={{ display: 'flex', gap: 'var(--sp-2)' }}><button className="outline-button" onClick={() => { navigator.clipboard.writeText(claimLink); toast('申领链接已复制，可直接发送给答主') }}>复制申领链接</button><button className="outline-button preview-claim-btn" onClick={() => window.open(claimLink, '_blank')}>预览申领页</button></div> : active === '页面编辑' ? null : active === '活动看板' ? <div style={{ display: 'flex', gap: 'var(--sp-3)', alignItems: 'center' }}><div className="board-sort-wrap"><select className="board-sort-select" value={boardSort} onChange={e => setBoardSort(e.target.value)}><option value="pending_first">优先未处理</option><option value="default">默认排序</option><option value="created_at_desc">入库时间 ↓</option><option value="created_at_asc">入库时间 ↑</option><option value="release_date_desc">发售时间 ↓</option><option value="release_date_asc">发售时间 ↑</option></select><svg className="board-sort-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg></div><button className={`board-fav-filter-btn ${boardFavFilter ? 'active' : ''}`} onClick={() => setBoardFavFilter(v => !v)} title={boardFavFilter ? '显示全部' : '只显示收藏'}><Icon name="star" size={14}/><span>收藏</span></button><div className="board-status-filter"><button className={`board-fav-filter-btn ${boardStatusFilter.size > 0 ? 'active' : ''}`} onClick={() => setBoardStatusMenuOpen(v => !v)} title="按活动阶段筛选"><Icon name="eye" size={14}/><span>只看</span>{boardStatusFilter.size > 0 && <span className="board-status-count">{boardStatusFilter.size}</span>}</button>{boardStatusMenuOpen && <><div className="board-status-backdrop" onClick={() => setBoardStatusMenuOpen(false)} /><div className="board-status-menu">{STAGES.map((status) => <label key={status} className={`board-status-option ${boardStatusFilter.has(status) ? 'active' : ''}`}><input type="checkbox" checked={boardStatusFilter.has(status)} onChange={() => toggleBoardStatusFilter(status)} /><span>{STAGE_LABEL[status]}</span></label>)}</div></>}</div><div className="partner-search-wrap" style={{ background: '#fff', minWidth: 260, gap: 'var(--sp-1)', padding: 'var(--sp-1) var(--sp-2)' }}><Icon name="search" size={14} /><input className="partner-search-input" placeholder="搜索活动名称或游戏名…" value={boardSearch} onChange={e => setBoardSearch(e.target.value)} />{boardSearch && <button className="partner-search-clear" onClick={() => setBoardSearch('')}><Icon name="close" size={14} /></button>}</div>{activities.some(a => a.steam_url && !a.release_date) && <button className="outline-button" onClick={batchFillReleaseDates} disabled={batchFillingRelease}>{batchFillingRelease ? `更新中 ${batchFillProgress}` : '更新发售时间'}</button>}<button className="primary" onClick={() => { setActivityForm({...initialActivity, ...getDefaultDeadlines()}); setGameCoverUpload(null); setActivityModal(true); }}><Icon name="plus"/> 创建活动</button></div> : <button className="primary" onClick={() => { setActivityForm({...initialActivity, ...getDefaultDeadlines()}); setGameCoverUpload(null); setActivityModal(true); }}><Icon name="plus"/> 创建活动</button>}</div>
+        <div className="page-title"><div><p className="eyebrow">真实数据工作台</p><h1>{active}{active === '活动看板' && <span className="board-game-count"> 当前已有 <b>{activities.length}</b> 款游戏入库</span>}{['活动概览', '答主报名', 'Key 管理', '交付验收'].includes(active) && selectedActivity?.game_name && <><span className="title-divider">|</span>{selectedActivity.game_name}</>}</h1><p className="subtitle">{active === '页面编辑' ? '管理注册页面的展示资源，保存后会实时同步。' : active === '小工具' ? '本地处理文本，不会上传或保存内容。' : '活动、报名、Key 与交付数据均实时保存至 Supabase。'}</p></div>{active === '答主报名' ? <div style={{ display: 'flex', gap: 'var(--sp-2)' }}><button className="outline-button" onClick={() => { navigator.clipboard.writeText(claimLink); toast('申领链接已复制，可直接发送给答主') }}>复制申领链接</button><button className="outline-button preview-claim-btn" onClick={() => window.open(claimLink, '_blank')}>预览申领页</button></div> : ['页面编辑', '小工具'].includes(active) ? null : active === '活动看板' ? <div style={{ display: 'flex', gap: 'var(--sp-3)', alignItems: 'center' }}><div className="board-sort-wrap"><select className="board-sort-select" value={boardSort} onChange={e => setBoardSort(e.target.value)}><option value="pending_first">优先未处理</option><option value="default">默认排序</option><option value="created_at_desc">入库时间 ↓</option><option value="created_at_asc">入库时间 ↑</option><option value="release_date_desc">发售时间 ↓</option><option value="release_date_asc">发售时间 ↑</option></select><svg className="board-sort-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg></div><button className={`board-fav-filter-btn ${boardFavFilter ? 'active' : ''}`} onClick={() => setBoardFavFilter(v => !v)} title={boardFavFilter ? '显示全部' : '只显示收藏'}><Icon name="star" size={14}/><span>收藏</span></button><div className="board-status-filter"><button className={`board-fav-filter-btn ${boardStatusFilter.size > 0 ? 'active' : ''}`} onClick={() => setBoardStatusMenuOpen(v => !v)} title="按活动阶段筛选"><Icon name="eye" size={14}/><span>只看</span>{boardStatusFilter.size > 0 && <span className="board-status-count">{boardStatusFilter.size}</span>}</button>{boardStatusMenuOpen && <><div className="board-status-backdrop" onClick={() => setBoardStatusMenuOpen(false)} /><div className="board-status-menu">{STAGES.map((status) => <label key={status} className={`board-status-option ${boardStatusFilter.has(status) ? 'active' : ''}`}><input type="checkbox" checked={boardStatusFilter.has(status)} onChange={() => toggleBoardStatusFilter(status)} /><span>{STAGE_LABEL[status]}</span></label>)}</div></>}</div><div className="partner-search-wrap" style={{ background: '#fff', minWidth: 260, gap: 'var(--sp-1)', padding: 'var(--sp-1) var(--sp-2)' }}><Icon name="search" size={14} /><input className="partner-search-input" placeholder="搜索活动名称或游戏名…" value={boardSearch} onChange={e => setBoardSearch(e.target.value)} />{boardSearch && <button className="partner-search-clear" onClick={() => setBoardSearch('')}><Icon name="close" size={14} /></button>}</div>{activities.some(a => a.steam_url && !a.release_date) && <button className="outline-button" onClick={batchFillReleaseDates} disabled={batchFillingRelease}>{batchFillingRelease ? `更新中 ${batchFillProgress}` : '更新发售时间'}</button>}<button className="primary" onClick={() => { setActivityForm({...initialActivity, ...getDefaultDeadlines()}); setGameCoverUpload(null); setActivityModal(true); }}><Icon name="plus"/> 创建活动</button></div> : <button className="primary" onClick={() => { setActivityForm({...initialActivity, ...getDefaultDeadlines()}); setGameCoverUpload(null); setActivityModal(true); }}><Icon name="plus"/> 创建活动</button>}</div>
         {error && <div className="error-box">数据操作失败：{error}<button onClick={() => setError('')}><Icon name="close" size={16}/></button></div>}
-        {loading && active !== '页面编辑' ? <div className="empty-state">正在加载活动数据…</div> : active === '活动概览' && !selectedActivity ? <div className="empty-state"><div className="empty-icon"><Icon name="calendar" size={26}/></div><h2>先创建第一个测评活动</h2><p>创建后即可收集答主报名、导入 Key 并进行交付验收。</p><button className="primary" onClick={() => { setActivityForm({...initialActivity, ...getDefaultDeadlines()}); setGameCoverUpload(null); setActivityModal(true); }}><Icon name="plus"/> 创建活动</button></div> : active === '活动概览' ? <>
+        {loading && !['页面编辑', '小工具'].includes(active) ? <div className="empty-state">正在加载活动数据…</div> : active === '活动概览' && !selectedActivity ? <div className="empty-state"><div className="empty-icon"><Icon name="calendar" size={26}/></div><h2>先创建第一个测评活动</h2><p>创建后即可收集答主报名、导入 Key 并进行交付验收。</p><button className="primary" onClick={() => { setActivityForm({...initialActivity, ...getDefaultDeadlines()}); setGameCoverUpload(null); setActivityModal(true); }}><Icon name="plus"/> 创建活动</button></div> : active === '活动概览' ? <>
           <section className="activity-picker"><button className="current-activity" onClick={openDrawer}><span>当前活动</span><strong>{selectedActivity.title}</strong><Icon name="arrow" size={14}/></button><div className="activity-picker-right"><span className={`activity-status ${STAGE_COLOR[selectedActivity.status] || ''}`}>{STAGE_LABEL[selectedActivity.status] || selectedActivity.status}</span><button className="outline-button" onClick={() => { navigator.clipboard.writeText(partnerLink); toast('合作方页面链接已复制') }}>复制合作方链接</button><button className="outline-button preview-partner-btn" onClick={() => window.open(partnerLink, '_blank')}>预览合作方页</button><button className="outline-button" onClick={() => { navigator.clipboard.writeText(claimLink); toast('申领链接已复制，可直接发送给答主') }}>复制申领链接</button><button className="outline-button preview-claim-btn" onClick={() => window.open(claimLink, '_blank')}>预览申领页</button><button className="outline-button" onClick={() => setApplicationModal(true)}><Icon name="plus" size={16}/> 新增报名</button></div></section>
           <section className="hero-card real-hero"><div className="hero-top"><div><span className="live-dot"/> <span className={`stage-badge ${STAGE_COLOR[selectedActivity.status] || ''}`}>{STAGE_LABEL[selectedActivity.status] || selectedActivity.status}</span> <span className="divider">|</span> <span className={(selectedActivity?.status === 'recruiting' && selectedActivity?.application_deadline && new Date(selectedActivity.application_deadline) < new Date()) ? 'text-red' : ''}>{getStatusTimeText(selectedActivity, filteredApplications)}</span></div><button className="edit-button" onClick={openEditActivity}><Icon name="edit" size={15}/> 编辑</button></div><div className="game-info"><div className="game-cover">{selectedActivity.game_cover ? <img src={selectedActivity.game_cover} alt={selectedActivity.game_name}/> : <span>{selectedActivity.game_name[0]}</span>}</div><div><p className="game-type">{selectedActivity.game_name}</p><h2>{selectedActivity.title}</h2><p>{selectedActivity.description || '尚未填写游戏简介。'}</p><p className="review-requirement">{selectedActivity.review_requirement || '测评要求：图文并茂，主观视角，生动有趣！'}</p></div></div>{(() => { const platforms = Array.isArray(selectedActivity.platforms) && selectedActivity.platforms.length ? selectedActivity.platforms : ['steam']; return (platforms.length > 1 || platforms[0] !== 'steam') && <div className="admin-platforms"><span>可选版本</span>{platforms.map((value) => { const platform = activityPlatforms.find((item) => item.value === value); return <span key={value} className="admin-platform"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{platform?.icon}</svg>{platformLabel[value] || value}</span> })}</div> })()}<div className="rules-row main-question-row"><strong>测评主问题</strong>{editingMainQuestion ? <div className="inline-edit-wrap"><textarea className="inline-textarea" value={mainQuestionDraft} onChange={(e) => setMainQuestionDraft(e.target.value)} autoFocus rows={2}/><div className="inline-edit-actions"><button className="inline-save" onClick={saveMainQuestion}>保存</button><button className="inline-cancel" onClick={() => { setEditingMainQuestion(false) }}>取消</button></div></div> : <div className="inline-display"><span>{selectedActivity.main_question || '尚未设置'}</span><button className="inline-edit-btn" title="编辑主问题" onClick={() => { setMainQuestionDraft(selectedActivity.main_question || ''); setEditingMainQuestion(true) }}><Icon name="edit" size={14}/></button></div>}</div>{subQuestions.map((q, i) => <div className="rules-row sub-question-row" key={i}><strong>相关问题 {i + 1}</strong>{editingSubIndex === i ? <div className="inline-edit-wrap"><textarea className="inline-textarea" value={subDraft} onChange={(e) => setSubDraft(e.target.value)} autoFocus rows={2}/><div className="inline-edit-actions"><button className="inline-save" onClick={() => saveSubQuestion(i)}>保存</button><button className="inline-cancel" onClick={() => setEditingSubIndex(null)}>取消</button></div></div> : <div className="inline-display"><span>{q || '空问题'}</span><button className="inline-edit-btn" title="编辑相关问题" onClick={() => { setSubDraft(q); setEditingSubIndex(i) }}><Icon name="edit" size={14}/></button><button className="inline-delete-btn" title="删除相关问题" onClick={() => deleteSubQuestion(i)}><Icon name="close" size={14}/></button></div>}</div>)}<button className="add-sub-btn" onClick={addSubQuestion}><Icon name="plus" size={14}/> 新增相关问题</button></section>
           <section className="metrics">{[[filteredApplications.length,'报名答主',`目标 ${selectedActivity.target_authors} 人`,'答主报名'],[selectedCount,'已入选',`已录入key ${importedKeyCount} 个`,'答主报名'],[claimedCount,'已领取 Key',`${selectedCount - claimedCount}/${selectedCount} 人 未领取key`,'Key 管理'],[deliveredCount,'已提交交付',`${selectedCount - deliveredCount}/${selectedCount} 人未交付`,'交付验收']].map(([number,label,note,target], idx) => <div className="metric clickable" key={label} onClick={() => setActive(target)}><strong style={idx === 1 && selectedCount > importedKeyCount ? {color:'#e53e3e'} : undefined}>{number}</strong><span>{label}</span><small>{note}</small></div>)}</section>
@@ -1131,7 +1186,7 @@ function App() {
           </div>
           <section className="stage-progression"><div className="stage-header"><div><h3>阶段推进</h3><span>点击圆点或文字一键切换至对应阶段。</span></div></div><div className="stage-timeline">{STAGES.map((stage, i) => { const currentIdx = STAGES.indexOf(selectedActivity?.status || 'recruiting'); const isCurrent = i === currentIdx; const isPast = i < currentIdx; return <div key={stage} className={`stage-node ${isCurrent ? 'current' : ''} ${isPast ? 'past' : ''}`}><button className="stage-dot-btn" disabled={isCurrent || advancing} onClick={() => goToStage(stage)} title={`切换到：${STAGE_LABEL[stage]}`}><span className="stage-dot"/></button><button className="stage-label" disabled={isCurrent || advancing} onClick={() => goToStage(stage)}>{STAGE_LABEL[stage]}</button></div> })}</div></section>
           <section className="panel applicants-panel"><div className="panel-head"><div><h3>答主报名</h3><p>查看答主报名、Key 领取和内容提交状态。</p></div><button className="primary compact" onClick={() => setApplicationModal(true)}><Icon name="plus" size={15}/> 新增报名</button></div><div className="table-wrap"><table><thead><tr><th>答主</th><th>查看主页</th><th className="th-sort" onClick={() => toggleOverviewSort('status')}>入选状态{overviewSort?.key === 'status' ? <span className="th-sort-arrow">{overviewSort.dir === -1 ? '↑' : '↓'}</span> : null}</th>{(() => { const ap = Array.isArray(selectedActivity?.platforms) && selectedActivity.platforms.length ? selectedActivity.platforms : ['steam']; return ap.length > 1 || ap[0] !== 'steam' ? <th>版本</th> : null })()}<th className="th-sort" onClick={() => toggleOverviewSort('claimed')}>是否领取 Key{overviewSort?.key === 'claimed' ? <span className="th-sort-arrow">{overviewSort.dir === -1 ? '↑' : '↓'}</span> : null}</th><th className="th-sort" onClick={() => toggleOverviewSort('delivered')}>是否提交内容{overviewSort?.key === 'delivered' ? <span className="th-sort-arrow">{overviewSort.dir === -1 ? '↑' : '↓'}</span> : null}</th><th>合作方推荐</th><th>操作</th></tr></thead><tbody>{overviewApplications.length ? overviewApplications.map((person) => <tr key={person.id}><td><div className="person">{answererByName[person.zhihu_name]?.avatar_url ? <img className="person-avatar-img" src={answererByName[person.zhihu_name].avatar_url} alt="" onClick={() => { const a = answererByName[person.zhihu_name]; if (a) setSelectedAnswerer(a) }} title="查看活动参与记录" style={{cursor:'pointer'}} /> : <span className="person-avatar" onClick={() => { const a = answererByName[person.zhihu_name]; if (a) setSelectedAnswerer(a) }} title="查看活动参与记录" style={{cursor:'pointer'}}>{person.zhihu_name[0]}</span>}<div><strong>{person.zhihu_name}</strong><small>知乎答主</small></div></div></td><td><a className="profile-link" href={person.profile_url} target="_blank" rel="noreferrer">查看主页</a></td><td><span className={`pill ${person.status === 'selected' ? 'success' : person.status === 'pending' ? 'warning' : 'muted'}`}>{statusLabel[person.status]}</span></td>{(() => { const ap = Array.isArray(selectedActivity?.platforms) && selectedActivity.platforms.length ? selectedActivity.platforms : ['steam']; return ap.length > 1 || ap[0] !== 'steam' ? <td><span className="pill">{platformLabel[person.selected_platform] || 'Steam'}</span></td> : null })()}<td><span className={`pill ${person.keyflow_keys?.claimed_at || exemptedIds.includes(person.answerer_id) ? 'success' : 'muted'}`}>{person.keyflow_keys?.claimed_at || exemptedIds.includes(person.answerer_id) ? '已领取' : '未领取'}</span></td><td><button className={`pill pill-link ${(Array.isArray(person.keyflow_deliveries) ? person.keyflow_deliveries.length > 0 : person.keyflow_deliveries?.id) ? 'success' : 'muted'}`} onClick={() => setActive('交付验收')}>{(Array.isArray(person.keyflow_deliveries) ? person.keyflow_deliveries.length > 0 : person.keyflow_deliveries?.id) ? '已提交' : '未提交'}</button></td><td>{person.partner_recommended ? <span className="highlight-red">推荐</span> : '—'}</td><td><div className="review-actions">{person.status === 'pending' ? <><button className="select-action" onClick={() => reviewApplication(person.id, 'selected')}>入选</button><button className="reject-action" onClick={() => reviewApplication(person.id, 'rejected')}>不选</button></> : <button className="reset-action" disabled={!!person.keyflow_keys?.claimed_at} onClick={() => reviewApplication(person.id, 'pending')}>重新筛选</button>}</div></td></tr>) : <tr><td colSpan={(() => { const ap = Array.isArray(selectedActivity?.platforms) && selectedActivity.platforms.length ? selectedActivity.platforms : ['steam']; return ap.length > 1 || ap[0] !== 'steam' ? 8 : 7 })()} className="table-empty">还没有报名记录。可添加测试报名，或后续将表单公开给答主填写。</td></tr>}</tbody></table></div></section>
-        </> : active === '活动看板' ? <div className="activity-cards">{filteredBoardActivities.map((item) => { const apps = applications.filter((a) => a.activity_id === item.id); const creatingCount = apps.filter(a => a.status === 'selected' && a.keyflow_keys?.claimed_at).length; const deliveredCount = apps.filter(a => Array.isArray(a.keyflow_deliveries) ? a.keyflow_deliveries.length > 0 : a.keyflow_deliveries?.id).length; const mainQuestionUrl = item.main_question?.match(/https?:\/\/[^\s]+/)?.[0]; return <div key={item.id} className={`activity-card ${item.id === selectedId ? 'selected' : ''}`} onClick={() => { setSelectedId(item.id); setActive('活动概览') }}><button className="activity-card-delete" title="删除活动" onClick={(e) => deleteActivity(item.id, e)}><Icon name="close" size={14}/></button><button className={`activity-card-fav ${item.is_favorite ? 'active' : ''}`} title={item.is_favorite ? '取消收藏' : '收藏'} onClick={(e) => toggleFavorite(item.id, item.is_favorite, e)}><Icon name="star" size={14}/></button><div className="activity-card-cover">{item.game_cover ? <img src={item.game_cover} alt={item.game_name}/> : <span>{item.game_name[0]}</span>}</div><div className="activity-card-body"><p className="activity-card-game">{item.game_name}</p><h3>{item.title}</h3><div className="activity-card-meta"><span className={`pill ${STAGE_COLOR[item.status] || ''}`}>{STAGE_LABEL[item.status] || item.status}</span><span>{item.status === 'delivery' ? `${creatingCount} 人创作中` : item.status === 'completed' ? `${deliveredCount} 篇作品` : <>{apps.length} 报名{apps.filter(a => a.status === 'pending').length > 0 && <span className="text-red"> {apps.filter(a => a.status === 'pending').length} 未处理</span>}</>}</span></div><small className={(item.status === 'recruiting' && item.application_deadline && new Date(item.application_deadline) < new Date()) ? 'text-red' : ''}>{getStatusTimeText(item, apps)}</small><div className="activity-card-actions"><div className="activity-card-online" onClick={(e) => toggleOnline(item.id, item.is_online !== false, e)} title={item.is_online !== false ? '已上线，点击下线' : '未上线，点击上线'}><span className={`online-toggle ${item.is_online !== false ? 'active' : ''}`}><span className="online-toggle-knob"/></span><span className="online-label">{item.is_online !== false ? '已上线' : '未上线'}</span></div>{mainQuestionUrl ? <a className="main-question-link" href={mainQuestionUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>跳转主问题</a> : <span className="main-question-unconfigured">暂未配置主问题</span>}</div></div></div> })}</div> : active === '答主报名' ? <ApplicationsPage activity={selectedActivity} applications={filteredApplications} answerers={answerers} authorStats={authorStats} statusLabel={statusLabel} onSelectActivity={openDrawer} onAddApplication={() => setApplicationModal(true)} onReviewApplication={reviewApplication} onDeleteApplication={deleteApplication} toast={toast} participationByAnswerer={participationByAnswerer} onViewAnswererParticipation={setSelectedAnswerer} /> : active === 'Key 管理' ? <KeyManagement activity={selectedActivity} input={keyInput} parsedKeys={parsedKeys} platformCounts={platformCounts} importedKeys={keys.filter((item) => item.activity_id === selectedActivity?.id)} importing={keyImporting} onInput={setKeyInput} onImport={importKeys} onDeleteKeys={deleteKeys} onSelectActivity={openDrawer} applications={filteredApplications} toast={toast}/> : active === '交付验收' ? <DeliveriesPage activity={selectedActivity} deliveries={activityDeliveries} applications={filteredApplications} answerers={answerers} statusLabel={deliveryStatusLabel} notes={deliveryNotes} onNoteChange={(id, value) => setDeliveryNotes((items) => ({ ...items, [id]: value }))} onReview={reviewDelivery} onSelectActivity={openDrawer} pendingCount={pendingDeliveries} approvedCount={approvedDeliveries} revisionCount={revisionDeliveries} toast={toast} participationByAnswerer={participationByAnswerer} onWordCountUpdate={(id, wordCount) => setDeliveries((items) => items.map((item) => item.id === id ? { ...item, verified_word_count: wordCount } : item))} /> : active === '答主管理' ? <AnswererManagement codes={invitationCodes} answerers={answerers} setAnswerers={setAnswerers} activities={activities} applications={applications} deliveries={deliveries} dailySubmissions={dailySubmissions} onAddCodes={prependCodes} onDeleteAnswerer={(id) => setAnswerers((items) => items.filter((item) => item.id !== id))} adminToken={adminToken} participationByAnswerer={participationByAnswerer} onViewAnswererParticipation={setSelectedAnswerer} /> : active === '合作方管理' ? <PartnerManagement codes={invitationCodes} answerers={answerers} setAnswerers={setAnswerers} activities={activities} setActivities={setActivities} onAddCodes={prependCodes} onRefresh={loadData} adminToken={adminToken} participationByAnswerer={participationByAnswerer} onViewAnswererParticipation={setSelectedAnswerer} /> : active === '数据概览' ? <AnalyticsOverview adminToken={adminToken} /> : active === '全部活动投稿' ? <AllActivitySubmissionsPage deliveries={deliveries} applications={applications} activities={activities} answerers={answerers} toast={toast} /> : active === '答主日常投稿' ? <DailySubmissionsPage submissions={dailySubmissions} answerers={answerers} toast={toast} setDailySubmissions={setDailySubmissions} participationByAnswerer={participationByAnswerer} onViewAnswererParticipation={setSelectedAnswerer} setConfirmState={setConfirmState} /> : active === '日常问题&回答运营' ? <DailyQuestionOperationsPage questions={dailyQuestions} setQuestions={setDailyQuestions} adminToken={adminToken} toast={toast} /> : active === '剩余KEY管理' ? <RemainingKeyManagement keys={keys} activities={activities} toast={toast} onDeleteKeys={deleteKeys} onClaimKey={claimKeyRemotely} /> : active === '页面编辑' ? <PageEditor asset={pageAsset} loading={pageAssetLoading} saving={pageAssetSaving} onSelectFile={handlePageAssetFile} onSave={savePageAsset} badgesEnabled={badgesEnabled} badgesSaving={badgesSaving} onToggleBadges={saveBadgesEnabled} /> : active === '收件箱' ? <InboxPage messages={inboxMessages} requests={passwordResetRequests} answerers={answerers} adminToken={adminToken} onRefresh={loadData} onMessageRead={(id) => setInboxMessages((items) => items.map((item) => item.id === id ? { ...item, status: 'read', read_at: new Date().toISOString() } : item))} onDeleteMessages={(ids) => { const deletedIds = new Set(ids); setInboxMessages((items) => items.filter((item) => !deletedIds.has(item.id))) }} toast={toast} setConfirmState={setConfirmState} /> : <div className="empty-state"><div className="empty-icon"><Icon name="clock" size={26}/></div><h2>{active}即将开放</h2><p>请先完成活动与答主报名管理。</p></div>}
+        </> : active === '活动看板' ? <div className="activity-cards">{filteredBoardActivities.map((item) => { const apps = applications.filter((a) => a.activity_id === item.id); const creatingCount = apps.filter(a => a.status === 'selected' && a.keyflow_keys?.claimed_at).length; const deliveredCount = apps.filter(a => Array.isArray(a.keyflow_deliveries) ? a.keyflow_deliveries.length > 0 : a.keyflow_deliveries?.id).length; const mainQuestionUrl = item.main_question?.match(/https?:\/\/[^\s]+/)?.[0]; return <div key={item.id} className={`activity-card ${item.id === selectedId ? 'selected' : ''}`} onClick={() => { setSelectedId(item.id); setActive('活动概览') }}><button className="activity-card-delete" title="删除活动" onClick={(e) => deleteActivity(item.id, e)}><Icon name="close" size={14}/></button><button className={`activity-card-fav ${item.is_favorite ? 'active' : ''}`} title={item.is_favorite ? '取消收藏' : '收藏'} onClick={(e) => toggleFavorite(item.id, item.is_favorite, e)}><Icon name="star" size={14}/></button><div className="activity-card-cover">{item.game_cover ? <img src={item.game_cover} alt={item.game_name}/> : <span>{item.game_name[0]}</span>}</div><div className="activity-card-body"><p className="activity-card-game">{item.game_name}</p><h3>{item.title}</h3><div className="activity-card-meta"><span className={`pill ${STAGE_COLOR[item.status] || ''}`}>{STAGE_LABEL[item.status] || item.status}</span><span>{item.status === 'delivery' ? `${creatingCount} 人创作中` : item.status === 'completed' ? `${deliveredCount} 篇作品` : <>{apps.length} 报名{apps.filter(a => a.status === 'pending').length > 0 && <span className="text-red"> {apps.filter(a => a.status === 'pending').length} 未处理</span>}</>}</span></div><small className={(item.status === 'recruiting' && item.application_deadline && new Date(item.application_deadline) < new Date()) ? 'text-red' : ''}>{getStatusTimeText(item, apps)}</small><div className="activity-card-actions"><div className="activity-card-online" onClick={(e) => toggleOnline(item.id, item.is_online !== false, e)} title={item.is_online !== false ? '已上线，点击下线' : '未上线，点击上线'}><span className={`online-toggle ${item.is_online !== false ? 'active' : ''}`}><span className="online-toggle-knob"/></span><span className="online-label">{item.is_online !== false ? '已上线' : '未上线'}</span></div>{mainQuestionUrl ? <a className="main-question-link" href={mainQuestionUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>跳转主问题</a> : <span className="main-question-unconfigured">暂未配置主问题</span>}</div></div></div> })}</div> : active === '答主报名' ? <ApplicationsPage activity={selectedActivity} applications={filteredApplications} answerers={answerers} authorStats={authorStats} statusLabel={statusLabel} onSelectActivity={openDrawer} onAddApplication={() => setApplicationModal(true)} onReviewApplication={reviewApplication} onDeleteApplication={deleteApplication} toast={toast} participationByAnswerer={participationByAnswerer} onViewAnswererParticipation={setSelectedAnswerer} /> : active === 'Key 管理' ? <KeyManagement activity={selectedActivity} input={keyInput} parsedKeys={parsedKeys} platformCounts={platformCounts} importedKeys={keys.filter((item) => item.activity_id === selectedActivity?.id)} importing={keyImporting} onInput={setKeyInput} onImport={importKeys} onDeleteKeys={deleteKeys} onSelectActivity={openDrawer} applications={filteredApplications} toast={toast}/> : active === '交付验收' ? <DeliveriesPage activity={selectedActivity} deliveries={activityDeliveries} applications={filteredApplications} answerers={answerers} statusLabel={deliveryStatusLabel} notes={deliveryNotes} onNoteChange={(id, value) => setDeliveryNotes((items) => ({ ...items, [id]: value }))} onReview={reviewDelivery} onSelectActivity={openDrawer} pendingCount={pendingDeliveries} approvedCount={approvedDeliveries} revisionCount={revisionDeliveries} toast={toast} participationByAnswerer={participationByAnswerer} onWordCountUpdate={(id, wordCount) => setDeliveries((items) => items.map((item) => item.id === id ? { ...item, verified_word_count: wordCount } : item))} /> : active === '答主管理' ? <AnswererManagement codes={invitationCodes} answerers={answerers} setAnswerers={setAnswerers} activities={activities} applications={applications} deliveries={deliveries} dailySubmissions={dailySubmissions} onAddCodes={prependCodes} onDeleteAnswerer={(id) => setAnswerers((items) => items.filter((item) => item.id !== id))} adminToken={adminToken} participationByAnswerer={participationByAnswerer} onViewAnswererParticipation={setSelectedAnswerer} /> : active === '合作方管理' ? <PartnerManagement codes={invitationCodes} answerers={answerers} setAnswerers={setAnswerers} activities={activities} setActivities={setActivities} onAddCodes={prependCodes} onRefresh={loadData} adminToken={adminToken} participationByAnswerer={participationByAnswerer} onViewAnswererParticipation={setSelectedAnswerer} /> : active === '数据概览' ? <AnalyticsOverview adminToken={adminToken} /> : active === '全部活动投稿' ? <AllActivitySubmissionsPage deliveries={deliveries} applications={applications} activities={activities} answerers={answerers} toast={toast} /> : active === '答主日常投稿' ? <DailySubmissionsPage submissions={dailySubmissions} answerers={answerers} toast={toast} setDailySubmissions={setDailySubmissions} participationByAnswerer={participationByAnswerer} onViewAnswererParticipation={setSelectedAnswerer} setConfirmState={setConfirmState} /> : active === '日常问题&回答运营' ? <DailyQuestionOperationsPage questions={dailyQuestions} setQuestions={setDailyQuestions} adminToken={adminToken} toast={toast} /> : active === '剩余KEY管理' ? <RemainingKeyManagement keys={keys} activities={activities} toast={toast} onDeleteKeys={deleteKeys} onClaimKey={claimKeyRemotely} /> : active === '页面编辑' ? <PageEditor asset={pageAsset} loading={pageAssetLoading} saving={pageAssetSaving} onSelectFile={handlePageAssetFile} onSave={savePageAsset} badgesEnabled={badgesEnabled} badgesSaving={badgesSaving} onToggleBadges={saveBadgesEnabled} /> : active === '小工具' ? <TextFormatter /> : active === '收件箱' ? <InboxPage messages={inboxMessages} requests={passwordResetRequests} answerers={answerers} adminToken={adminToken} onRefresh={loadData} onMessageRead={(id) => setInboxMessages((items) => items.map((item) => item.id === id ? { ...item, status: 'read', read_at: new Date().toISOString() } : item))} onDeleteMessages={(ids) => { const deletedIds = new Set(ids); setInboxMessages((items) => items.filter((item) => !deletedIds.has(item.id))) }} toast={toast} setConfirmState={setConfirmState} /> : <div className="empty-state"><div className="empty-icon"><Icon name="clock" size={26}/></div><h2>{active}即将开放</h2><p>请先完成活动与答主报名管理。</p></div>}
       </section>
         {selectedAnswerer && <AnswererParticipationModal answerer={selectedAnswerer} records={participationByAnswerer[selectedAnswerer.id] || []} onClose={() => setSelectedAnswerer(null)} toast={toast} />}
       </main>
@@ -1230,7 +1285,7 @@ function AnalyticsOverview({ adminToken }) {
 }
 
 function PageEditor({ asset, loading, saving, onSelectFile, onSave, badgesEnabled, badgesSaving, onToggleBadges }) {
-  const image = asset?.image_data || defaultRegisterBanner
+  const image = asset?.image_data
   return <section className="page-editor">
     <div className="panel page-editor-card"><div className="panel-head"><div><h3>用户注册界面头图</h3><p>支持本地图片，使用 data URL 保存到 Supabase，不依赖 Storage。</p></div><span className="pill success">register_banner</span></div>
       <div className="page-editor-body">{loading ? <div className="page-asset-loading">正在加载头图…</div> : <img className="page-asset-preview" src={image} alt="注册页头图预览" />}
@@ -1241,6 +1296,39 @@ function PageEditor({ asset, loading, saving, onSelectFile, onSave, badgesEnable
     <div className="panel page-editor-card" style={{ marginTop: 'var(--sp-4)' }}><div className="panel-head"><div><h3>我的徽章模块</h3><p>控制答主看板是否展示「我的徽章」区块。</p></div><span className="pill success">show_badges</span></div>
       <div className="page-editor-body"><div className="page-editor-toggle-row"><div><h4>{badgesEnabled ? '已开启' : '已关闭'}</h4><p>{badgesEnabled ? '答主看板会展示我的徽章。' : '答主看板已隐藏我的徽章。'}</p></div><button type="button" className={`online-toggle ${badgesEnabled ? 'active' : ''}`} onClick={() => onToggleBadges(!badgesEnabled)} disabled={badgesSaving} aria-pressed={badgesEnabled}><span className="online-toggle-knob"/></button></div></div>
     </div>
+  </section>
+}
+
+function TextFormatter() {
+  const [input, setInput] = useState('')
+  const [output, setOutput] = useState('')
+  const [copied, setCopied] = useState(false)
+
+  const format = () => {
+    const formatted = input.replace(/https?:\/\/[^\s]+/gi, (url) => `\n${url}\n`).replace(/[^\S\r\n]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim()
+    setOutput(formatted)
+    setCopied(false)
+  }
+
+  const clear = () => {
+    setInput('')
+    setOutput('')
+    setCopied(false)
+  }
+
+  const copy = async () => {
+    if (!output) return
+    await navigator.clipboard.writeText(output)
+    setCopied(true)
+  }
+
+  return <section className="panel text-formatter">
+    <div className="text-formatter-intro"><div className="text-formatter-icon"><Icon name="wrench" size={20}/></div><div><div className="text-formatter-kicker">文本工具</div><h2>URL 换行格式化</h2><p>将文本中的每个 URL 单独换行，便于复制和整理。</p></div></div>
+    <div className="text-formatter-grid">
+      <label className="text-formatter-panel"><div className="text-formatter-panel-head"><span>输入内容</span><small>{input.length} 字符</small></div><textarea value={input} onChange={(event) => { setInput(event.target.value); setCopied(false) }} placeholder="粘贴包含 URL 的文本…" rows={14} /></label>
+      <label className="text-formatter-panel text-formatter-output"><div className="text-formatter-panel-head"><span>输出结果</span><small>{output.length} 字符</small></div><textarea value={output} readOnly placeholder="格式化后的内容将显示在这里" rows={14} /></label>
+    </div>
+    <div className="text-formatter-actions"><button className="secondary" onClick={clear} disabled={!input && !output}><Icon name="close" size={16}/> 清空</button><button className="secondary" onClick={copy} disabled={!output}><Icon name={copied ? 'check' : 'file'} size={16}/> {copied ? '已复制' : '复制结果'}</button><button className="primary" onClick={format} disabled={!input.trim()}><Icon name="check" size={16}/> 格式化</button></div>
   </section>
 }
 
@@ -1316,41 +1404,6 @@ function PartnerPage({ token }) {
   }, [answerer?.id])
   useEffect(() => { if (isPartner && answerer?.id) { loadPartnerActivities(); if (token) loadSnapshot() } }, [isPartner, token, answerer?.id])
 
-  useEffect(() => {
-    const cover = snapshot?.activity?.game_cover
-    setHeroColor('18, 58, 52')
-    if (!cover) return
-    const image = new Image()
-    let cancelled = false
-    const fallback = () => { if (!cancelled) setHeroColor('18, 58, 52') }
-    const sample = () => {
-      try {
-        const canvas = document.createElement('canvas')
-        canvas.width = canvas.height = 48
-        const context = canvas.getContext('2d', { willReadFrequently: true })
-        if (!context) return fallback()
-        context.drawImage(image, 0, 0, 48, 48)
-        const pixels = context.getImageData(0, 0, 48, 48).data
-        let red = 0, green = 0, blue = 0, count = 0
-        for (let y = 10; y < 38; y++) for (let x = 10; x < 38; x++) {
-          const index = (y * 48 + x) * 4
-          if (pixels[index + 3] < 128) continue
-          red += pixels[index]; green += pixels[index + 1]; blue += pixels[index + 2]; count++
-        }
-        if (!count) return fallback()
-        const average = [red / count, green / count, blue / count]
-        const luminance = (average[0] * 0.2126 + average[1] * 0.7152 + average[2] * 0.0722) / 255
-        const scale = Math.min(1, 0.16 / Math.max(luminance, 0.01))
-        if (!cancelled) setHeroColor(average.map((value) => Math.round(value * scale)).join(', '))
-      } catch { fallback() }
-    }
-    image.crossOrigin = 'anonymous'
-    image.addEventListener('load', sample)
-    image.addEventListener('error', fallback)
-    image.src = cover
-    return () => { cancelled = true; image.removeEventListener('load', sample); image.removeEventListener('error', fallback) }
-  }, [snapshot?.activity?.game_cover])
-
   // ---- 登录门控：未登录时显示引导 ----
   if (!answerer) {
     const loginHref = `?login&redirect=partner${token ? '&token=' + token : ''}`
@@ -1382,26 +1435,33 @@ function PartnerPage({ token }) {
   }
 
   // ---- 头像上传 ----
-  const handleAvatarFile = (file) => {
+  const handleAvatarFile = async (file) => {
     setError('')
     if (!file) return
     if (!file.type.startsWith('image/')) { setError('请选择图片文件'); return }
-    if (file.size > 500 * 1024) { setError('图片大小不能超过 500KB，请压缩后重新选择'); return }
-    const reader = new FileReader()
-    reader.onload = (e) => { setAvatarPreview(e.target.result); setAvatarFile(file) }
-    reader.readAsDataURL(file)
+    if (file.size > 10 * 1024 * 1024) { setError('图片大小不能超过 10MB'); return }
+    try {
+      const compressed = await compressImageFile(file, 256, 0.85)
+      setAvatarFile(compressed)
+      const reader = new FileReader()
+      reader.onload = (e) => setAvatarPreview(e.target.result)
+      reader.readAsDataURL(compressed)
+    } catch {
+      setError('图片处理失败，请重新选择')
+    }
   }
 
   const uploadAvatar = async () => {
     if (!avatarFile) { setAvatarUploading(false); return }
     setAvatarUploading(true)
-    const ext = avatarFile.name.split('.').pop() || 'png'
-    const filePath = `${answerer.id}.${ext}`
-    const { error: uploadErr } = await supabase.storage
-      .from('avatars')
-      .upload(filePath, avatarFile, { upsert: true })
-    if (uploadErr) { setAvatarUploading(false); return }
-    const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(filePath)
+    let publicUrl
+    try {
+      publicUrl = await uploadMediaFile(avatarFile, answerer.media_upload_token, 'avatar')
+    } catch (error) {
+      setAvatarUploading(false)
+      setError(error.message)
+      return
+    }
     const { error: updateErr } = await supabase.rpc('keyflow_answerer_update_avatar', { p_answerer_id: answerer.id, p_avatar_url: publicUrl })
     if (updateErr) { setAvatarUploading(false); return }
     const session = { ...answerer, avatar_url: publicUrl }
@@ -1418,7 +1478,13 @@ function PartnerPage({ token }) {
     const { data } = await supabase.from('keyflow_inbox')
       .select('*').eq('to_id', answerer.id).eq('type', 'private_message')
       .order('created_at', { ascending: false })
-    setAnswererInbox(data || [])
+    const unreadIds = (data || []).filter(m => m.status === 'unread').map(m => m.id)
+    const readAt = new Date().toISOString()
+    setAnswererInbox((data || []).map(m => unreadIds.includes(m.id) ? { ...m, status: 'read', read_at: readAt } : m))
+    setUnreadInboxCount(0)
+    if (unreadIds.length) {
+      await supabase.from('keyflow_inbox').update({ status: 'read', read_at: readAt }).in('id', unreadIds)
+    }
   }
 
   const fetchUnreadCount = async () => {
@@ -1500,7 +1566,7 @@ function PartnerPage({ token }) {
   }, [partnerActivities, token, gameSwitcherSearch])
 
   // ---- 加载中 / 非合作方 ----
-  if (isPartner === null) return <div className="partner-page"><div className="partner-loading">正在加载合作方协作页…</div></div>
+  if (isPartner === null) return <div className="public-page"><main className="public-card dashboard-login-card"><div className="loading-public">正在加载合作方协作页…</div></main></div>
   if (!isPartner) return <div className="public-page"><main className="public-card dashboard-login-card"><a className="public-brand" href="?home"><span className="brand-mark zhihu-mark">知</span><span>GameJourney · 合作方协作页</span></a><div className="step-message"><p>你的账号不是合作方身份</p><span>请使用合作方邀请码注册的账号登录，或联系运营人员获取合作方账号。</span><div className="dashboard-auth-actions"><button className="outline-button" onClick={() => { localStorage.removeItem(SESSION_KEY); window.location.href = '?login' }}>切换账号</button></div></div></main></div>
 
   // ---- 无 token：显示合作方活动列表 ----
@@ -1508,7 +1574,7 @@ function PartnerPage({ token }) {
     const stageLabel = { recruiting: '招募中', key_distribution: '招募截止请等待', delivery: '交付/创作中', completed: '项目完结' }
     const daysLeft = (deadline) => Math.max(0, Math.ceil((new Date(deadline) - new Date()) / 86400000))
     return <div className="partner-page"><header className="partner-header"><a className="partner-brand" href="?home"><span className="brand-mark zhihu-mark">知</span><span>GameJourney</span><small>合作方协作页</small></a><div className="partner-header-right"><button className="reload outline" onClick={() => { window.location.href = '?dashboard' }}>切换到答主看板</button>{answerer?.zhihu_name === '灰域信风' && <button className="reload outline" onClick={() => { window.location.href = '?admin' }}>切换到管理员后台</button>}<div className="dashboard-user-area" onClick={() => setDropdownOpen(!dropdownOpen)}><div className="dashboard-avatar-wrap">{answerer?.avatar_url ? <img className="dashboard-avatar-img" src={answerer.avatar_url} alt="" /> : <span className="dashboard-avatar-placeholder">{answerer?.zhihu_name?.[0] || '?'}</span>}</div>{unreadInboxCount > 0 && <span className="dashboard-avatar-dot"/>}<span className="dashboard-username">{answerer?.zhihu_name}<Icon name="arrow" size={12}/></span>{dropdownOpen && <><div className="dashboard-dropdown-backdrop" onClick={(e) => { e.stopPropagation(); setDropdownOpen(false) }}/><div className="dashboard-dropdown"><button onClick={() => { setDropdownOpen(false); setAvatarModalOpen(true) }}><Icon name="image" size={16}/> 修改头像</button><button onClick={() => { setDropdownOpen(false); setPwdResetModalOpen(true); setPwdResetStep('idle'); setPwdResetMsg(''); setNewPassword(''); setConfirmPassword(''); loadResetStatus() }}><Icon name="key" size={16}/> 重置密码</button><button onClick={() => { setDropdownOpen(false); setInboxModalOpen(true); loadInbox() }}><Icon name="inbox" size={16}/> 收件箱{unreadInboxCount > 0 && <span className="dashboard-dropdown-dot"/>}</button><button className="dashboard-logout-btn" onClick={() => { localStorage.removeItem(SESSION_KEY); window.location.href = '?login' }}><Icon name="logout" size={16}/> 退出登录</button></div></>}</div></div></header><main className="partner-main"><section className="partner-hero" style={{ '--partner-hero-rgb': heroColor }}><div className="partner-hero-content"><h1>我的合作活动</h1><span>点击进入活动协作页查看详情。</span></div></section><section className="dashboard-activity-cards">{partnerActivities === null ? <div className="partner-loading">正在加载活动列表…</div> : !partnerActivities.length ? <div className="panel" style={{gridColumn:'1/-1'}}><div className="step-message"><p>您的游戏如需招募测评，请联系管理员</p><span>vx：cmyk3165</span></div></div> : partnerActivities.map((activity) => <a className="dashboard-activity-card" href={`?partner=${activity.partner_token}`} key={activity.id}><div className="dashboard-activity-cover">{activity.game_cover ? <img src={activity.game_cover} alt={activity.game_name} loading="lazy"/> : <span>{activity.game_name?.[0] || '游'}</span>}</div><div className="dashboard-activity-body"><p>{activity.game_name}</p><h3>{activity.title}</h3><div><span className={`pill stage-${activity.status === 'key_distribution' ? 'orange' : activity.status === 'delivery' ? 'purple' : activity.status === 'completed' ? 'green' : 'blue'}`}>{stageLabel[activity.status] || activity.status}</span>{activity.status === 'delivery' && activity.delivery_deadline && <span className="dashboard-deadline">截稿还剩 {daysLeft(activity.delivery_deadline)} 天</span>}{activity.status === 'key_distribution' && <span className="dashboard-deadline">已有 {activity.key_claimed_count || 0} 人领取key</span>}{activity.status === 'recruiting' && <span className="dashboard-deadline">已有 {activity.application_count || 0} 人报名</span>}</div></div></a>)}</section></main>
-      {pwdResetModalOpen && <Modal title="重置密码" onClose={() => { setPwdResetModalOpen(false); setPwdResetStep('idle'); setPwdResetMsg(''); setNewPassword(''); setConfirmPassword('') }}>
+    {pwdResetModalOpen && <Modal title="重置密码" onClose={() => { setPwdResetModalOpen(false); setPwdResetStep('idle'); setPwdResetMsg(''); setNewPassword(''); setConfirmPassword('') }}>
         <div className="pwd-reset-body">
           {pwdResetStep === 'idle' && <div className="pwd-reset-step"><div className="pwd-reset-step-icon"><Icon name="key" size={24}/></div><p className="pwd-reset-step-title">申请密码重置</p><p className="pwd-reset-step-desc">将向管理员提交密码重置申请。管理员审核通过后，你可以在此页面设置新密码。</p><button className="primary" onClick={requestPasswordReset} disabled={pwdResetLoading}>{pwdResetLoading ? '提交中…' : '提交申请'}</button></div>}
           {pwdResetStep === 'pending' && <div className="pwd-reset-step"><div className="pwd-reset-step-icon waiting"><Icon name="clock" size={24}/></div><p className="pwd-reset-step-title">等待审核</p><p className="pwd-reset-step-desc">申请已提交，等待管理员审核。<br/>页面会自动刷新状态。</p></div>}
@@ -1520,7 +1586,7 @@ function PartnerPage({ token }) {
       {avatarModalOpen && <Modal title="修改头像" onClose={() => { setAvatarModalOpen(false); setError(''); setAvatarFile(null) }}>
         <div className="avatar-upload-body">
           <div className="avatar-upload-preview">{avatarPreview ? <img src={avatarPreview} alt="" /> : <span className="dashboard-avatar-placeholder" style={{width:96,height:96,fontSize:40}}>{answerer?.zhihu_name?.[0]}</span>}</div>
-          <p className="avatar-upload-hint">支持 JPG、PNG 格式，大小不超过 500KB</p>
+          <p className="avatar-upload-hint">支持 JPG、PNG、WebP，将自动压缩（原图不超过 10MB）</p>
           <div className="avatar-upload-actions">
             <label className="outline-button avatar-upload-btn"><Icon name="upload" size={16}/> 选择图片<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => handleAvatarFile(e.target.files[0])} hidden/></label>
             {avatarFile && <button className="primary" onClick={uploadAvatar} disabled={avatarUploading}>{avatarUploading ? '上传中…' : '确认上传'}</button>}
@@ -1563,7 +1629,7 @@ function PartnerPage({ token }) {
   }
 
   // ---- 有 token：加载中 / 错误处理 ----
-  if (!snapshot && !error) return <div className="partner-page"><div className="partner-loading">正在加载活动协作页…</div></div>
+  if (!snapshot && !error) return <div className="public-page"><main className="public-card dashboard-login-card"><div className="loading-public">正在加载活动协作页…</div></main></div>
   if (!snapshot) return <div className="partner-page"><div className="partner-loading">{error || '该合作方页面不存在或已失效。'}</div></div>
 
   const { activity, applications, deliveries, key_count: keyCount } = snapshot
@@ -1585,7 +1651,7 @@ function PartnerPage({ token }) {
     {avatarModalOpen && <Modal title="修改头像" onClose={() => { setAvatarModalOpen(false); setError(''); setAvatarFile(null) }}>
       <div className="avatar-upload-body">
         <div className="avatar-upload-preview">{avatarPreview ? <img src={avatarPreview} alt="" /> : <span className="dashboard-avatar-placeholder" style={{width:96,height:96,fontSize:40}}>{answerer?.zhihu_name?.[0]}</span>}</div>
-        <p className="avatar-upload-hint">支持 JPG、PNG 格式，大小不超过 500KB</p>
+        <p className="avatar-upload-hint">支持 JPG、PNG、WebP，将自动压缩（原图不超过 10MB）</p>
         <div className="avatar-upload-actions">
           <label className="outline-button avatar-upload-btn"><Icon name="upload" size={16}/> 选择图片<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => handleAvatarFile(e.target.files[0])} hidden/></label>
           {avatarFile && <button className="primary" onClick={uploadAvatar} disabled={avatarUploading}>{avatarUploading ? '上传中…' : '确认上传'}</button>}
@@ -1961,6 +2027,11 @@ function AnswererDashboard() {
   const [avatarFile, setAvatarFile] = useState(null)
   const [avatarPreview, setAvatarPreview] = useState(answerer?.avatar_url || '')
   const [avatarUploading, setAvatarUploading] = useState(false)
+  const [coverModalOpen, setCoverModalOpen] = useState(false)
+  const [coverFile, setCoverFile] = useState(null)
+  const [coverPreview, setCoverPreview] = useState('')
+  const [coverUploading, setCoverUploading] = useState(false)
+  const [coverMsg, setCoverMsg] = useState('')
   const [pwdResetModalOpen, setPwdResetModalOpen] = useState(false)
   const [pwdResetStep, setPwdResetStep] = useState('idle') // idle|pending|approved|rejected|setting|done
   const [pwdResetMsg, setPwdResetMsg] = useState('')
@@ -1990,6 +2061,7 @@ function AnswererDashboard() {
   const [participatedActivities, setParticipatedActivities] = useState([])
   const [badges, setBadges] = useState([])
   const [showBadges, setShowBadges] = useState(false)
+  const [selectedBadge, setSelectedBadge] = useState(null)
   const historicalMoreCovers = useMemo(() => {
     const activities = dashboard?.historical_activities || []
     const rank = (id = '') => [...id].reduce((value, char) => ((value << 5) - value + char.charCodeAt(0)) | 0, 0)
@@ -2056,26 +2128,64 @@ function AnswererDashboard() {
     setSharedMsg('邀请码已生成')
   }
 
-  const handleAvatarFile = (file) => {
+  const handleAvatarFile = async (file) => {
     setAvatarMsg('')
     if (!file) return
     if (!file.type.startsWith('image/')) { setAvatarMsg('请选择图片文件'); return }
-    if (file.size > 500 * 1024) { setAvatarMsg('图片大小不能超过 500KB，请压缩后重新选择'); return }
+    if (file.size > 10 * 1024 * 1024) { setAvatarMsg('图片大小不能超过 10MB'); return }
+    try {
+      const compressed = await compressImageFile(file, 256, 0.85)
+      setAvatarFile(compressed)
+      const reader = new FileReader()
+      reader.onload = (e) => setAvatarPreview(e.target.result)
+      reader.readAsDataURL(compressed)
+    } catch {
+      setAvatarMsg('图片处理失败，请重新选择')
+    }
+  }
+
+  const handleCoverFile = (file) => {
+    setCoverMsg('')
+    if (!file) return
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) { setCoverMsg('请选择 JPG、PNG 或 WebP 图片'); return }
+    if (file.size > 800 * 1024) { setCoverMsg('封面图片大小不能超过 800KB，请压缩后重新选择'); return }
     const reader = new FileReader()
-    reader.onload = (e) => { setAvatarPreview(e.target.result); setAvatarFile(file) }
+    reader.onload = (e) => { setCoverPreview(e.target.result); setCoverFile(file) }
     reader.readAsDataURL(file)
+  }
+
+  const uploadDashboardCover = async () => {
+    if (!coverFile) return
+    setCoverUploading(true)
+    setCoverMsg('')
+    let publicUrl
+    try {
+      publicUrl = await uploadMediaFile(coverFile, answerer.media_upload_token, 'cover')
+    } catch (error) {
+      setCoverUploading(false)
+      setCoverMsg(error.message)
+      return
+    }
+    const { error: updateErr } = await supabase.rpc('keyflow_answerer_update_dashboard_cover', { p_answerer_id: answerer.id, p_dashboard_cover_url: publicUrl })
+    setCoverUploading(false)
+    if (updateErr) { setCoverMsg(updateErr.message); return }
+    setDashboard(current => current ? { ...current, answerer: { ...current.answerer, dashboard_cover_url: publicUrl } } : current)
+    setCoverPreview(publicUrl)
+    setCoverFile(null)
+    setCoverModalOpen(false)
   }
 
   const uploadAvatar = async () => {
     if (!avatarFile) { setAvatarUploading(false); return }
     setAvatarUploading(true)
-    const ext = avatarFile.name.split('.').pop() || 'png'
-    const filePath = `${answerer.id}.${ext}`
-    const { error: uploadErr } = await supabase.storage
-      .from('avatars')
-      .upload(filePath, avatarFile, { upsert: true })
-    if (uploadErr) { setAvatarUploading(false); setAvatarMsg(uploadErr.message); return }
-    const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(filePath)
+    let publicUrl
+    try {
+      publicUrl = await uploadMediaFile(avatarFile, answerer.media_upload_token, 'avatar')
+    } catch (error) {
+      setAvatarUploading(false)
+      setAvatarMsg(error.message)
+      return
+    }
     const { error: updateErr } = await supabase.rpc('keyflow_answerer_update_avatar', { p_answerer_id: answerer.id, p_avatar_url: publicUrl })
     if (updateErr) { setAvatarUploading(false); return }
     const session = { ...answerer, avatar_url: publicUrl }
@@ -2151,7 +2261,13 @@ function AnswererDashboard() {
     const { data } = await supabase.from('keyflow_inbox')
       .select('*').eq('to_id', answerer.id).eq('type', 'private_message')
       .order('created_at', { ascending: false })
-    setAnswererInbox(data || [])
+    const unreadIds = (data || []).filter(m => m.status === 'unread').map(m => m.id)
+    const readAt = new Date().toISOString()
+    setAnswererInbox((data || []).map(m => unreadIds.includes(m.id) ? { ...m, status: 'read', read_at: readAt } : m))
+    setUnreadInboxCount(0)
+    if (unreadIds.length) {
+      await supabase.from('keyflow_inbox').update({ status: 'read', read_at: readAt }).in('id', unreadIds)
+    }
   }
 
   const fetchUnreadCount = async () => {
@@ -2267,13 +2383,14 @@ function AnswererDashboard() {
   }, [answerer?.id, inboxModalOpen])
 
   if (!answerer) return <div className="public-page"><main className="public-card dashboard-login-card"><a className="public-brand" href="?home"><span className="brand-mark zhihu-mark">知</span><span>GameJourney · 答主看板</span></a><div className="step-message"><div className="step-message-icon waiting"><Icon name="users" size={24}/></div><p>登录后查看你的测评活动</p><span>注册答主账号后即可查看报名与交稿记录。</span><div className="dashboard-auth-actions"><a href="?login" className="primary">去登录</a><a href="?register" className="outline-button">去注册</a></div></div></main></div>
-  if (!dashboard && !error) return <div className="partner-page"><div className="partner-loading">正在加载答主看板…</div></div>
+  if (!dashboard && !error) return <div className="public-page"><main className="public-card dashboard-login-card"><div className="loading-public">正在加载答主看板…</div></main></div>
   if (!dashboard) return <div className="public-page"><main className="public-card dashboard-login-card"><a className="public-brand" href="?home"><span className="brand-mark zhihu-mark">知</span><span>GameJourney · 答主看板</span></a><div className="step-message"><p>{error || '看板加载失败'}</p><button className="outline-button" onClick={loadDashboard}>重新加载</button></div></main></div>
 
   const stageLabel = { recruiting: '招募中', key_distribution: '招募截止请等待', claim_key: '请领取key', delivery: '交付/创作中', completed: '项目完结' }
   const getPersonalStage = (activity) => { if (activity.application_status === 'selected') return activity.key_claimed ? 'delivery' : 'claim_key'; return activity.status }
   const daysLeft = (deadline) => Math.max(0, Math.ceil((new Date(deadline) - new Date()) / 86400000))
   const formatSubmittedAt = (value) => new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
+  const formatShortDate = (value) => { const t = new Date(value); return `${String(t.getFullYear()).slice(2)}年${t.getMonth() + 1}月${t.getDate()}日` }
 
   const moreActivities = dashboard.more_activities || []
   const historicalActivities = dashboard.historical_activities || []
@@ -2300,19 +2417,31 @@ function AnswererDashboard() {
   const tierInfo = getTierInfo(points)
   const prevMin = tierInfo.min, nextMin = tierInfo.nextMin || prevMin + 500
   const progressPct = prevMin === 0 && points === 0 ? 0 : Math.min(100, Math.round(((points - prevMin) / (nextMin - prevMin)) * 100))
-  return <div className="partner-page"><header className="partner-header"><a className="partner-brand" href="?home"><span className="brand-mark zhihu-mark">知</span><span>GameJourney</span><small>答主看板</small></a><div className="partner-header-right">{(isPartner || answerer?.zhihu_name === '灰域信风') && <button className="reload outline" onClick={() => { window.location.href = '?partner' }}>切换到合作方看板</button>}{answerer?.zhihu_name === '灰域信风' && <button className="reload outline" onClick={() => { window.location.href = '?admin' }}>切换到管理员后台</button>}<button className="reload" onClick={loadDashboard}>刷新数据</button><button className="reload" onClick={() => { window.location.href = '?home' }}>回到封面</button><div className="dashboard-user-area" onClick={() => setDropdownOpen(!dropdownOpen)}><div className="dashboard-avatar-wrap">{answerer?.avatar_url ? <img className="dashboard-avatar-img" src={answerer.avatar_url} alt="" /> : <span className="dashboard-avatar-placeholder">{answerer?.zhihu_name?.[0] || '?'}</span>}</div>{unreadInboxCount > 0 && <span className="dashboard-avatar-dot"/>}<span className="dashboard-username">{answerer?.zhihu_name || dashboard?.answerer?.zhihu_name}<Icon name="arrow" size={12}/></span>{dropdownOpen && <><div className="dashboard-dropdown-backdrop" onClick={(e) => { e.stopPropagation(); setDropdownOpen(false) }}/><div className="dashboard-dropdown"><button onClick={() => { setDropdownOpen(false); setAvatarModalOpen(true) }}><Icon name="image" size={16}/> 修改头像</button><button onClick={() => { setDropdownOpen(false); setPwdResetModalOpen(true); setPwdResetStep('idle'); setPwdResetMsg(''); setNewPassword(''); setConfirmPassword(''); loadResetStatus() }}><Icon name="key" size={16}/> 重置密码</button><button onClick={() => { setDropdownOpen(false); setInboxModalOpen(true); loadInbox() }}><Icon name="inbox" size={16}/> 收件箱{unreadInboxCount > 0 && <span className="dashboard-dropdown-dot"/>}</button><button className="dashboard-logout-btn" onClick={() => { localStorage.removeItem(SESSION_KEY); window.location.href = '?login' }}><Icon name="logout" size={16}/> 退出登录</button></div></>}</div></div></header><main className="partner-main answerer-dashboard"><section className="partner-hero dashboard-hero"><div className="partner-hero-content"><p>你好，{dashboard.answerer.zhihu_name}</p><h1>我的测评活动</h1><span>查看正在参与的活动和已提交的作品。</span><div className="answerer-stats-row"><div className="hero-shared-code"><div className="hero-shared-code-inner">{sharedCode ? <div className="hero-shared-code-card"><span className="hero-shared-code-value" title="点击复制" onClick={() => { navigator.clipboard.writeText(sharedCode.code); setSharedMsg('邀请码已复制') }}>{sharedCode.code}</span><small>生成于 {new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(sharedCode.created_at))}</small></div> : <button className="hero-shared-code-btn" onClick={generateSharedCode} disabled={generatingShared}>{generatingShared ? '生成中…' : '分享邀请码'}<small>每日可生成一个</small></button>}{sharedMsg && <span className="hero-shared-code-msg" style={sharedMsg.includes('已生成') || sharedMsg.includes('已复制') ? undefined : { color: '#fca5a5' }}>{sharedMsg}</span>}</div></div><div className="answerer-stats"><div className="answerer-stats-left"><div className="answerer-tier-row"><span className="answerer-tier-icon">Lv{tierInfo.tier}</span><div><span className="answerer-tier-title">{tierInfo.title}</span><span className="answerer-tier-points">{points} 积分</span></div></div><div className="answerer-tier-progress"><div className="answerer-progress-bar"><div className="answerer-progress-fill" style={{width: progressPct + '%'}}></div></div>{tierInfo.nextTitle && <span className="answerer-next-tier">距「{tierInfo.nextTitle}」还需 {tierInfo.nextMin - points} 积分</span>}</div></div></div><div className="answerer-hero-metrics"><div className="answerer-metric answerer-metric-clickable" onClick={() => { setParticipatedModalOpen(true); loadParticipatedActivities() }} title="查看已参与活动详情"><span className="answerer-metric-value">{dashboard.participated_count || 0}</span><span className="answerer-metric-label">已参与活动</span><span className="answerer-metric-note">50 积分/个</span></div><div className="answerer-metric answerer-metric-clickable" onClick={() => { setCompletedModalOpen(true); loadCompletedActivities() }} title="查看已完成活动详情"><span className="answerer-metric-value">{dashboard.submission_count || 0}</span><span className="answerer-metric-label">已完成活动</span><span className="answerer-metric-note">300 积分/个</span></div><div className="answerer-metric"><span className="answerer-metric-value">{dashboard.daily_submission_count || 0}</span><span className="answerer-metric-label">已投稿日常回答</span><span className="answerer-metric-note">80 积分/个</span></div></div></div></div></section>{showBadges && <section className="panel answerer-badges-panel"><div className="panel-head dashboard-section-head"><div><h3>我的徽章</h3><p>每款游戏对应一个成就徽章，提交交付物即可解锁。</p></div></div>{badges.length ? <div className="answerer-badge-grid">{badges.map((b) => <div key={b.game_name} className="answerer-badge earned"><div className="answerer-badge-img"><img src={b.image_url || badgeImageUrl(b.game_name)} alt={b.name} loading="lazy"/></div><span className="answerer-badge-name">{b.game_name}</span><span className="answerer-badge-status">已获得</span></div>)}</div> : <div className="dashboard-empty">尚未获得徽章，提交交付物即可解锁。</div>}</section>}<section className="dashboard-daily-form"><div className="panel-head dashboard-section-head"><div><h3>今日创作投稿（非测评活动内容）</h3><p>任何知乎游戏领域回答都可以投稿，可提升积分；每日可投稿1条；灌水投稿会导致账户扣分甚至封禁。</p></div></div><form onSubmit={submitDaily}><div className="daily-form-fields"><input type="url" placeholder="知乎回答链接（必填，不收今日之前老投稿）" value={dailyUrl} onChange={(e) => setDailyUrl(e.target.value)} required/><input type="text" placeholder="作品标题（必填，不收今日之前老投稿）" value={dailyTitle} onChange={(e) => setDailyTitle(e.target.value)} required/><button type="submit" className="primary" disabled={dailySubmitting}>{dailySubmitting ? '投稿中…' : '提交投稿'}</button></div>{dailyMsg && <p className="daily-form-msg">{dailyMsg}</p>}</form></section><section className="dashboard-daily-form"><div className="panel-head dashboard-section-head"><div><h3>今日提问投稿</h3><p>向运营投递知乎问题；下方两种填写格式任选一种输入，激活其中一种时另一种自动置灰。</p></div></div><form onSubmit={submitQuestion}><div className="daily-question-form"><div className={`daily-question-form-row${qMode === 'link' ? ' active' : ''}`}><input type="url" placeholder="知乎问题链接" value={qUrl} onFocus={() => setQMode('link')} onChange={(e) => setQUrl(e.target.value)}/><input type="text" placeholder="问题文本" value={qTitle} onFocus={() => setQMode('link')} onChange={(e) => setQTitle(e.target.value)}/></div><div className="daily-question-form-paste-row"><textarea className={`daily-question-form-paste${qMode === 'paste' ? ' active' : ''}`} placeholder={'知乎标准分享格式（PC端 问题下点【分享】-【链接】，可多填），例如：\n如何评价《黑神话：悟空》？ - 知乎\nhttps://www.zhihu.com/question/123456789'} value={qPaste} onFocus={() => setQMode('paste')} onChange={(e) => setQPaste(e.target.value)}/><button type="submit" className="primary" disabled={qSubmitting}>{qSubmitting ? '投稿中…' : '提交提问'}</button></div></div>{qMsg && <p className="daily-form-msg">{qMsg}</p>}</form></section><section><div className="panel-head dashboard-section-head"><div><h3>正在参与</h3><p>点击活动卡片回到申领页。</p></div></div><div className="dashboard-activity-cards">{dashboard.activities.length ? dashboard.activities.map((activity) => <a className="dashboard-activity-card" href={`?apply=${activity.id}`} key={activity.id}><div className="dashboard-activity-cover">{activity.game_cover ? <img src={activity.game_cover} alt={activity.game_name} loading="lazy"/> : <span>{activity.game_name?.[0] || '游'}</span>}</div><div className="dashboard-activity-body"><p>{activity.game_name}</p><h3>{activity.title}</h3><div><span className={`pill stage-${getPersonalStage(activity) === 'claim_key' || getPersonalStage(activity) === 'key_distribution' ? 'orange' : getPersonalStage(activity) === 'delivery' ? 'purple' : getPersonalStage(activity) === 'completed' ? 'green' : 'blue'}`}>{stageLabel[getPersonalStage(activity)] || getPersonalStage(activity)}</span>{getPersonalStage(activity) === 'delivery' && activity.delivery_deadline && <span className="dashboard-deadline">距截稿还剩 {daysLeft(activity.delivery_deadline)} 天</span>}</div></div></a>) : <div className="dashboard-empty">暂无正在参与的活动。</div>}</div></section><section><div className="panel-head dashboard-section-head"><div><h3>更多体验活动</h3><p>后台已上线的活动，点击卡片前往报名。</p></div></div><div className="dashboard-activity-cards">{moreActivities.length ? moreActivities.map((activity) => <a className="dashboard-activity-card" href={`?apply=${activity.id}`} key={activity.id}><div className="dashboard-activity-cover">{activity.game_cover ? <img src={activity.game_cover} alt={activity.game_name} loading="lazy"/> : <span>{activity.game_name?.[0] || '游'}</span>}</div><div className="dashboard-activity-body"><p>{activity.game_name}</p><h3>{activity.title}</h3><div><span className={`pill stage-${activity.status === 'key_distribution' ? 'orange' : activity.status === 'delivery' ? 'purple' : activity.status === 'completed' ? 'green' : 'blue'}`}>{stageLabel[activity.status] || activity.status}</span>{activity.status === 'delivery' && activity.delivery_deadline && <span className="dashboard-deadline">距截稿还剩 {daysLeft(activity.delivery_deadline)} 天</span>}</div></div></a>) : <div className="dashboard-empty">{dashboard.more_activities === undefined ? '活动卡片加载中，请耐心等候' : '暂无更多可体验的活动。'}</div>}</div></section><section><div className="panel-head dashboard-section-head"><div><h3>历史活动</h3><p>招募已结束的活动回顾。</p></div></div><div className="dashboard-activity-cards">{historicalActivities.length ? (<>{historicalActivities.slice(0, HISTORICAL_VISIBLE).map((activity) => <a className="dashboard-activity-card" href={`?apply=${activity.id}`} key={activity.id}><div className="dashboard-activity-cover">{activity.game_cover ? <img src={activity.game_cover} alt={activity.game_name} loading="lazy"/> : <span>{activity.game_name?.[0] || '游'}</span>}</div><div className="dashboard-activity-body"><p>{activity.game_name}</p><h3>{activity.title}</h3><div>{activity.application_status === 'rejected' ? <span className="pill muted">未能入选</span> : activity.has_delivery ? <span className="pill stage-green">成功参与</span> : <span className={`pill stage-${activity.status === 'key_distribution' ? 'orange' : activity.status === 'delivery' ? 'purple' : activity.status === 'completed' ? 'green' : 'blue'}`}>{stageLabel[activity.status] || activity.status}</span>}</div></div></a>)}{historicalActivities.length > HISTORICAL_VISIBLE && <a className="dashboard-activity-card dashboard-activity-more" href="?home" style={{textDecoration:'none'}}><div className="dashboard-activity-cover dashboard-activity-more-cover">{(() => { const colors = ['#6366f1','#8b5cf6','#3b82f6','#06b6d4','#10b981','#f59e0b','#ef4444','#ec4899','#14b8a6']; const picked = historicalMoreCovers; return Array.from({length:9}, (_,i) => { const act = picked[i]; const cover = act?.game_cover; return <div key={i} className="dashboard-activity-more-tile" style={cover ? {backgroundImage:`url(${cover})`} : {background:colors[i%9]}} /> }) })()}</div><div className="dashboard-activity-body"><h3>查看更多</h3><p>还有 {historicalActivities.length - HISTORICAL_VISIBLE} 个历史活动</p></div></a>}</>) : <div className="dashboard-empty">{dashboard.historical_activities === undefined ? '活动卡片加载中，请耐心等候' : '暂无历史活动。'}</div>}</div></section><section className="panel partner-table"><div className="panel-head"><div><h3>曾提交作品</h3><p>已提交的知乎作品记录。</p></div><button className="outline-button compact" onClick={() => { const headers = ['稿件类型', '作品标题', '作品链接']; const rows = (dashboard.submissions || []).map(s => [s.type === 'daily' ? '日常稿件' : '活动稿件', s.article_title || s.activity_title || '-', cleanZhihuAnswerUrl(s.article_url) || '']); const csv = '\uFEFF' + [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n'); const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${dashboard.answerer.zhihu_name}作品集_${fileTimestamp()}.csv`; a.click(); URL.revokeObjectURL(url) }}>下载 Excel</button></div><div className="table-wrap"><table><thead><tr><th>稿件类型</th><th>作品标题</th><th>作品链接</th></tr></thead><tbody>{(dashboard.submissions || []).length ? (dashboard.submissions || []).map((submission, idx) => <tr key={`submission-${idx}`}><td><span className={`submission-type ${submission.type === 'daily' ? 'daily' : 'activity'}`}>{submission.type === 'daily' ? '日常稿件' : '活动稿件'}</span></td><td>{submission.article_title || submission.activity_title || '-'}</td><td>{submission.article_url ? (() => { const u = cleanZhihuAnswerUrl(submission.article_url); return <a href={u} target="_blank" rel="noreferrer" title={u} className="profile-link" style={{wordBreak:'break-all'}}>{u.length > 50 ? u.slice(0, 50) + '...' : u} <Icon name="arrow" size={13}/></a> })() : '-'}</td></tr>) : <tr><td colSpan="3" className="table-empty">尚未提交作品。</td></tr>}</tbody></table></div></section></main>
+  return <div className="partner-page"><header className="partner-header"><a className="partner-brand" href="?home"><span className="brand-mark zhihu-mark">知</span><span>GameJourney</span><small>答主看板</small></a><div className="partner-header-right">{(isPartner || answerer?.zhihu_name === '灰域信风') && <button className="reload outline" onClick={() => { window.location.href = '?partner' }}>切换到合作方看板</button>}{answerer?.zhihu_name === '灰域信风' && <button className="reload outline" onClick={() => { window.location.href = '?admin' }}>切换到管理员后台</button>}<button className="reload" onClick={loadDashboard}>刷新数据</button><button className="reload" onClick={() => { window.location.href = '?home' }}>回到封面</button><div className="dashboard-user-area" onClick={() => setDropdownOpen(!dropdownOpen)}><div className="dashboard-avatar-wrap">{answerer?.avatar_url ? <img className="dashboard-avatar-img" src={answerer.avatar_url} alt="" /> : <span className="dashboard-avatar-placeholder">{answerer?.zhihu_name?.[0] || '?'}</span>}</div>{unreadInboxCount > 0 && <span className="dashboard-avatar-dot"/>}<span className="dashboard-username">{answerer?.zhihu_name || dashboard?.answerer?.zhihu_name}<Icon name="arrow" size={12}/></span>{dropdownOpen && <><div className="dashboard-dropdown-backdrop" onClick={(e) => { e.stopPropagation(); setDropdownOpen(false) }}/><div className="dashboard-dropdown"><button onClick={() => { setDropdownOpen(false); setAvatarModalOpen(true) }}><Icon name="image" size={16}/> 修改头像</button><button onClick={() => { setDropdownOpen(false); setPwdResetModalOpen(true); setPwdResetStep('idle'); setPwdResetMsg(''); setNewPassword(''); setConfirmPassword(''); loadResetStatus() }}><Icon name="key" size={16}/> 重置密码</button><button onClick={() => { setDropdownOpen(false); setInboxModalOpen(true); loadInbox() }}><Icon name="inbox" size={16}/> 收件箱{unreadInboxCount > 0 && <span className="dashboard-dropdown-dot"/>}</button><button className="dashboard-logout-btn" onClick={() => { localStorage.removeItem(SESSION_KEY); window.location.href = '?login' }}><Icon name="logout" size={16}/> 退出登录</button></div></>}</div></div></header><main className="partner-main answerer-dashboard"><section className="partner-hero dashboard-hero" style={{ '--dashboard-hero-cover': dashboard.answerer.dashboard_cover_url ? `url("${dashboard.answerer.dashboard_cover_url}")` : 'none' }}><div className="partner-hero-content"><p>你好，{dashboard.answerer.zhihu_name}</p><h1>我的测评活动</h1><span>查看正在参与的活动和已提交的作品。</span><button className="dashboard-cover-upload" onClick={() => { setCoverPreview(dashboard.answerer.dashboard_cover_url || ''); setCoverFile(null); setCoverMsg(''); setCoverModalOpen(true) }}><Icon name="image" size={16}/> 设置封面</button><div className="answerer-stats-row"><div className="hero-shared-code"><div className="hero-shared-code-inner">{sharedCode ? <div className="hero-shared-code-card"><span className="hero-shared-code-value" title="点击复制" onClick={() => { navigator.clipboard.writeText(sharedCode.code); setSharedMsg('邀请码已复制') }}>{sharedCode.code}</span><small>生成于 {new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(sharedCode.created_at))}</small></div> : <button className="hero-shared-code-btn" onClick={generateSharedCode} disabled={generatingShared}>{generatingShared ? '生成中…' : '分享邀请码'}<small>每日可生成一个</small></button>}{sharedMsg && <span className="hero-shared-code-msg" style={sharedMsg.includes('已生成') || sharedMsg.includes('已复制') ? undefined : { color: '#fca5a5' }}>{sharedMsg}</span>}</div></div><div className="answerer-stats"><div className="answerer-stats-left"><div className="answerer-tier-row"><span className="answerer-tier-icon">Lv{tierInfo.tier}</span><div><span className="answerer-tier-title">{tierInfo.title}</span><span className="answerer-tier-points">{points} 积分</span></div></div><div className="answerer-tier-progress"><div className="answerer-progress-bar"><div className="answerer-progress-fill" style={{width: progressPct + '%'}}></div></div>{tierInfo.nextTitle && <span className="answerer-next-tier">距「{tierInfo.nextTitle}」还需 {tierInfo.nextMin - points} 积分</span>}</div></div></div><div className="answerer-hero-metrics"><div className="answerer-metric answerer-metric-clickable" onClick={() => { setParticipatedModalOpen(true); loadParticipatedActivities() }} title="查看已参与活动详情"><span className="answerer-metric-value">{dashboard.participated_count || 0}</span><span className="answerer-metric-label">已参与活动</span><span className="answerer-metric-note">50 积分/个</span></div><div className="answerer-metric answerer-metric-clickable" onClick={() => { setCompletedModalOpen(true); loadCompletedActivities() }} title="查看已完成活动详情"><span className="answerer-metric-value">{dashboard.submission_count || 0}</span><span className="answerer-metric-label">已完成活动</span><span className="answerer-metric-note">300 积分/个</span></div><div className="answerer-metric"><span className="answerer-metric-value">{dashboard.daily_submission_count || 0}</span><span className="answerer-metric-label">已投稿日常回答</span><span className="answerer-metric-note">80 积分/个</span></div></div></div>{showBadges && <div className="answerer-hero-badges"><div className="answerer-hero-badges-head"><span>我的徽章</span><small>已解锁 {badges.length} 枚</small></div>{badges.length ? <div className="answerer-hero-badge-list">{badges.map((b) => <button key={b.game_name} className="answerer-hero-badge" onClick={() => setSelectedBadge(b)} title={`查看${b.game_name}徽章详情`}><img src={b.image_url || badgeImageUrl(b.game_name)} alt={b.name} loading="lazy"/></button>)}</div> : <small className="answerer-hero-badges-empty">提交交付物即可解锁</small>}</div>}</div></section><section className="dashboard-daily-form"><div className="panel-head dashboard-section-head"><div><h3>今日创作投稿（非测评活动内容）</h3><p>任何知乎游戏领域回答都可以投稿，可提升积分；每日可投稿1条；灌水投稿会导致账户扣分甚至封禁。</p></div></div><form onSubmit={submitDaily}><div className="daily-form-fields"><input type="url" placeholder="知乎回答链接（必填，不收今日之前老投稿）" value={dailyUrl} onChange={(e) => setDailyUrl(e.target.value)} required/><input type="text" placeholder="作品标题（必填，不收今日之前老投稿）" value={dailyTitle} onChange={(e) => setDailyTitle(e.target.value)} required/><button type="submit" className="primary" disabled={dailySubmitting}>{dailySubmitting ? '投稿中…' : '提交投稿'}</button></div>{dailyMsg && <p className="daily-form-msg">{dailyMsg}</p>}</form></section><section className="dashboard-daily-form"><div className="panel-head dashboard-section-head"><div><h3>今日提问投稿</h3><p>向运营投递知乎问题；下方两种填写格式任选一种输入，激活其中一种时另一种自动置灰。</p></div></div><form onSubmit={submitQuestion}><div className="daily-question-form"><div className={`daily-question-form-row${qMode === 'link' ? ' active' : ''}`}><input type="url" placeholder="知乎问题链接" value={qUrl} onFocus={() => setQMode('link')} onChange={(e) => setQUrl(e.target.value)}/><input type="text" placeholder="问题文本" value={qTitle} onFocus={() => setQMode('link')} onChange={(e) => setQTitle(e.target.value)}/></div><div className="daily-question-form-paste-row"><textarea className={`daily-question-form-paste${qMode === 'paste' ? ' active' : ''}`} placeholder={'知乎标准分享格式（PC端 问题下点【分享】-【链接】，可多填），例如：\n如何评价《黑神话：悟空》？ - 知乎\nhttps://www.zhihu.com/question/123456789'} value={qPaste} onFocus={() => setQMode('paste')} onChange={(e) => setQPaste(e.target.value)}/><button type="submit" className="primary" disabled={qSubmitting}>{qSubmitting ? '投稿中…' : '提交提问'}</button></div></div>{qMsg && <p className="daily-form-msg">{qMsg}</p>}</form></section><section><div className="panel-head dashboard-section-head"><div><h3>正在参与</h3><p>点击活动卡片回到申领页。</p></div></div><div className="dashboard-activity-cards">{dashboard.activities.length ? dashboard.activities.map((activity) => <a className="dashboard-activity-card" href={`?apply=${activity.id}`} key={activity.id}><div className="dashboard-activity-cover">{activity.game_cover ? <img src={activity.game_cover} alt={activity.game_name} loading="lazy"/> : <span>{activity.game_name?.[0] || '游'}</span>}</div><div className="dashboard-activity-body"><p>{activity.game_name}</p><h3>{activity.title}</h3><div><span className={`pill stage-${getPersonalStage(activity) === 'claim_key' || getPersonalStage(activity) === 'key_distribution' ? 'orange' : getPersonalStage(activity) === 'delivery' ? 'purple' : getPersonalStage(activity) === 'completed' ? 'green' : 'blue'}`}>{stageLabel[getPersonalStage(activity)] || getPersonalStage(activity)}</span>{getPersonalStage(activity) === 'delivery' && activity.delivery_deadline && <span className="dashboard-deadline">距截稿还剩 {daysLeft(activity.delivery_deadline)} 天</span>}</div></div></a>) : <div className="dashboard-empty">暂无正在参与的活动。</div>}</div></section><section><div className="panel-head dashboard-section-head"><div><h3>更多体验活动</h3><p>后台已上线的活动，点击卡片前往报名。</p></div></div><div className="dashboard-activity-cards">{moreActivities.length ? moreActivities.map((activity) => <a className="dashboard-activity-card" href={`?apply=${activity.id}`} key={activity.id}><div className="dashboard-activity-cover">{activity.game_cover ? <img src={activity.game_cover} alt={activity.game_name} loading="lazy"/> : <span>{activity.game_name?.[0] || '游'}</span>}</div><div className="dashboard-activity-body"><p>{activity.game_name}</p><h3>{activity.title}</h3><div><span className={`pill stage-${activity.status === 'key_distribution' ? 'orange' : activity.status === 'delivery' ? 'purple' : activity.status === 'completed' ? 'green' : 'blue'}`}>{stageLabel[activity.status] || activity.status}</span>{activity.status === 'delivery' && activity.delivery_deadline && <span className="dashboard-deadline">距截稿还剩 {daysLeft(activity.delivery_deadline)} 天</span>}</div></div></a>) : <div className="dashboard-empty">{dashboard.more_activities === undefined ? '活动卡片加载中，请耐心等候' : '暂无更多可体验的活动。'}</div>}</div></section><section><div className="panel-head dashboard-section-head"><div><h3>历史活动</h3><p>招募已结束的活动回顾。</p></div></div><div className="dashboard-activity-cards">{historicalActivities.length ? (<>{historicalActivities.slice(0, HISTORICAL_VISIBLE).map((activity) => <a className="dashboard-activity-card" href={`?apply=${activity.id}`} key={activity.id}><div className="dashboard-activity-cover">{activity.game_cover ? <img src={activity.game_cover} alt={activity.game_name} loading="lazy"/> : <span>{activity.game_name?.[0] || '游'}</span>}</div><div className="dashboard-activity-body"><p>{activity.game_name}</p><h3>{activity.title}</h3><div>{activity.application_status === 'rejected' ? <span className="pill muted">未能入选</span> : activity.has_delivery ? <span className="pill stage-green">成功参与</span> : <span className={`pill stage-${activity.status === 'key_distribution' ? 'orange' : activity.status === 'delivery' ? 'purple' : activity.status === 'completed' ? 'green' : 'blue'}`}>{stageLabel[activity.status] || activity.status}</span>}</div></div></a>)}{historicalActivities.length > HISTORICAL_VISIBLE && <a className="dashboard-activity-card dashboard-activity-more" href="?home" style={{textDecoration:'none'}}><div className="dashboard-activity-cover dashboard-activity-more-cover">{(() => { const colors = ['#6366f1','#8b5cf6','#3b82f6','#06b6d4','#10b981','#f59e0b','#ef4444','#ec4899','#14b8a6']; const picked = historicalMoreCovers; return Array.from({length:9}, (_,i) => { const act = picked[i]; const cover = act?.game_cover; return <div key={i} className="dashboard-activity-more-tile" style={cover ? {backgroundImage:`url(${cover})`} : {background:colors[i%9]}} /> }) })()}</div><div className="dashboard-activity-body"><h3>查看更多</h3><p>还有 {historicalActivities.length - HISTORICAL_VISIBLE} 个历史活动</p></div></a>}</>) : <div className="dashboard-empty">{dashboard.historical_activities === undefined ? '活动卡片加载中，请耐心等候' : '暂无历史活动。'}</div>}</div></section><section className="panel partner-table"><div className="panel-head"><div><h3>曾提交作品</h3><p>已提交的知乎作品记录。</p></div><button className="outline-button compact" onClick={() => { const headers = ['稿件类型', '作品标题', '作品链接']; const rows = (dashboard.submissions || []).map(s => [s.type === 'daily' ? '日常稿件' : '活动稿件', s.article_title || s.activity_title || '-', cleanZhihuAnswerUrl(s.article_url) || '']); const csv = '\uFEFF' + [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n'); const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${dashboard.answerer.zhihu_name}作品集_${fileTimestamp()}.csv`; a.click(); URL.revokeObjectURL(url) }}>下载 Excel</button></div><div className="table-wrap"><table><thead><tr><th>稿件类型</th><th>作品标题</th><th>作品链接</th></tr></thead><tbody>{(dashboard.submissions || []).length ? (dashboard.submissions || []).map((submission, idx) => <tr key={`submission-${idx}`}><td><span className={`submission-type ${submission.type === 'daily' ? 'daily' : 'activity'}`}>{submission.type === 'daily' ? '日常稿件' : '活动稿件'}</span></td><td>{submission.article_title || submission.activity_title || '-'}</td><td>{submission.article_url ? (() => { const u = cleanZhihuAnswerUrl(submission.article_url); return <a href={u} target="_blank" rel="noreferrer" title={u} className="profile-link" style={{wordBreak:'break-all'}}>{u.length > 50 ? u.slice(0, 50) + '...' : u} <Icon name="arrow" size={13}/></a> })() : '-'}</td></tr>) : <tr><td colSpan="3" className="table-empty">尚未提交作品。</td></tr>}</tbody></table></div></section></main>
     {dailySuccessOpen && <Modal title="投稿成功" onClose={() => setDailySuccessOpen(false)}><div className="daily-success-modal"><div className="step-message-icon success"><Icon name="check" size={24}/></div><p>今日创作投稿已提交</p><span>管理员审核后会进行后续处理。</span><button className="primary" onClick={() => setDailySuccessOpen(false)}>知道了</button></div></Modal>}
     {qSuccessOpen && <Modal title="投稿成功" onClose={() => setQSuccessOpen(false)}><div className="daily-success-modal"><div className="step-message-icon success"><Icon name="check" size={24}/></div><p>今日提问投稿已提交</p><span>已进入「日常问题&回答运营」后台，管理员处理后会进行后续跟进。</span><button className="primary" onClick={() => setQSuccessOpen(false)}>知道了</button></div></Modal>}
     {qErrorOpen && <Modal title="检测失败" onClose={() => setQErrorOpen(false)}><div className="daily-success-modal"><div className="step-message-icon waiting"><Icon name="alert" size={24}/></div><p>{qMsg}</p><span>请同时包含问题文本与有效的知乎问题链接，再重新提交。</span><button className="primary" onClick={() => setQErrorOpen(false)}>知道了</button></div></Modal>}
+    {selectedBadge && <Modal title="徽章详情" onClose={() => setSelectedBadge(null)}><div className="badge-detail-body"><img src={selectedBadge.image_url || badgeImageUrl(selectedBadge.game_name)} alt={selectedBadge.name}/><h3>{selectedBadge.game_name}</h3><p>解锁时间：{selectedBadge.awarded_at ? new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(selectedBadge.awarded_at)) : '-'}</p></div></Modal>}
     {avatarModalOpen && <Modal title="修改头像" onClose={() => { setAvatarModalOpen(false); setAvatarMsg(''); setAvatarFile(null) }}>
       <div className="avatar-upload-body">
         <div className="avatar-upload-preview">{avatarPreview ? <img src={avatarPreview} alt="" /> : <span className="dashboard-avatar-placeholder" style={{width:96,height:96,fontSize:40}}>{answerer?.zhihu_name?.[0]}</span>}</div>
-        <p className="avatar-upload-hint">支持 JPG、PNG 格式，大小不超过 500KB</p>
+        <p className="avatar-upload-hint">支持 JPG、PNG、WebP，将自动压缩（原图不超过 10MB）</p>
         <div className="avatar-upload-actions">
           <label className="outline-button avatar-upload-btn"><Icon name="upload" size={16}/> 选择图片<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => handleAvatarFile(e.target.files[0])} hidden/></label>
           {avatarFile && <button className="primary" onClick={uploadAvatar} disabled={avatarUploading}>{avatarUploading ? '上传中…' : '确认上传'}</button>}
         </div>
         {avatarMsg && <p className="avatar-upload-error">{avatarMsg}</p>}
+      </div>
+    </Modal>}
+    {coverModalOpen && <Modal title="设置看板封面" onClose={() => { setCoverModalOpen(false); setCoverMsg(''); setCoverFile(null) }}>
+      <div className="dashboard-cover-upload-body">
+        <div className="dashboard-cover-preview">{coverPreview ? <img src={coverPreview} alt="看板封面预览"/> : <span>暂无封面</span>}</div>
+        <p className="avatar-upload-hint">支持 JPG、PNG、WebP 格式，大小不超过 800KB</p>
+        <div className="avatar-upload-actions">
+          <label className="outline-button avatar-upload-btn"><Icon name="upload" size={16}/> 选择图片<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => handleCoverFile(e.target.files[0])} hidden/></label>
+          {coverFile && <button className="primary" onClick={uploadDashboardCover} disabled={coverUploading}>{coverUploading ? '上传中…' : '确认上传'}</button>}
+        </div>
+        {coverMsg && <p className="avatar-upload-error">{coverMsg}</p>}
       </div>
     </Modal>}
     {pwdResetModalOpen && <Modal title="重置密码" onClose={() => { setPwdResetModalOpen(false); setPwdResetStep('idle'); setPwdResetMsg(''); setNewPassword(''); setConfirmPassword('') }}>
@@ -2406,8 +2535,8 @@ function AnswererDashboard() {
                 <div className="answerer-detail-delivery" key={d.delivery_id}>
                   <span className="answerer-detail-delivery-title">{d.article_title || '无标题'}</span>
                   <div className="answerer-detail-delivery-meta">
-                    <span>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium' }).format(new Date(d.submitted_at))}</span>
-                    <a className="primary compact" href={cleanZhihuAnswerUrl(d.article_url)} target="_blank" rel="noreferrer">打开知乎回答 <Icon name="arrow" size={12}/></a>
+                    <span>{formatShortDate(d.submitted_at)}</span>
+                    <a className="primary compact" href={cleanZhihuAnswerUrl(d.article_url)} target="_blank" rel="noreferrer">打开 <Icon name="arrow" size={12}/></a>
                   </div>
                 </div>
               ))}
@@ -2658,7 +2787,7 @@ function ClaimPage({ activityId, authCode }) {
 
   return <div className="public-page"><main className="public-card">
     {screenshots.length > 0 && <div className="public-screenshots"><img className="ss-main" src={screenshots[activeShot] || screenshots[0]} alt="游戏截图"/>{screenshots.length > 1 && <div className="ss-strip">{screenshots.map((url, i) => i !== activeShot ? <img key={i} src={url} alt={`截图 ${i+1}`} onClick={() => setActiveShot(i)}/> : null)}</div>}</div>}
-    <div className="public-brand"><a href="?home" style={{display:'flex',alignItems:'center',gap:'var(--sp-2)',textDecoration:'none',color:'inherit'}}><span className="brand-mark zhihu-mark">知</span><span>GameJourney · 答主游戏KEY申领</span></a>{answerer && <a className="answerer-dashboard-link" href="?dashboard"><span className="answerer-dashboard-avatar" aria-hidden="true">{answerer.avatar_url ? <img src={answerer.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : (answerer.zhihu_name?.trim().charAt(0) || '我')}</span>我的看板</a>}</div>
+    <div className="public-brand"><a href="?home" style={{display:'flex',alignItems:'center',gap:'var(--sp-2)',textDecoration:'none',color:'inherit'}}><span className="brand-mark zhihu-mark">知</span><span>答主游戏KEY申领</span></a>{answerer && <a className="answerer-dashboard-link" href="?dashboard"><span className="answerer-dashboard-avatar" aria-hidden="true">{answerer.avatar_url ? <img src={answerer.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : (answerer.zhihu_name?.trim().charAt(0) || '我')}</span>我的看板</a>}</div>
     <div className="public-hero"><p>{activity.game_name}</p><h1>{activity.title}</h1><span>{activity.description || '填写以下信息参与本次游戏测评。'}</span></div>
     <div className="public-requirement">{activity.review_requirement || '测评要求：图文并茂，主观视角，生动有趣！'}</div>
     <section className="public-info">{(configuredPlatforms.length > 1 || configuredPlatforms[0] !== 'steam') && <div className="public-platforms"><span>可选版本</span><div>{configuredPlatforms.map((value) => { const platform = activityPlatforms.find((item) => item.value === value); return <span key={value} className="public-platform"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{platform?.icon}</svg>{platformLabel[value] || value}</span> })}</div></div>}<strong>测评主问题</strong><p>{activity.main_question ? renderTextWithLinks(activity.main_question) : '暂无，待后续更新'}</p>{subQuestions.filter(q => q.trim()).length > 0 && <div className="public-sub-questions"><strong>相关问题</strong>{subQuestions.filter(q => q.trim()).map((q, i) => <p key={i} className="public-sub-q">{renderTextWithLinks(q)}</p>)}</div>}<div className="info-deadlines"><small>报名截止：<strong>{formatDate(activity.application_deadline)}</strong></small><div className="reply-deadline"><span>回稿时间：</span><strong>{activity.delivery_deadline ? `${new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric' }).format(new Date(activity.delivery_deadline))} 前` : '待设置'}</strong></div></div></section>
@@ -2674,7 +2803,7 @@ function ClaimPage({ activityId, authCode }) {
           {moreActivities.length > 0 && (
             <div className="more-activities">
               {moreActivities.map(a => (
-                <a key={a.id} href={`?claim=${a.id}`} className="more-activity-card">
+                <a key={a.id} href={`?apply=${a.id}`} className="more-activity-card">
                   {a.game_cover ? <img src={a.game_cover} alt={a.game_name} loading="lazy" /> : <div className="more-activity-cover-placeholder" />}
                   <div className="more-activity-info">
                     <span className="more-activity-game">{a.game_name}</span>
@@ -2718,7 +2847,7 @@ function ClaimPage({ activityId, authCode }) {
             <form className="public-form" onSubmit={submitApplication}>
               <h2>报名参与</h2>
               <p className="invite-hint">确认信息后提交报名，运营方筛选通过后即可领取 Key。</p>
-              <label className="field"><span>知乎用户名</span><input value={answerer.zhihu_name} disabled /></label>
+              <label className="field"><span>GameJourney用户名</span><input value={answerer.zhihu_name} disabled /></label>
               {(() => { const platforms = Array.isArray(activity.platforms) && activity.platforms.length ? activity.platforms : ['steam']; const selected = activityPlatforms.find((platform) => platform.value === form.selected_platform); return platforms.length > 1 ? <label className="field platform-select-field"><span>版本选择</span><div className="platform-select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{selected?.icon}</svg><select value={form.selected_platform} onChange={(event) => setForm({ ...form, selected_platform: event.target.value })}>{platforms.map((platform) => <option key={platform} value={platform}>{platformLabel[platform] || platform}</option>)}</select><Icon name="arrow" size={16}/></div></label> : platforms[0] !== 'steam' ? <label className="field platform-select-field"><span>版本选择</span><div className="platform-select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{selected?.icon}</svg><span className="platform-readonly">{platformLabel[platforms[0]] || platforms[0]}</span></div></label> : null })()}
               <Field label="预计完成字数" type="number" required value={form.expected_word_count} onChange={(value) => setForm({ ...form, expected_word_count: value })} onBlur={(event) => { const numberValue = Number(event.target.value) || 800; if (numberValue < 800) setForm({ ...form, expected_word_count: 800 }) }}/>
               <span className="word-min-hint">最低 800 字</span>
@@ -2739,7 +2868,7 @@ function ClaimPage({ activityId, authCode }) {
 }
 
 function RegisterPage({ aid, redirect }) {
-  const [banner, setBanner] = useState(() => getCachedBanner() || defaultRegisterBanner)
+  const [banner, setBanner] = useState(null)
   const [form, setForm] = useState({ invitation_code: '', zhihu_name: '', account_address: '', wechat_id: '', password: '', confirm_password: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -2755,7 +2884,6 @@ function RegisterPage({ aid, redirect }) {
     supabase.from('keyflow_page_assets').select('image_data').eq('key', 'register_banner').maybeSingle().then(({ data, error: requestError }) => {
       if (requestError) { console.error('[RegisterPage] 读取头图失败:', requestError.message, requestError); return }
       if (data?.image_data && data.image_data.length > 100) { setBanner(data.image_data); setCachedBanner(data.image_data) }
-      else if (!getCachedBanner()) { setBanner(defaultRegisterBanner) }
     }).catch((err) => { console.error('[RegisterPage] 查询异常:', err) })
   }, [])
 
@@ -2798,7 +2926,7 @@ function RegisterPage({ aid, redirect }) {
   const handleRegister = async (event) => {
     event.preventDefault(); setError(''); setNameSuggestion(null)
     if (!form.invitation_code.trim()) { setError('请输入邀请码'); return }
-    if (!form.zhihu_name.trim()) { setError('请输入知乎用户名'); return }
+    if (!form.zhihu_name.trim()) { setError('请输入 GameJourney 用户名'); return }
     if (!form.account_address.trim()) { setError('请输入知乎主页地址'); return }
     if (!form.wechat_id.trim()) { setError('请输入微信号'); return }
     if (form.password.length < 6) { setError('密码至少 6 位'); return }
@@ -2841,7 +2969,7 @@ function RegisterPage({ aid, redirect }) {
   return <div className="register-page-wrapper">
     <div className="register-card">
       <div className="register-banner">
-        <div className="register-banner-bg" style={{ backgroundImage: `url(${banner})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
+        {banner && <div className="register-banner-bg" style={{ backgroundImage: `url(${banner})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />}
         <div className="register-banner-content">
           <span className="brand-mark zhihu-mark">知</span>
           <h1>加入知乎游戏体验计划</h1>
@@ -2857,8 +2985,8 @@ function RegisterPage({ aid, redirect }) {
             <input required value={form.invitation_code} placeholder="KF-XXXXXXXX" onChange={(e) => setForm({ ...form, invitation_code: e.target.value })} />
           </label>
           <label className="register-field">
-            <span>知乎用户名<em>*</em></span>
-            <input required value={form.zhihu_name} placeholder="请和你的知乎昵称保持一致，登录页面的唯一账号" onChange={(e) => setForm({ ...form, zhihu_name: e.target.value })} />
+            <span>GameJourney用户名<em>*</em></span>
+            <input required value={form.zhihu_name} placeholder="保持和知乎用户名一样即可" onChange={(e) => setForm({ ...form, zhihu_name: e.target.value })} />
             {nameHint?.type === 'checking' && <span className="register-field-hint checking">检测中…</span>}
             {nameHint?.type === 'taken' && <span className="register-field-hint taken">该用户名已被使用，建议 <button type="button" className="register-suggestion-btn" onClick={() => { setForm({ ...form, zhihu_name: nameHint.suggestion }); setNameHint(null); }}>使用「{nameHint.suggestion}」</button></span>}
           </label>
@@ -2891,7 +3019,7 @@ function RegisterPage({ aid, redirect }) {
 }
 
 function LoginPage({ aid, redirect, token }) {
-  const [banner, setBanner] = useState(() => getCachedBanner() || defaultRegisterBanner)
+  const [banner, setBanner] = useState(null)
   const [form, setForm] = useState({ zhihu_name: '', password: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -2906,7 +3034,7 @@ function LoginPage({ aid, redirect, token }) {
 
   const handleLogin = async (event) => {
     event.preventDefault(); setError('')
-    if (!form.zhihu_name.trim()) { setError('请输入知乎用户名'); return }
+    if (!form.zhihu_name.trim()) { setError('请输入 GameJourney 用户名'); return }
     if (!form.password) { setError('请输入密码'); return }
     setLoading(true)
     const { data, error: rpcErr } = await supabase.rpc('keyflow_login_answerer', {
@@ -2926,7 +3054,7 @@ function LoginPage({ aid, redirect, token }) {
 
   const handleForgotPassword = async (e) => {
     e.preventDefault(); setForgotMsg('')
-    if (!forgotName.trim()) { setForgotMsg('请输入知乎用户名'); return }
+    if (!forgotName.trim()) { setForgotMsg('请输入 GameJourney 用户名'); return }
     setForgotLoading(true)
     const { data: answererId, error: lookupErr } = await supabase.rpc('keyflow_answerer_id_by_zhihu_name', { p_zhihu_name: forgotName.trim() })
     if (lookupErr || !answererId) { setForgotLoading(false); setForgotMsg('未找到该用户名，请确认输入'); return }
@@ -2934,9 +3062,11 @@ function LoginPage({ aid, redirect, token }) {
     const { error: rpcErr } = await supabase.rpc('keyflow_request_password_reset', { p_answerer_id: answererId })
     setForgotLoading(false)
     if (rpcErr) {
-      if (rpcErr.message.includes('已有一个待处理')) { setForgotStep('pending'); return }
+      if (rpcErr.message.includes('已有一个待处理')) { setForgotStep('pending'); localStorage.setItem(PWD_RESET_FORGOT_KEY, JSON.stringify({ answererId, name: forgotName.trim() })); return }
+      if (rpcErr.message.includes('已通过审核')) { setForgotStep('approved'); localStorage.setItem(PWD_RESET_FORGOT_KEY, JSON.stringify({ answererId, name: forgotName.trim() })); return }
       setForgotMsg(rpcErr.message); return
     }
+    localStorage.setItem(PWD_RESET_FORGOT_KEY, JSON.stringify({ answererId, name: forgotName.trim() }))
     setForgotStep('pending')
   }
 
@@ -2947,10 +3077,11 @@ function LoginPage({ aid, redirect, token }) {
       .order('requested_at', { ascending: false }).limit(1).maybeSingle()
     if (data) {
       if (data.status === 'approved') {
-        if (isPasswordResetApprovalExpired(data)) { setForgotStep('idle'); setForgotMsg('审批已过期，请重新提交密码重置申请。') }
+        if (isPasswordResetApprovalExpired(data)) { setForgotStep('idle'); setForgotMsg('审批已过期，请重新提交密码重置申请。'); localStorage.removeItem(PWD_RESET_FORGOT_KEY) }
         else setForgotStep('approved')
       }
-      else if (data.status === 'rejected') { setForgotStep('rejected'); setForgotMsg(data.admin_note || '管理员拒绝了你的密码重置申请。') }
+      else if (data.status === 'rejected') { setForgotStep('rejected'); setForgotMsg(data.admin_note || '管理员拒绝了你的密码重置申请。'); localStorage.removeItem(PWD_RESET_FORGOT_KEY) }
+      else if (data.status === 'completed') { setForgotStep('done'); setForgotMsg('密码重置成功，请使用新密码重新登录。'); localStorage.removeItem(PWD_RESET_FORGOT_KEY) }
     }
   }
 
@@ -2963,9 +3094,19 @@ function LoginPage({ aid, redirect, token }) {
   }, [forgotStep, forgotAnswererId])
 
   useEffect(() => {
+    let stored = null
+    try { stored = JSON.parse(localStorage.getItem(PWD_RESET_FORGOT_KEY)) } catch {}
+    if (stored?.answererId) {
+      setForgotMode(true)
+      setForgotName(stored.name || '')
+      setForgotAnswererId(stored.answererId)
+      setForgotStep('pending')
+    }
+  }, [])
+
+  useEffect(() => {
     supabase.from('keyflow_page_assets').select('image_data').eq('key', 'register_banner').maybeSingle().then(({ data }) => {
       if (data?.image_data && data.image_data.length > 100) { setBanner(data.image_data); setCachedBanner(data.image_data) }
-      else if (!getCachedBanner()) setBanner(defaultRegisterBanner)
     })
   }, [])
 
@@ -2979,6 +3120,7 @@ function LoginPage({ aid, redirect, token }) {
     setForgotLoading(false)
     if (rpcErr) { setForgotMsg(rpcErr.message); return }
     setForgotStep('done')
+    localStorage.removeItem(PWD_RESET_FORGOT_KEY)
     setForgotMsg('密码重置成功，请使用新密码重新登录。')
     setTimeout(() => {
       const backParams = new URLSearchParams()
@@ -2993,9 +3135,9 @@ function LoginPage({ aid, redirect, token }) {
   if (forgotMode) { const resetForgot = () => { setForgotMode(false); setForgotMsg(''); setForgotStep('idle'); setForgotAnswererId(null); setForgotNewPassword(''); setForgotConfirmPassword('') }
     return <div className="public-page"><main className="public-card" style={{ maxWidth: '440px' }}>
     <a className="public-brand" href="?home"><span className="brand-mark zhihu-mark">知</span><span>GameJourney · 忘记密码</span></a>
-    <div className="public-hero"><h1>申请重置密码</h1><span>输入你的知乎用户名，提交申请后等待管理员审核。</span></div>
+    <div className="public-hero"><h1>申请重置密码</h1><span>输入你的 GameJourney 用户名，提交申请后等待管理员审核。</span></div>
     {forgotStep === 'idle' ? <form className="public-form" onSubmit={handleForgotPassword}>
-      <Field label="知乎用户名" required value={forgotName} placeholder="输入你的知乎用户名" onChange={setForgotName} />
+      <Field label="GameJourney用户名" required value={forgotName} placeholder="输入你的 GameJourney 用户名" onChange={setForgotName} />
       {forgotMsg && <p className="public-error">{forgotMsg}</p>}
       <button className="primary public-submit" disabled={forgotLoading}>{forgotLoading ? '提交中…' : '提交申请'}</button>
       <a className="forgot-back-link" href="javascript:void(0)" onClick={resetForgot}>← 返回登录</a>
@@ -3030,19 +3172,19 @@ function LoginPage({ aid, redirect, token }) {
   return <div className="register-page-wrapper">
     <div className="register-card">
       <div className="register-banner">
-        <div className="register-banner-bg" style={{ backgroundImage: `url(${banner})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
+        {banner && <div className="register-banner-bg" style={{ backgroundImage: `url(${banner})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />}
         <div className="register-banner-content">
           <span className="brand-mark zhihu-mark">知</span>
           <h1>答主登录</h1>
-          <p>使用已注册的知乎用户名和密码登录。</p>
+          <p>使用已注册的 GameJourney 用户名和密码登录。</p>
         </div>
       </div>
       <form className="register-form" onSubmit={handleLogin}>
         <h2>登录</h2>
         <div className="register-fields">
           <label className="register-field">
-            <span>知乎用户名<em>*</em></span>
-            <input required value={form.zhihu_name} placeholder="输入注册时的知乎用户名" onChange={(e) => setForm({ ...form, zhihu_name: e.target.value })} />
+            <span>GameJourney用户名<em>*</em></span>
+            <input required value={form.zhihu_name} placeholder="输入注册时的 GameJourney 用户名" onChange={(e) => setForm({ ...form, zhihu_name: e.target.value })} />
           </label>
           <label className="register-field">
             <span>密码<em>*</em></span>
@@ -3065,6 +3207,7 @@ function HomePage() {
     trackPageView('home')
   }, [])
   const [authMode, setAuthMode] = useState('login')
+  const [mobileAuthOpen, setMobileAuthOpen] = useState(false)
   const [user, setUser] = useState(() => {
     try { const s = JSON.parse(localStorage.getItem(SESSION_KEY)); return s?.id ? s : null }
     catch { return null }
@@ -3084,7 +3227,7 @@ function HomePage() {
     return () => { cancelled = true }
   }, [])
   const loggedIn = !!user
-  const [banner, setBanner] = useState(() => getCachedBanner() || defaultRegisterBanner)
+  const [banner, setBanner] = useState(null)
   const [loginForm, setLoginForm] = useState({ zhihu_name: '', password: '' })
   const [loginLoading, setLoginLoading] = useState(false)
   const [loginError, setLoginError] = useState('')
@@ -3169,7 +3312,7 @@ function HomePage() {
 
   const handleLogin = async (e) => {
     e.preventDefault(); setLoginError('')
-    if (!loginForm.zhihu_name.trim()) { setLoginError('请输入知乎用户名'); return }
+    if (!loginForm.zhihu_name.trim()) { setLoginError('请输入 GameJourney 用户名'); return }
     if (!loginForm.password) { setLoginError('请输入密码'); return }
     setLoginLoading(true)
     const { data, error } = await supabase.rpc('keyflow_login_answerer', { p_zhihu_name: loginForm.zhihu_name.trim(), p_password: loginForm.password })
@@ -3183,7 +3326,7 @@ function HomePage() {
   const handleRegister = async (e) => {
     e.preventDefault(); setRegError('')
     if (!regForm.invitation_code.trim()) { setRegError('请输入邀请码'); return }
-    if (!regForm.zhihu_name.trim()) { setRegError('请输入知乎用户名'); return }
+    if (!regForm.zhihu_name.trim()) { setRegError('请输入 GameJourney 用户名'); return }
     if (!regForm.account_address.trim()) { setRegError('请输入知乎主页地址'); return }
     if (!regForm.wechat_id.trim()) { setRegError('请输入微信号'); return }
     if (regForm.password.length < 6) { setRegError('密码至少 6 位'); return }
@@ -3217,26 +3360,33 @@ function HomePage() {
     dropdownTimer.current = setTimeout(() => setDropdownOpen(false), 200)
   }
 
-  const handleAvatarFile = (file) => {
+  const handleAvatarFile = async (file) => {
     setAvatarMsg('')
     if (!file) return
     if (!file.type.startsWith('image/')) { setAvatarMsg('请选择图片文件'); return }
-    if (file.size > 500 * 1024) { setAvatarMsg('图片大小不能超过 500KB'); return }
-    const reader = new FileReader()
-    reader.onload = (e) => { setAvatarPreview(e.target.result); setAvatarFile(file) }
-    reader.readAsDataURL(file)
+    if (file.size > 10 * 1024 * 1024) { setAvatarMsg('图片大小不能超过 10MB'); return }
+    try {
+      const compressed = await compressImageFile(file, 256, 0.85)
+      setAvatarFile(compressed)
+      const reader = new FileReader()
+      reader.onload = (e) => setAvatarPreview(e.target.result)
+      reader.readAsDataURL(compressed)
+    } catch {
+      setAvatarMsg('图片处理失败，请重新选择')
+    }
   }
 
   const uploadAvatar = async () => {
     if (!avatarFile) return
     setAvatarUploading(true)
-    const ext = avatarFile.name.split('.').pop() || 'png'
-    const filePath = `${user.id}.${ext}`
-    const { error: uploadErr } = await supabase.storage
-      .from('avatars')
-      .upload(filePath, avatarFile, { upsert: true })
-    if (uploadErr) { setAvatarUploading(false); return }
-    const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(filePath)
+    let publicUrl
+    try {
+      publicUrl = await uploadMediaFile(avatarFile, user.media_upload_token, 'avatar')
+    } catch (error) {
+      setAvatarUploading(false)
+      setAvatarMsg(error.message)
+      return
+    }
     const { error: updateErr } = await supabase.rpc('keyflow_answerer_update_avatar', { p_answerer_id: user.id, p_avatar_url: publicUrl })
     if (updateErr) { setAvatarUploading(false); return }
     const session = { ...user, avatar_url: publicUrl }
@@ -3337,12 +3487,13 @@ function HomePage() {
         <a className="home-brand" href="?home"><span className="brand-mark zhihu-mark home-brand-mark">知</span><span>GameJourney</span></a>
         <div className="home-header-actions">
           {isAdmin && <a className="home-admin-link" href={window.location.pathname + '?admin'}>管理后台</a>}
+          {!loggedIn && <button className="home-mobile-login-btn" onClick={() => { setAuthMode('login'); setLoginError(''); setRegError(''); setMobileAuthOpen(true) }}>登录</button>}
           {loggedIn && (isPartner
             ? <div className="answerer-dashboard-link home-dashboard-btn home-partner-btn" onMouseEnter={handleDropdownEnter} onMouseLeave={handleDropdownLeave} onClick={() => { window.location.href = '?partner' }}>
                 <span className="answerer-dashboard-avatar partner-avatar">{user?.avatar_url ? <img src={user.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : (user?.zhihu_name?.trim().charAt(0) || '合')}</span>合作方页面<Icon name="arrow" size={12}/>
                 {dropdownOpen && <div className="dashboard-dropdown" onMouseEnter={handleDropdownEnter} onMouseLeave={handleDropdownLeave}>
                   <button onClick={(e) => { e.stopPropagation(); setDropdownOpen(false); setAvatarPreview(user?.avatar_url || null); setAvatarFile(null); setAvatarMsg(''); setAvatarModalOpen(true) }}><Icon name="image" size={16}/> 修改头像</button>
-                  <button onClick={(e) => { e.stopPropagation(); setDropdownOpen(false); setPwdResetModalOpen(true); setPwdResetStep('idle'); setPwdResetMsg(''); setNewPassword(''); setConfirmPassword('') }}><Icon name="key" size={16}/> 重置密码</button>
+                  <button onClick={(e) => { e.stopPropagation(); setDropdownOpen(false); setPwdResetModalOpen(true); setPwdResetStep('idle'); setPwdResetMsg(''); setNewPassword(''); setConfirmPassword(''); loadResetStatus() }}><Icon name="key" size={16}/> 重置密码</button>
                   <button onClick={(e) => { e.stopPropagation(); setDropdownOpen(false); setInboxModalOpen(true); loadInbox() }}><Icon name="inbox" size={16}/> 收件箱</button>
                   <button onClick={(e) => { e.stopPropagation(); doLogout() }}><Icon name="logout" size={16}/> 退出登录</button>
                 </div>}
@@ -3351,7 +3502,7 @@ function HomePage() {
                 <span className="answerer-dashboard-avatar">{user?.avatar_url ? <img src={user.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : (user?.zhihu_name?.trim().charAt(0) || '我')}</span>我的看板<Icon name="arrow" size={12}/>
                 {dropdownOpen && <div className="dashboard-dropdown" onMouseEnter={handleDropdownEnter} onMouseLeave={handleDropdownLeave}>
                   <button onClick={(e) => { e.stopPropagation(); setDropdownOpen(false); setAvatarPreview(user?.avatar_url || null); setAvatarFile(null); setAvatarMsg(''); setAvatarModalOpen(true) }}><Icon name="image" size={16}/> 修改头像</button>
-                  <button onClick={(e) => { e.stopPropagation(); setDropdownOpen(false); setPwdResetModalOpen(true); setPwdResetStep('idle'); setPwdResetMsg(''); setNewPassword(''); setConfirmPassword('') }}><Icon name="key" size={16}/> 重置密码</button>
+                  <button onClick={(e) => { e.stopPropagation(); setDropdownOpen(false); setPwdResetModalOpen(true); setPwdResetStep('idle'); setPwdResetMsg(''); setNewPassword(''); setConfirmPassword(''); loadResetStatus() }}><Icon name="key" size={16}/> 重置密码</button>
                   <button onClick={(e) => { e.stopPropagation(); setDropdownOpen(false); setInboxModalOpen(true); loadInbox() }}><Icon name="inbox" size={16}/> 收件箱</button>
                   <button onClick={(e) => { e.stopPropagation(); doLogout() }}><Icon name="logout" size={16}/> 退出登录</button>
                 </div>}
@@ -3392,8 +3543,9 @@ function HomePage() {
       </section>
       <footer className="home-footer"><p>GameJourney · 知乎游戏体验计划</p></footer>
     </div>
-    {!loggedIn && <aside className="home-auth">
-      <div className="home-auth-bg" style={{ backgroundImage: `url(${banner})` }} />
+    {!loggedIn && <aside className={`home-auth ${mobileAuthOpen ? 'mobile-open' : ''}`}>
+      <button className="home-auth-close" aria-label="关闭登录窗口" onClick={() => setMobileAuthOpen(false)}><Icon name="close" size={20}/></button>
+      {banner && <div className="home-auth-bg" style={{ backgroundImage: `url(${banner})` }} />}
       <div className="home-auth-content">
         <div className="home-auth-tabs">
           <button className={`home-auth-tab ${authMode === 'login' ? 'active' : ''}`} onClick={() => { setAuthMode('login'); setLoginError(''); setRegError('') }}>登录</button>
@@ -3403,7 +3555,7 @@ function HomePage() {
           <form className="home-auth-form" onSubmit={handleLogin}>
             <h2>欢迎回来</h2>
             <p className="home-auth-sub">登录后即可领取 Key 和提交测评作品。</p>
-            <label className="home-field"><span>知乎用户名</span><input required value={loginForm.zhihu_name} placeholder="输入注册时的知乎用户名" onChange={(e) => setLoginForm({ ...loginForm, zhihu_name: e.target.value })} /></label>
+            <label className="home-field"><span>GameJourney用户名</span><input required value={loginForm.zhihu_name} placeholder="输入注册时的 GameJourney 用户名" onChange={(e) => setLoginForm({ ...loginForm, zhihu_name: e.target.value })} /></label>
             <label className="home-field"><span>密码</span><input type="password" required value={loginForm.password} placeholder="输入密码" onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} /></label>
             {loginError && <p className="home-auth-error">{loginError}</p>}
             <button className="home-auth-submit" disabled={loginLoading}>{loginLoading ? '登录中…' : '登录'}</button>
@@ -3415,7 +3567,7 @@ function HomePage() {
             <h2>加入计划</h2>
             <p className="home-auth-sub">邀请码由知乎运营或已注册答主提供，每个邀请码仅可使用一次。</p>
             <label className="home-field"><span>邀请码（联系知乎运营或已注册答主获得）</span><input required value={regForm.invitation_code} placeholder="KF-XXXXXXXX" onChange={(e) => setRegForm({ ...regForm, invitation_code: e.target.value })} /></label>
-            <label className="home-field"><span>知乎用户名</span><input required value={regForm.zhihu_name} placeholder="请和你的知乎昵称保持一致，登录页面的唯一账号" onChange={(e) => setRegForm({ ...regForm, zhihu_name: e.target.value })} />{nameHint?.type === 'checking' && <span className="home-field-hint checking">检测中…</span>}{nameHint?.type === 'taken' && <span className="home-field-hint taken">该用户名已被使用，建议 <button type="button" className="home-suggestion-btn" onClick={() => { setRegForm({ ...regForm, zhihu_name: nameHint.suggestion }); setNameHint(null) }}>使用「{nameHint.suggestion}」</button></span>}</label>
+            <label className="home-field"><span>GameJourney用户名</span><input required value={regForm.zhihu_name} placeholder="保持和知乎用户名一样即可" onChange={(e) => setRegForm({ ...regForm, zhihu_name: e.target.value })} />{nameHint?.type === 'checking' && <span className="home-field-hint checking">检测中…</span>}{nameHint?.type === 'taken' && <span className="home-field-hint taken">该用户名已被使用，建议 <button type="button" className="home-suggestion-btn" onClick={() => { setRegForm({ ...regForm, zhihu_name: nameHint.suggestion }); setNameHint(null) }}>使用「{nameHint.suggestion}」</button></span>}</label>
             <label className="home-field"><span>知乎主页地址</span><input type="url" required value={regForm.account_address} placeholder="https://www.zhihu.com/people/xxxxxx" onChange={(e) => setRegForm({ ...regForm, account_address: e.target.value })} />{addressHint?.type === 'checking' && <span className="home-field-hint checking">检测中…</span>}{addressHint?.type === 'taken' && <span className="home-field-hint warn">该主页地址已被用户「{addressHint.zhihu_name}」使用，你确定这是你的知乎账户吗？</span>}</label>
             <label className="home-field"><span>微信号</span><input required value={regForm.wechat_id} placeholder="即你的微信唯一ID，不是微信名；如ID无效则账户会被封禁" onChange={(e) => setRegForm({ ...regForm, wechat_id: e.target.value })} /></label>
             <label className="home-field"><span>密码</span><input type="password" required value={regForm.password} placeholder="至少 6 位字符" onChange={(e) => setRegForm({ ...regForm, password: e.target.value })} /></label>
@@ -3431,7 +3583,7 @@ function HomePage() {
     {avatarModalOpen && <Modal title="修改头像" onClose={() => { setAvatarModalOpen(false); setAvatarMsg(''); setAvatarFile(null) }}>
       <div className="avatar-upload-body">
         <div className="avatar-upload-preview">{avatarPreview ? <img src={avatarPreview} alt="" /> : <span className="dashboard-avatar-placeholder" style={{width:96,height:96,fontSize:40}}>{user?.zhihu_name?.[0]}</span>}</div>
-        <p className="avatar-upload-hint">支持 JPG、PNG 格式，大小不超过 500KB</p>
+        <p className="avatar-upload-hint">支持 JPG、PNG、WebP，将自动压缩（原图不超过 10MB）</p>
         <div className="avatar-upload-actions">
           <label className="outline-button avatar-upload-btn"><Icon name="upload" size={16}/> 选择图片<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => handleAvatarFile(e.target.files[0])} hidden/></label>
           {avatarFile && <button className="primary" onClick={uploadAvatar} disabled={avatarUploading}>{avatarUploading ? '上传中…' : '确认上传'}</button>}

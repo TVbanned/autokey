@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<defs>
+<clipPath id="badgeClip"><circle cx="256" cy="256" r="210"/></clipPath>
+</defs>
+<circle cx="256" cy="256" r="232" fill="#171B24"/>
+<circle cx="256" cy="256" r="210" fill="#3A4A55"/>
+<g clip-path="url(#badgeClip)">
+<rect x="120" y="196" width="272" height="140" rx="18" fill="#E8E3D5"/>
+<rect x="182" y="170" width="90" height="34" rx="8" fill="#E8E3D5"/>
+<rect x="316" y="182" width="52" height="22" rx="6" fill="#C8452C"/>
+<circle cx="256" cy="266" r="62" fill="#C8452C"/>
+<circle cx="256" cy="266" r="40" fill="#171B24"/>
+<circle cx="244" cy="254" r="12" fill="#E8E3D5"/>
+<path d="M96 336 L96 356 L116 356 L116 344 L108 344 L108 336 Z" fill="#E8E3D5"/>
+<path d="M416 336 L416 356 L396 356 L396 344 L404 344 L404 336 Z" fill="#E8E3D5"/>
+<path d="M96 176 L96 156 L116 156 L116 168 L108 168 L108 176 Z" fill="#E8E3D5"/>
+<path d="M416 176 L416 156 L396 156 L396 168 L404 168 L404 176 Z" fill="#E8E3D5"/>
+<circle cx="152" cy="222" r="10" fill="#C8452C"/>
+</g>
+</svg>

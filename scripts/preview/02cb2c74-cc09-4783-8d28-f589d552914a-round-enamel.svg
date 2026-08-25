@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="metalRing" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F8E7B0"/>
+      <stop offset="0.45" stop-color="#C89A4A"/>
+      <stop offset="0.75" stop-color="#E8CE8E"/>
+      <stop offset="1" stop-color="#FFF1C9"/>
+    </linearGradient>
+    <linearGradient id="metalInner" x1="0" y1="0" x2="0.6" y2="1">
+      <stop offset="0" stop-color="#FFF1C9"/>
+      <stop offset="1" stop-color="#D9B36A"/>
+    </linearGradient>
+    <linearGradient id="skyGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#B9CDD6"/>
+      <stop offset="1" stop-color="#D8E2DE"/>
+    </linearGradient>
+    <linearGradient id="roofGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#55688A"/>
+      <stop offset="1" stop-color="#415270"/>
+    </linearGradient>
+    <radialGradient id="shadow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0.78" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0.18"/>
+    </radialGradient>
+    <clipPath id="badgeClip">
+      <circle cx="256" cy="256" r="198"/>
+    </clipPath>
+  </defs>
+
+  <!-- 金属外圆 -->
+  <circle cx="256" cy="256" r="230" fill="url(#metalRing)"/>
+  <circle cx="256" cy="256" r="230" fill="url(#shadow)"/>
+
+  <!-- 淡金高光内环 -->
+  <circle cx="256" cy="256" r="206" fill="url(#metalInner)"/>
+  <circle cx="256" cy="256" r="198" fill="#B9CDD6"/>
+
+  <g clip-path="url(#badgeClip)">
+    <!-- 天空珐琅底 -->
+    <rect x="58" y="58" width="396" height="396" fill="url(#skyGrad)"/>
+
+    <!-- 日轮 -->
+    <circle cx="336" cy="158" r="34" fill="#EDE3C2"/>
+
+    <!-- 远景山峦 -->
+    <path d="M58 300 Q120 210 176 262 Q216 200 268 250 Q320 190 380 252 Q428 220 454 260 L454 454 L58 454 Z" fill="#8FAE94"/>
+    <path d="M58 340 Q130 268 200 312 Q260 258 330 310 Q400 268 454 316 L454 454 L58 454 Z" fill="#7A9A7E"/>
+
+    <!-- 云雾带 -->
+    <path d="M58 348 Q140 328 220 344 Q300 360 380 342 Q430 332 454 344 L454 372 Q380 388 300 372 Q220 356 140 372 Q90 380 58 370 Z" fill="#D8E2DE" opacity="0.85"/>
+
+    <!-- 山门主殿（三重飞檐） -->
+    <!-- 殿身 -->
+    <rect x="212" y="316" width="88" height="76" fill="#E4DCC6"/>
+    <rect x="226" y="336" width="60" height="56" fill="#C9BFA4"/>
+    <rect x="244" y="350" width="24" height="42" fill="#55688A"/>
+    <!-- 顶层飞檐 -->
+    <path d="M196 300 Q256 272 316 300 Q306 288 292 284 L220 284 Q206 288 196 300 Z" fill="url(#roofGrad)"/>
+    <path d="M226 284 L256 262 L286 284 Z" fill="#415270"/>
+    <circle cx="256" cy="258" r="5" fill="#D9B36A"/>
+    <!-- 中层飞檐 -->
+    <path d="M176 330 Q256 296 336 330 Q322 314 300 308 L212 308 Q190 314 176 330 Z" fill="url(#roofGrad)"/>
+    <!-- 底层飞檐 -->
+    <path d="M158 366 Q256 328 354 366 Q338 346 312 340 L200 340 Q174 346 158 366 Z" fill="url(#roofGrad)"/>
+
+    <!-- 两侧阙楼 -->
+    <rect x="146" y="356" width="40" height="46" fill="#E4DCC6"/>
+    <path d="M132 358 Q166 338 200 358 Q190 346 178 344 L154 344 Q142 346 132 358 Z" fill="url(#roofGrad)"/>
+    <rect x="326" y="356" width="40" height="46" fill="#E4DCC6"/>
+    <path d="M312 358 Q346 338 380 358 Q370 346 358 344 L334 344 Q322 346 312 358 Z" fill="url(#roofGrad)"/>
+
+    <!-- 石阶 -->
+    <rect x="230" y="392" width="52" height="8" fill="#C9BFA4"/>
+    <rect x="222" y="400" width="68" height="8" fill="#BFB494"/>
+    <rect x="214" y="408" width="84" height="10" fill="#AFA480"/>
+
+    <!-- 飞剑（斜掠山门上空） -->
+    <g transform="rotate(-24 340 210)">
+      <path d="M284 210 L364 210 L380 216 L364 222 L284 222 Q276 216 284 210 Z" fill="#D9B36A"/>
+      <path d="M284 210 L300 216 L284 222 Q276 216 284 210 Z" fill="#B08D45"/>
+      <rect x="262" y="212" width="22" height="8" rx="3" fill="#415270"/>
+      <path d="M252 216 Q258 208 264 214 L264 218 Q258 224 252 216 Z" fill="#D9B36A"/>
+    </g>
+    <!-- 剑光尾迹 -->
+    <path d="M190 268 Q240 246 288 226 Q242 252 198 280 Z" fill="#EDE3C2" opacity="0.7"/>
+
+    <!-- 前景松枝 -->
+    <path d="M58 208 Q96 192 128 204 Q100 210 82 224 Q110 218 134 230 Q104 234 88 248 Q66 240 58 226 Z" fill="#5E7F66"/>
+    <path d="M454 180 Q420 168 392 180 Q416 184 432 196 Q408 192 388 204 Q414 208 428 220 Q448 210 454 196 Z" fill="#5E7F66"/>
+
+    <!-- 底部云雾收口 -->
+    <path d="M58 428 Q150 408 256 424 Q362 440 454 420 L454 454 L58 454 Z" fill="#D8E2DE" opacity="0.9"/>
+  </g>
+
+  <!-- 顶部柔和金属高光 -->
+  <ellipse cx="206" cy="96" rx="120" ry="34" fill="#FFFFFF" opacity="0.18"/>
+</svg>

@@ -28,17 +28,29 @@ const sections = [];
 const abstractCards = [];
 const ipCards = [];
 const roundCards = [];
+const unifiedRoundCards = [];
+const enamelRoundCards = [];
+const pureEnamelRoundCards = [];
 for (const b of badges) {
   const plain = files.find((f) => f === `${b.id}.svg`);
   const ip = files.find((f) => f === `${b.id}-ip.svg`);
   const round = files.find((f) => f === `${b.id}-round.svg`);
+  const unifiedRound = files.find((f) => f === `${b.id}-round-unified.svg`);
+  const enamelRound = files.find((f) => f === `${b.id}-round-enamel.svg`);
+  const pureEnamelRound = files.find((f) => f === `${b.id}-round-enamel-pure.svg`);
   if (plain) abstractCards.push(card(readFileSync(resolve(previewDir, plain), 'utf8'), b.game_name));
   if (ip) ipCards.push(card(readFileSync(resolve(previewDir, ip), 'utf8'), b.game_name));
   if (round) roundCards.push(card(readFileSync(resolve(previewDir, round), 'utf8'), b.game_name));
+  if (unifiedRound) unifiedRoundCards.push(card(readFileSync(resolve(previewDir, unifiedRound), 'utf8'), b.game_name));
+  if (enamelRound) enamelRoundCards.push(card(readFileSync(resolve(previewDir, enamelRound), 'utf8'), b.game_name));
+  if (pureEnamelRound) pureEnamelRoundCards.push(card(readFileSync(resolve(previewDir, pureEnamelRound), 'utf8'), b.game_name));
 }
 if (abstractCards.length) sections.push(section('抽象 · 3D 质感', abstractCards));
 if (ipCards.length) sections.push(section('IP as Logo · 可爱角色', ipCards));
 if (roundCards.length) sections.push(section('圆形 · 游戏主题徽章', roundCards));
+if (unifiedRoundCards.length) sections.push(section('圆形 · 统一视觉系统', unifiedRoundCards));
+if (enamelRoundCards.length) sections.push(section('圆形 · 珐琅金属徽章', enamelRoundCards));
+if (pureEnamelRoundCards.length) sections.push(section('圆形 · 纯净珐琅金属徽章', pureEnamelRoundCards));
 
 function section(title, cards) {
   return `<h2>${title}</h2><div class="grid">${cards.join('\n')}</div>`;

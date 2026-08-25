@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<defs>
+<clipPath id="badgeClip"><circle cx="256" cy="256" r="210"/></clipPath>
+</defs>
+<circle cx="256" cy="256" r="232" fill="#171B24"/>
+<circle cx="256" cy="256" r="210" fill="#3E6B6B"/>
+<g clip-path="url(#badgeClip)">
+<!-- ground rubble line -->
+<rect x="96" y="360" width="320" height="150" fill="#C96F3B"/>
+<rect x="120" y="344" width="60" height="20" fill="#C96F3B"/>
+<rect x="332" y="348" width="52" height="16" fill="#C96F3B"/>
+<!-- vertical farm tower frame -->
+<rect x="188" y="150" width="14" height="214" fill="#C96F3B"/>
+<rect x="310" y="150" width="14" height="214" fill="#C96F3B"/>
+<rect x="196" y="196" width="120" height="12" fill="#C96F3B"/>
+<rect x="196" y="262" width="120" height="12" fill="#C96F3B"/>
+<rect x="196" y="328" width="120" height="12" fill="#C96F3B"/>
+<!-- crops on three tiers -->
+<circle cx="226" cy="184" r="16" fill="#8FBF6A"/>
+<circle cx="256" cy="178" r="20" fill="#8FBF6A"/>
+<circle cx="286" cy="184" r="16" fill="#8FBF6A"/>
+<circle cx="226" cy="250" r="16" fill="#8FBF6A"/>
+<circle cx="256" cy="244" r="20" fill="#8FBF6A"/>
+<circle cx="286" cy="250" r="16" fill="#8FBF6A"/>
+<circle cx="226" cy="316" r="16" fill="#8FBF6A"/>
+<circle cx="256" cy="310" r="20" fill="#8FBF6A"/>
+<circle cx="286" cy="316" r="16" fill="#8FBF6A"/>
+<!-- tilted solar panel on top -->
+<path d="M206 138 L306 112 L318 134 L218 160 Z" fill="#C96F3B"/>
+<rect x="252" y="138" width="10" height="16" fill="#C96F3B"/>
+<!-- hovering drone -->
+<rect x="344" y="160" width="34" height="20" fill="#C96F3B"/>
+<rect x="352" y="146" width="6" height="14" fill="#C96F3B"/>
+<rect x="366" y="146" width="6" height="14" fill="#C96F3B"/>
+<rect x="340" y="140" width="22" height="6" fill="#C96F3B"/>
+<rect x="362" y="140" width="22" height="6" fill="#C96F3B"/>
+<circle cx="361" cy="190" r="7" fill="#8FBF6A"/>
+<!-- sprout beside tower -->
+<rect x="140" y="300" width="10" height="44" fill="#8FBF6A"/>
+<path d="M145 306 C128 296 122 280 126 268 C142 272 150 288 145 306 Z" fill="#8FBF6A"/>
+<path d="M145 306 C162 296 168 280 164 268 C148 272 140 288 145 306 Z" fill="#8FBF6A"/>
+</g>
+</svg>

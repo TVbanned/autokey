@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<defs>
+<linearGradient id="goldMetal" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="#F8E7B0"/>
+<stop offset="0.5" stop-color="#C89A4A"/>
+<stop offset="1" stop-color="#FFF1C9"/>
+</linearGradient>
+<linearGradient id="enamelBg" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#EFE9DC"/>
+<stop offset="1" stop-color="#DCD4C2"/>
+</linearGradient>
+<linearGradient id="inkGrad" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#4E4E55"/>
+<stop offset="1" stop-color="#2E2E34"/>
+</linearGradient>
+<clipPath id="badgeClip">
+<circle cx="256" cy="256" r="198"/>
+</clipPath>
+<filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+<feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#3A3226" flood-opacity="0.25"/>
+</filter>
+</defs>
+
+<circle cx="256" cy="256" r="230" fill="url(#goldMetal)"/>
+<path d="M256 46 A210 210 0 0 1 414 138 A216 216 0 0 0 256 58 A216 216 0 0 0 98 138 A210 210 0 0 1 256 46 Z" fill="#FFF6DC" opacity="0.75"/>
+<path fill-rule="evenodd" d="M256 32 A224 224 0 1 0 256 480 A224 224 0 1 0 256 32 Z M256 58 A198 198 0 1 1 256 454 A198 198 0 1 1 256 58 Z" fill="#D9AE62"/>
+<circle cx="256" cy="256" r="198" fill="url(#enamelBg)"/>
+
+<g clip-path="url(#badgeClip)">
+<!-- soft ink wash cloud upper right -->
+<path d="M256 100 C330 96 398 128 420 190 C436 234 420 268 392 278 C402 244 388 216 358 206 C380 230 380 262 356 280 C334 296 306 294 292 278 C310 276 322 260 318 244 C310 214 268 200 232 212 C188 226 160 264 168 304 C174 336 200 360 234 368 C196 368 158 350 138 318 C112 276 118 220 152 182 C184 146 218 104 256 100 Z" fill="#CFC7B4"/>
+<path d="M276 128 C332 128 380 160 394 208 C402 236 394 258 376 266 C384 238 372 214 346 206 C364 226 364 252 344 266 C326 278 304 276 292 264 C306 260 312 246 306 234 C296 208 258 200 228 214 C196 230 178 262 186 292 C172 254 184 210 216 184 C238 166 252 128 276 128 Z" fill="#B9AF99"/>
+
+<!-- ink swirl tail ribbon -->
+<path d="M116 356 C100 320 106 282 134 260 C122 292 130 322 156 342 C188 366 234 368 268 348 C244 376 198 386 160 372 C144 366 128 364 116 356 Z" fill="url(#inkGrad)"/>
+<path d="M392 330 C404 360 398 392 372 410 C386 382 380 356 358 340 C384 352 392 344 392 330 Z" fill="#6A6A72"/>
+
+<!-- sword-brush (以剑代笔) vertical center -->
+<g filter="url(#softShadow)">
+<!-- blade -->
+<path d="M256 118 C268 148 274 196 272 250 L270 300 L242 300 L240 250 C238 196 244 148 256 118 Z" fill="#EDE6D4"/>
+<path d="M256 118 C262 148 264 196 263 250 L262 300 L270 300 L272 250 C274 196 268 148 256 118 Z" fill="#CFC7B2"/>
+<!-- fuller -->
+<rect x="252" y="160" width="8" height="120" rx="4" fill="#B9AF99"/>
+<!-- guard: jade crescent horns (fox-spirit jade motif) -->
+<path d="M256 296 C300 292 330 300 344 318 C326 312 310 316 300 330 C288 344 270 350 256 348 C242 350 224 344 212 330 C202 316 186 312 168 318 C182 300 212 292 256 296 Z" fill="#4E8F7B"/>
+<path d="M256 300 C288 298 312 304 324 314 C306 310 294 316 286 328 C276 338 264 342 256 341 C248 342 236 338 226 328 C218 316 206 310 188 314 C200 304 224 298 256 300 Z" fill="#6FB39B"/>
+<!-- grip -->
+<rect x="244" y="348" width="24" height="52" rx="10" fill="#3A3A40"/>
+<rect x="244" y="356" width="24" height="6" rx="3" fill="#C89A4A"/>
+<rect x="244" y="372" width="24" height="6" rx="3" fill="#C89A4A"/>
+<!-- brush pommel: ink drop tip -->
+<path d="M256 400 C268 414 272 426 266 438 C260 448 252 448 246 438 C240 426 244 414 256 400 Z" fill="#2E2E34"/>
+<ellipse cx="253" cy="430" rx="4" ry="6" fill="#5A5A62"/>
+</g>
+
+<!-- red cinnabar accent dot (seal stamp motif) -->
+<circle cx="356" cy="352" r="26" fill="#B0524A"/>
+<path d="M344 344 A16 16 0 0 1 368 340 A20 20 0 0 0 342 358 A16 16 0 0 1 344 344 Z" fill="#C9736A"/>
+
+<!-- flying ink petals -->
+<path d="M160 200 C170 192 182 192 188 200 C180 208 168 208 160 200 Z" fill="#6A6A72"/>
+<path d="M336 160 C346 152 358 152 364 160 C356 168 344 168 336 160 Z" fill="#6A6A72"/>
+<circle cx="310" cy="392" r="7" fill="#6A6A72"/>
+<circle cx="150" cy="300" r="6" fill="#8A8A90"/>
+</g>
+</svg>

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<defs>
+<clipPath id="badgeClip"><circle cx="256" cy="256" r="210"/></clipPath>
+</defs>
+<circle cx="256" cy="256" r="232" fill="#171B24"/>
+<circle cx="256" cy="256" r="210" fill="#5B6E6A"/>
+<g clip-path="url(#badgeClip)">
+<path fill="#3E4C49" d="M46 380 L156 268 L226 336 L300 250 L382 340 L466 262 L466 466 L46 466 Z"/>
+<path fill="#E8E4D4" d="M160 130 L176 130 L176 340 L168 372 L160 340 Z"/>
+<path fill="#E8E4D4" d="M156 118 L180 118 L176 130 L160 130 Z"/>
+<path fill="#B93A2E" d="M148 340 L188 340 L188 356 L148 356 Z"/>
+<path fill="#B93A2E" d="M163 356 L173 356 L173 402 L163 402 Z"/>
+<path fill="#E8E4D4" d="M316 120 C348 122 366 140 372 168 L362 330 C360 350 352 366 338 376 L328 366 C338 356 344 344 346 328 L354 176 C350 156 336 142 314 138 Z"/>
+<path fill="#B93A2E" d="M318 356 L358 356 L358 372 L318 372 Z"/>
+<path fill="#B93A2E" d="M332 372 L346 372 L346 414 L332 414 Z"/>
+<path fill="#B93A2E" d="M196 186 L206 186 L206 232 L196 232 Z"/>
+<path fill="#B93A2E" d="M190 232 L212 232 L212 244 L190 244 Z"/>
+<path fill="#B93A2E" d="M292 196 L302 196 L302 242 L292 242 Z"/>
+<path fill="#B93A2E" d="M286 242 L308 242 L308 254 L286 254 Z"/>
+</g>
+</svg>

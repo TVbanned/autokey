@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="goldMetal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F8E7B0"/>
+      <stop offset="0.5" stop-color="#C89A4A"/>
+      <stop offset="1" stop-color="#FFF1C9"/>
+    </linearGradient>
+    <linearGradient id="skyGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7FB2D9"/>
+      <stop offset="1" stop-color="#A9CCE8"/>
+    </linearGradient>
+    <clipPath id="badgeClip">
+      <circle cx="256" cy="256" r="198"/>
+    </clipPath>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#5a4322" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <circle cx="256" cy="256" r="230" fill="url(#goldMetal)"/>
+  <path fill-rule="evenodd" fill="#B8893F" d="M256 44 a212 212 0 1 0 0 424 a212 212 0 1 0 0 -424 M256 58 a198 198 0 1 1 0 396 a198 198 0 1 1 0 -396"/>
+  <path fill="#FFE9B8" opacity="0.85" d="M256 30 a226 226 0 0 1 160 66 l-14 15 a210 210 0 0 0 -146 -59 a210 210 0 0 0 -146 59 l-14 -15 a226 226 0 0 1 160 -66"/>
+
+  <circle cx="256" cy="256" r="198" fill="url(#skyGrad)"/>
+
+  <g clip-path="url(#badgeClip)">
+    <!-- sun glow -->
+    <circle cx="330" cy="150" r="34" fill="#F3E3B0" opacity="0.7"/>
+
+    <!-- distant skyline silhouette -->
+    <g fill="#5E86AC">
+      <rect x="92" y="218" width="22" height="80"/>
+      <rect x="118" y="196" width="18" height="102"/>
+      <rect x="140" y="228" width="26" height="70"/>
+      <rect x="352" y="212" width="20" height="86"/>
+      <rect x="376" y="190" width="16" height="108"/>
+      <rect x="396" y="226" width="24" height="72"/>
+    </g>
+
+    <!-- water -->
+    <rect x="58" y="298" width="396" height="160" fill="#4E7FA6"/>
+    <path fill="#6E9BBE" opacity="0.7" d="M58 316 q60 -10 120 0 t120 0 t120 0 v10 q-60 10 -120 0 t-120 0 t-120 0 Z"/>
+
+    <!-- main skyline -->
+    <g fill="#33546F" filter="url(#softShadow)">
+      <rect x="150" y="236" width="26" height="66"/>
+      <rect x="182" y="206" width="20" height="96"/>
+      <rect x="206" y="176" width="30" height="126"/>
+      <rect x="240" y="146" width="26" height="156"/>
+      <rect x="270" y="188" width="22" height="114"/>
+      <rect x="296" y="216" width="28" height="86"/>
+      <rect x="328" y="248" width="22" height="54"/>
+      <path d="M240 146 l13 -22 l13 22 Z"/>
+      <rect x="250" y="112" width="6" height="16"/>
+    </g>
+    <!-- window lights -->
+    <g fill="#E8D48A" opacity="0.9">
+      <rect x="212" y="188" width="6" height="6"/><rect x="224" y="200" width="6" height="6"/>
+      <rect x="212" y="216" width="6" height="6"/><rect x="246" y="160" width="6" height="6"/>
+      <rect x="254" y="180" width="6" height="6"/><rect x="246" y="204" width="6" height="6"/>
+      <rect x="188" y="220" width="5" height="5"/><rect x="276" y="202" width="5" height="5"/>
+      <rect x="302" y="230" width="6" height="6"/><rect x="156" y="248" width="5" height="5"/>
+    </g>
+
+    <!-- bridge deck -->
+    <path fill="#7A6A55" d="M58 318 L454 306 L454 322 L58 334 Z"/>
+    <g fill="#7A6A55">
+      <rect x="130" y="262" width="8" height="62"/>
+      <rect x="372" y="256" width="8" height="62"/>
+    </g>
+    <path fill="#8B7B64" d="M130 268 q125 44 250 -6 l0 8 q-125 50 -250 6 Z"/>
+    <!-- road dashes -->
+    <g fill="#E9E2D0">
+      <rect x="90" y="320" width="18" height="5"/>
+      <rect x="130" y="319" width="18" height="5"/>
+      <rect x="170" y="318" width="18" height="5"/>
+      <rect x="210" y="317" width="18" height="5"/>
+      <rect x="250" y="316" width="18" height="5"/>
+      <rect x="290" y="315" width="18" height="5"/>
+      <rect x="330" y="314" width="18" height="5"/>
+      <rect x="370" y="313" width="18" height="5"/>
+      <rect x="410" y="312" width="18" height="5"/>
+    </g>
+
+    <!-- curved interchange road in foreground -->
+    <path fill="#6B5C48" d="M58 400 Q150 356 256 372 Q370 388 454 344 L454 376 Q370 420 256 404 Q150 388 58 432 Z"/>
+    <g fill="#E9E2D0">
+      <rect x="96" y="396" width="16" height="5" transform="rotate(-14 104 398)"/>
+      <rect x="150" y="382" width="16" height="5" transform="rotate(-7 158 384)"/>
+      <rect x="206" y="378" width="16" height="5"/>
+      <rect x="262" y="380" width="16" height="5" transform="rotate(5 270 382)"/>
+      <rect x="318" y="382" width="16" height="5" transform="rotate(4 326 384)"/>
+      <rect x="374" y="374" width="16" height="5" transform="rotate(-10 382 376)"/>
+    </g>
+
+    <!-- small boat -->
+    <path fill="#3C5A76" d="M120 348 l30 0 l-6 10 l-18 0 Z"/>
+    <rect x="132" y="340" width="6" height="8" fill="#3C5A76"/>
+  </g>
+</svg>

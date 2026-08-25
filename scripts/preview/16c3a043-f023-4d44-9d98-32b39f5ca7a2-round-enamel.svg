@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<defs>
+<linearGradient id="goldRim" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="#F8E7B0"/>
+<stop offset="0.55" stop-color="#C89A4A"/>
+<stop offset="1" stop-color="#FFF1C9"/>
+</linearGradient>
+<linearGradient id="goldShine" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#FFF6DA"/>
+<stop offset="1" stop-color="#E8C878"/>
+</linearGradient>
+<linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#7FA3A8"/>
+<stop offset="1" stop-color="#9FB8B2"/>
+</linearGradient>
+<filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+<feDropShadow dx="0" dy="5" stdDeviation="6" flood-color="#3A2E18" flood-opacity="0.28"/>
+</filter>
+<clipPath id="badgeClip">
+<circle cx="256" cy="256" r="198"/>
+</clipPath>
+</defs>
+
+<circle cx="256" cy="256" r="230" fill="url(#goldRim)" filter="url(#softShadow)"/>
+<circle cx="256" cy="256" r="216" fill="none" stroke="url(#goldShine)" stroke-width="3" opacity="0.85"/>
+<circle cx="256" cy="256" r="198" fill="url(#sky)"/>
+
+<g clip-path="url(#badgeClip)">
+<!-- distant ink mountains -->
+<path d="M40 300 Q110 210 170 262 Q215 210 265 255 Q320 195 385 262 Q440 225 480 285 L480 470 L40 470 Z" fill="#8FA0A0"/>
+<path d="M30 340 Q110 260 185 315 Q245 262 320 320 Q400 265 480 330 L480 480 L30 480 Z" fill="#6E7F7E"/>
+<!-- winding jianghu road -->
+<path d="M256 300 C 230 340 300 360 260 400 C 235 425 285 445 256 480 L200 480 C 230 440 175 415 205 375 C 235 340 190 320 216 285 Z" fill="#E4DCC4" opacity="0.9"/>
+<!-- crossed dao (saber) and jian (sword) -->
+<g transform="rotate(-28 256 256)">
+<path d="M226 150 L234 150 L234 330 L226 330 Z" fill="#DDE3E4"/>
+<path d="M226 150 L234 150 L230 128 Z" fill="#DDE3E4"/>
+<rect x="216" y="330" width="28" height="10" rx="4" fill="#B0442F"/>
+<rect x="225" y="340" width="10" height="34" rx="4" fill="#7A4A33"/>
+</g>
+<g transform="rotate(28 256 256)">
+<path d="M226 152 C 236 150 240 165 238 200 L236 330 L224 330 L222 200 C 222 175 218 160 226 152 Z" fill="#C9D2D3"/>
+<path d="M230 152 L232 128 L236 154 Z" fill="#C9D2D3"/>
+<rect x="214" y="330" width="30" height="10" rx="4" fill="#8A3A2B"/>
+<rect x="224" y="340" width="10" height="34" rx="4" fill="#5F3B2C"/>
+<path d="M229 374 C 224 390 234 392 230 402 C 240 396 244 388 236 374 Z" fill="#B0442F"/>
+</g>
+<!-- central crossing ribbon -->
+<path d="M200 268 C 235 252 277 252 312 268 C 277 282 235 282 200 268 Z" fill="#B0442F"/>
+<!-- flying geese -->
+<path d="M150 190 q10 -12 20 0 q-10 -6 -20 0 Z" fill="#5C6E6C"/>
+<path d="M185 172 q10 -12 20 0 q-10 -6 -20 0 Z" fill="#5C6E6C"/>
+<path d="M330 168 q10 -12 20 0 q-10 -6 -20 0 Z" fill="#5C6E6C"/>
+<!-- moon seal accent -->
+<circle cx="368" cy="200" r="26" fill="#C05A41"/>
+<circle cx="360" cy="192" r="8" fill="#D8785C" opacity="0.8"/>
+</g>
+
+<path d="M100 130 A 205 205 0 0 1 300 62" fill="none" stroke="#FFF6DA" stroke-width="10" stroke-linecap="round" opacity="0.55"/>
+</svg>
