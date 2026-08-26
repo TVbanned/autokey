@@ -1111,13 +1111,22 @@ function App() {
 
   const STAGE_COLOR = { recruiting: 'stage-blue', key_distribution: 'stage-orange', delivery: 'stage-purple', completed: 'stage-green' }
 
-  const nav = [['活动看板', 'calendar'], ['活动概览', 'grid'], ['答主报名', 'users'], ['Key 管理', 'key'], ['交付验收', 'file'], ['答主管理', 'ticket'], ['合作方管理', 'users'], ['数据概览', 'grid'], ['全部活动投稿', 'file'], ['答主日常投稿', 'file'], ['日常问题&回答运营', 'calendar'], ['剩余KEY管理', 'key'], ['页面编辑', 'image'], ['小工具', 'wrench']]
+  const adminSessionBase = (() => { try { return JSON.parse(localStorage.getItem(ADMIN_SESSION_KEY)) } catch { return null } })()
+  const [adminSessionState, setAdminSessionState] = useState(null)
+  const adminSession = adminSessionState || adminSessionBase
+  const adminToken = getAdminToken()
+  const SUPER_ADMIN_USERNAMES = new Set(['admin', '灰域信风'])
+  const isSuperAdmin = adminSession?.role === 'super_admin' || (!adminSession?.role && SUPER_ADMIN_USERNAMES.has(adminSession?.username))
+  const adminSubTabs = [['个人设置', 'user'], ['管理员管理', 'users']]
+  const [adminTab, setAdminTab] = useState('个人设置')
   const statusLabel = { pending: '待筛选', selected: '已入选', rejected: '未入选' }
   const deliveryStatusLabel = { pending: '待审核', approved: '已通过', revision_required: '需修改', rejected: '未通过' }
   const activityDeliveries = deliveries.filter((item) => filteredApplications.some((application) => application.id === item.application_id))
   const pendingDeliveries = activityDeliveries.filter((item) => item.status === 'pending').length
   const approvedDeliveries = activityDeliveries.filter((item) => item.status === 'approved').length
   const revisionDeliveries = activityDeliveries.filter((item) => item.status === 'revision_required').length
+
+  const nav = [['活动看板', 'calendar'], ['活动概览', 'grid'], ['答主报名', 'users'], ['Key 管理', 'key'], ['交付验收', 'file'], ['答主管理', 'ticket'], ['合作方管理', 'users'], ['数据概览', 'grid'], ['全部活动投稿', 'file'], ['答主日常投稿', 'file'], ['日常问题运营', 'calendar'], ['剩余KEY管理', 'key'], ['页面编辑', 'image'], ['小工具', 'wrench']]
 
   const urlParams = new URLSearchParams(window.location.search)
   const pathname = window.location.pathname.replace(/\/+$/, '')
@@ -1142,9 +1151,51 @@ function App() {
   const homeMode = !urlParams.has('admin') && (homePath || urlParams.get('home') !== null)
   if (homeMode) return <HomePage />
 
-  // 管理员登录门控：无有效会话时显示登录页。
-  const adminSession = (() => { try { return JSON.parse(localStorage.getItem(ADMIN_SESSION_KEY)) } catch { return null } })()
-  const adminToken = getAdminToken()
+  // 管理员登录门控：无有效会话或旧session(id是伪UUID/缺role/session_token)时强制重登录。
+  const SESSION_UPGRADE_REQUIRED = adminSession && (
+    !adminSession?.role ||
+    !adminSession?.session_token ||
+    !adminSession?.id ||
+    /^00000000-0000-0000-0000-00000000000[01]$/.test(adminSession?.id || '')
+  )
+  if (SESSION_UPGRADE_REQUIRED) {
+    if (typeof window !== 'undefined') { localStorage.removeItem(ADMIN_SESSION_KEY); window.location.reload() }
+    return null
+  }
+  // 自动跨答主/管理员登录：如果当前管理员 session 不存在，
+  // 但答主身份是超级管理员白名单（admin / 灰域信风），就免密码自动拿管理员 session 写入 localStorage
+  // 这样从答主看板点「切换到管理员后台」不需要再输账号密码。
+  // ⚠️ 但是如果用户主动点了后台左下角「退出」按钮（KEYFLOW_ADMIN_FORCE_LOGIN=1），则强制进入管理员登录页，不自动跨身份。
+  const [autoAdminLogging, setAutoAdminLogging] = useState(false)
+  if (!adminSession && typeof window !== 'undefined' && !autoAdminLogging) {
+    let forceLoginPage = false
+    try { forceLoginPage = sessionStorage.getItem('KEYFLOW_ADMIN_FORCE_LOGIN') === '1' } catch {}
+    if (!forceLoginPage) {
+      let answerer = null
+      try {
+        const raw = localStorage.getItem('keyflow_answerer_session') || localStorage.getItem('keyflow_session') || localStorage.getItem('SESSION_KEY')
+        if (raw) answerer = JSON.parse(raw)
+      } catch {}
+      const zhihuName = answerer?.zhihu_name || answerer?.name || answerer?.username
+      if (['admin', '灰域信风'].includes(zhihuName)) {
+        ;(async () => {
+          setAutoAdminLogging(true)
+          const { data, error } = await supabase.rpc('keyflow_admin_login_as_username', { p_username: zhihuName })
+          if (!error && data) {
+            localStorage.setItem(ADMIN_SESSION_KEY, typeof data === 'string' ? data : JSON.stringify(data))
+            if (typeof window !== 'undefined') window.location.reload()
+          } else {
+            setAutoAdminLogging(true)
+          }
+        })()
+        return <div className="admin-login-wrapper"><div className="admin-login-card"><p style={{textAlign:'center',padding:'2rem',color:'var(--c-ink-3)'}}>正在登录管理员后台…</p></div></div>
+      }
+    } else {
+      // 用户点了退出：强制走 AdminLoginPage，并且等用户手动点了登录按钮成功之后
+      // 我们在 AdminLoginPage 会清掉这个 flag；这里就不渲染自动登录卡，直接渲染 Suspense + AdminLoginPage
+      // 所以什么额外的都不写，让下面一行 Suspense 接住
+    }
+  }
   if (!adminSession) return <Suspense fallback={<div className="admin-login-wrapper"><div className="admin-login-card"><p style={{textAlign:'center',padding:'2rem',color:'var(--c-ink-3)'}}>加载中…</p></div></div>}><AdminLoginPage /></Suspense>
 
   const claimLink = selectedActivity ? `${window.location.origin}${window.location.pathname}?apply=${selectedActivity.id}` : ''
@@ -1154,21 +1205,21 @@ function App() {
     <aside className="sidebar">
       <a className="brand" href={window.location.pathname + '?home'}><span className="brand-mark zhihu-mark">知</span>GameJourney</a>
       <div className="sidebar-divider" />
-      <nav className="nav-section"><p className="nav-label">工作台</p>{nav.map(([label, icon]) => <button key={label} className={`nav-item ${label === '答主管理' ? 'nav-item-after-divider' : ''} ${active === label ? 'active' : ''}`} onClick={() => setActive(label)}>{label === '答主管理' && <small className="nav-global-label">全局管理</small>}<Icon name={icon}/><span>{label}</span>{label === '活动看板' && boardPendingCount > 0 && <b className="nav-alert">{boardPendingCount}</b>}{label === '答主报名' && pendingCount > 0 && <b>{pendingCount}</b>}</button>)}</nav>
+      <nav className="nav-section"><p className="nav-label">工作台</p>{nav.map(([label, icon]) => { const disabled = !hasAdminPermission(adminSession, isSuperAdmin, label); return <button key={label} className={`nav-item ${label === '答主管理' ? 'nav-item-after-divider' : ''} ${active === label ? 'active' : ''} ${disabled ? 'nav-item-disabled' : ''}`} onClick={() => setActive(label)} style={disabled ? { opacity: active === label ? 1 : 0.45 } : undefined}>{label === '答主管理' && <small className="nav-global-label">全局管理</small>}<Icon name={icon}/><span>{label}</span>{label === '活动看板' && boardPendingCount > 0 && <b className="nav-alert">{boardPendingCount}</b>}{label === '答主报名' && pendingCount > 0 && <b>{pendingCount}</b>}</button> })}</nav>
       <div className="sidebar-inbox-area">
-        <button className={`sidebar-inbox-btn ${active === '收件箱' ? 'active' : ''}`} onClick={() => setActive('收件箱')} title="收件箱">
+        {(() => { const inboxDisabled = !hasAdminPermission(adminSession, isSuperAdmin, '收件箱'); return <button className={`sidebar-inbox-btn ${active === '收件箱' ? 'active' : ''}`} onClick={() => setActive('收件箱')} title="收件箱" style={inboxDisabled && active !== '收件箱' ? { opacity: 0.45 } : undefined}>
           <Icon name="inbox" size={20}/>
           <span>收件箱</span>
           {inboxMessages.filter(m => m.type === 'password_reset' && m.status === 'unread').length > 0 && <b className="nav-alert">{inboxMessages.filter(m => m.type === 'password_reset' && m.status === 'unread').length}</b>}
-        </button>
+        </button> })()}
       </div>
-      <div className="profile">
-        <span className="avatar">{adminSession?.display_name?.[0] || '管'}</span>
+      <div className={`profile ${active === '管理员中心' ? 'profile-active' : ''}`} onClick={() => setActive('管理员中心')} title="管理员中心">
+        <span className="avatar">{adminSession?.avatar_url ? <img src={adminSession.avatar_url} alt=""/> : (adminSession?.display_name?.[0] || '管')}</span>
         <div className="profile-info">
           <strong>{adminSession?.display_name || '管理员'}</strong>
-          <small>运营方</small>
+          <small>{adminSession?.role === 'super_admin' ? '超级管理员' : '运营方'}</small>
         </div>
-        <button className="admin-logout-btn" title="退出登录" onClick={() => { localStorage.removeItem(ADMIN_SESSION_KEY); window.location.href = window.location.pathname + '?admin' }}>退出</button>
+        <button className="admin-logout-btn" title="退出登录" onClick={(e) => { e.stopPropagation(); localStorage.removeItem(ADMIN_SESSION_KEY); try { sessionStorage.setItem('KEYFLOW_ADMIN_FORCE_LOGIN', '1') } catch {}; window.location.href = window.location.pathname + '?admin' }}>退出</button>
       </div>
     </aside>
     <main>
@@ -1176,7 +1227,9 @@ function App() {
       <section className="content">
         <div className="page-title"><div><p className="eyebrow">真实数据工作台</p><h1>{active}{active === '活动看板' && <span className="board-game-count"> 当前已有 <b>{activities.length}</b> 款游戏入库</span>}{['活动概览', '答主报名', 'Key 管理', '交付验收'].includes(active) && selectedActivity?.game_name && <><span className="title-divider">|</span>{selectedActivity.game_name}</>}</h1><p className="subtitle">{active === '页面编辑' ? '管理注册页面的展示资源，保存后会实时同步。' : active === '小工具' ? '本地处理文本，不会上传或保存内容。' : '活动、报名、Key 与交付数据均实时保存至 Supabase。'}</p></div>{active === '答主报名' ? <div style={{ display: 'flex', gap: 'var(--sp-2)' }}><button className="outline-button" onClick={() => { navigator.clipboard.writeText(claimLink); toast('申领链接已复制，可直接发送给答主') }}>复制申领链接</button><button className="outline-button preview-claim-btn" onClick={() => window.open(claimLink, '_blank')}>预览申领页</button></div> : ['页面编辑', '小工具'].includes(active) ? null : active === '活动看板' ? <div style={{ display: 'flex', gap: 'var(--sp-3)', alignItems: 'center' }}><div className="board-sort-wrap"><select className="board-sort-select" value={boardSort} onChange={e => setBoardSort(e.target.value)}><option value="pending_first">优先未处理</option><option value="default">默认排序</option><option value="created_at_desc">入库时间 ↓</option><option value="created_at_asc">入库时间 ↑</option><option value="release_date_desc">发售时间 ↓</option><option value="release_date_asc">发售时间 ↑</option></select><svg className="board-sort-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg></div><button className={`board-fav-filter-btn ${boardFavFilter ? 'active' : ''}`} onClick={() => setBoardFavFilter(v => !v)} title={boardFavFilter ? '显示全部' : '只显示收藏'}><Icon name="star" size={14}/><span>收藏</span></button><div className="board-status-filter"><button className={`board-fav-filter-btn ${boardStatusFilter.size > 0 ? 'active' : ''}`} onClick={() => setBoardStatusMenuOpen(v => !v)} title="按活动阶段筛选"><Icon name="eye" size={14}/><span>只看</span>{boardStatusFilter.size > 0 && <span className="board-status-count">{boardStatusFilter.size}</span>}</button>{boardStatusMenuOpen && <><div className="board-status-backdrop" onClick={() => setBoardStatusMenuOpen(false)} /><div className="board-status-menu">{STAGES.map((status) => <label key={status} className={`board-status-option ${boardStatusFilter.has(status) ? 'active' : ''}`}><input type="checkbox" checked={boardStatusFilter.has(status)} onChange={() => toggleBoardStatusFilter(status)} /><span>{STAGE_LABEL[status]}</span></label>)}</div></>}</div><div className="partner-search-wrap" style={{ background: '#fff', minWidth: 260, gap: 'var(--sp-1)', padding: 'var(--sp-1) var(--sp-2)' }}><Icon name="search" size={14} /><input className="partner-search-input" placeholder="搜索活动名称或游戏名…" value={boardSearch} onChange={e => setBoardSearch(e.target.value)} />{boardSearch && <button className="partner-search-clear" onClick={() => setBoardSearch('')}><Icon name="close" size={14} /></button>}</div>{activities.some(a => a.steam_url && !a.release_date) && <button className="outline-button" onClick={batchFillReleaseDates} disabled={batchFillingRelease}>{batchFillingRelease ? `更新中 ${batchFillProgress}` : '更新发售时间'}</button>}<button className="primary" onClick={() => { setActivityForm({...initialActivity, ...getDefaultDeadlines()}); setGameCoverUpload(null); setActivityModal(true); }}><Icon name="plus"/> 创建活动</button></div> : <button className="primary" onClick={() => { setActivityForm({...initialActivity, ...getDefaultDeadlines()}); setGameCoverUpload(null); setActivityModal(true); }}><Icon name="plus"/> 创建活动</button>}</div>
         {error && <div className="error-box">数据操作失败：{error}<button onClick={() => setError('')}><Icon name="close" size={16}/></button></div>}
-        {loading && !['页面编辑', '小工具'].includes(active) ? <div className="empty-state">正在加载活动数据…</div> : active === '活动概览' && !selectedActivity ? <div className="empty-state"><div className="empty-icon"><Icon name="calendar" size={26}/></div><h2>先创建第一个测评活动</h2><p>创建后即可收集答主报名、导入 Key 并进行交付验收。</p><button className="primary" onClick={() => { setActivityForm({...initialActivity, ...getDefaultDeadlines()}); setGameCoverUpload(null); setActivityModal(true); }}><Icon name="plus"/> 创建活动</button></div> : active === '活动概览' ? <>
+        {!hasAdminPermission(adminSession, isSuperAdmin, active) && active !== '管理员中心' && active !== '小工具'
+          ? <PermissionBlockedPlaceholder />
+          : loading && !['页面编辑', '小工具'].includes(active) ? <div className="empty-state">正在加载活动数据…</div> : active === '活动概览' && !selectedActivity ? <div className="empty-state"><div className="empty-icon"><Icon name="calendar" size={26}/></div><h2>先创建第一个测评活动</h2><p>创建后即可收集答主报名、导入 Key 并进行交付验收。</p><button className="primary" onClick={() => { setActivityForm({...initialActivity, ...getDefaultDeadlines()}); setGameCoverUpload(null); setActivityModal(true); }}><Icon name="plus"/> 创建活动</button></div> : active === '活动概览' ? <>
           <section className="activity-picker"><button className="current-activity" onClick={openDrawer}><span>当前活动</span><strong>{selectedActivity.title}</strong><Icon name="arrow" size={14}/></button><div className="activity-picker-right"><span className={`activity-status ${STAGE_COLOR[selectedActivity.status] || ''}`}>{STAGE_LABEL[selectedActivity.status] || selectedActivity.status}</span><button className="outline-button" onClick={() => { navigator.clipboard.writeText(partnerLink); toast('合作方页面链接已复制') }}>复制合作方链接</button><button className="outline-button preview-partner-btn" onClick={() => window.open(partnerLink, '_blank')}>预览合作方页</button><button className="outline-button" onClick={() => { navigator.clipboard.writeText(claimLink); toast('申领链接已复制，可直接发送给答主') }}>复制申领链接</button><button className="outline-button preview-claim-btn" onClick={() => window.open(claimLink, '_blank')}>预览申领页</button><button className="outline-button" onClick={() => setApplicationModal(true)}><Icon name="plus" size={16}/> 新增报名</button></div></section>
           <section className="hero-card real-hero"><div className="hero-top"><div><span className="live-dot"/> <span className={`stage-badge ${STAGE_COLOR[selectedActivity.status] || ''}`}>{STAGE_LABEL[selectedActivity.status] || selectedActivity.status}</span> <span className="divider">|</span> <span className={(selectedActivity?.status === 'recruiting' && selectedActivity?.application_deadline && new Date(selectedActivity.application_deadline) < new Date()) ? 'text-red' : ''}>{getStatusTimeText(selectedActivity, filteredApplications)}</span></div><button className="edit-button" onClick={openEditActivity}><Icon name="edit" size={15}/> 编辑</button></div><div className="game-info"><div className="game-cover">{selectedActivity.game_cover ? <img src={selectedActivity.game_cover} alt={selectedActivity.game_name}/> : <span>{selectedActivity.game_name[0]}</span>}</div><div><p className="game-type">{selectedActivity.game_name}</p><h2>{selectedActivity.title}</h2><p>{selectedActivity.description || '尚未填写游戏简介。'}</p><p className="review-requirement">{selectedActivity.review_requirement || '测评要求：图文并茂，主观视角，生动有趣！'}</p></div></div>{(() => { const platforms = Array.isArray(selectedActivity.platforms) && selectedActivity.platforms.length ? selectedActivity.platforms : ['steam']; return (platforms.length > 1 || platforms[0] !== 'steam') && <div className="admin-platforms"><span>可选版本</span>{platforms.map((value) => { const platform = activityPlatforms.find((item) => item.value === value); return <span key={value} className="admin-platform"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{platform?.icon}</svg>{platformLabel[value] || value}</span> })}</div> })()}<div className="rules-row main-question-row"><strong>测评主问题</strong>{editingMainQuestion ? <div className="inline-edit-wrap"><textarea className="inline-textarea" value={mainQuestionDraft} onChange={(e) => setMainQuestionDraft(e.target.value)} autoFocus rows={2}/><div className="inline-edit-actions"><button className="inline-save" onClick={saveMainQuestion}>保存</button><button className="inline-cancel" onClick={() => { setEditingMainQuestion(false) }}>取消</button></div></div> : <div className="inline-display"><span>{selectedActivity.main_question || '尚未设置'}</span><button className="inline-edit-btn" title="编辑主问题" onClick={() => { setMainQuestionDraft(selectedActivity.main_question || ''); setEditingMainQuestion(true) }}><Icon name="edit" size={14}/></button></div>}</div>{subQuestions.map((q, i) => <div className="rules-row sub-question-row" key={i}><strong>相关问题 {i + 1}</strong>{editingSubIndex === i ? <div className="inline-edit-wrap"><textarea className="inline-textarea" value={subDraft} onChange={(e) => setSubDraft(e.target.value)} autoFocus rows={2}/><div className="inline-edit-actions"><button className="inline-save" onClick={() => saveSubQuestion(i)}>保存</button><button className="inline-cancel" onClick={() => setEditingSubIndex(null)}>取消</button></div></div> : <div className="inline-display"><span>{q || '空问题'}</span><button className="inline-edit-btn" title="编辑相关问题" onClick={() => { setSubDraft(q); setEditingSubIndex(i) }}><Icon name="edit" size={14}/></button><button className="inline-delete-btn" title="删除相关问题" onClick={() => deleteSubQuestion(i)}><Icon name="close" size={14}/></button></div>}</div>)}<button className="add-sub-btn" onClick={addSubQuestion}><Icon name="plus" size={14}/> 新增相关问题</button></section>
           <section className="metrics">{[[filteredApplications.length,'报名答主',`目标 ${selectedActivity.target_authors} 人`,'答主报名'],[selectedCount,'已入选',`已录入key ${importedKeyCount} 个`,'答主报名'],[claimedCount,'已领取 Key',`${selectedCount - claimedCount}/${selectedCount} 人 未领取key`,'Key 管理'],[deliveredCount,'已提交交付',`${selectedCount - deliveredCount}/${selectedCount} 人未交付`,'交付验收']].map(([number,label,note,target], idx) => <div className="metric clickable" key={label} onClick={() => setActive(target)}><strong style={idx === 1 && selectedCount > importedKeyCount ? {color:'#e53e3e'} : undefined}>{number}</strong><span>{label}</span><small>{note}</small></div>)}</section>
@@ -1186,7 +1239,15 @@ function App() {
           </div>
           <section className="stage-progression"><div className="stage-header"><div><h3>阶段推进</h3><span>点击圆点或文字一键切换至对应阶段。</span></div></div><div className="stage-timeline">{STAGES.map((stage, i) => { const currentIdx = STAGES.indexOf(selectedActivity?.status || 'recruiting'); const isCurrent = i === currentIdx; const isPast = i < currentIdx; return <div key={stage} className={`stage-node ${isCurrent ? 'current' : ''} ${isPast ? 'past' : ''}`}><button className="stage-dot-btn" disabled={isCurrent || advancing} onClick={() => goToStage(stage)} title={`切换到：${STAGE_LABEL[stage]}`}><span className="stage-dot"/></button><button className="stage-label" disabled={isCurrent || advancing} onClick={() => goToStage(stage)}>{STAGE_LABEL[stage]}</button></div> })}</div></section>
           <section className="panel applicants-panel"><div className="panel-head"><div><h3>答主报名</h3><p>查看答主报名、Key 领取和内容提交状态。</p></div><button className="primary compact" onClick={() => setApplicationModal(true)}><Icon name="plus" size={15}/> 新增报名</button></div><div className="table-wrap"><table><thead><tr><th>答主</th><th>查看主页</th><th className="th-sort" onClick={() => toggleOverviewSort('status')}>入选状态{overviewSort?.key === 'status' ? <span className="th-sort-arrow">{overviewSort.dir === -1 ? '↑' : '↓'}</span> : null}</th>{(() => { const ap = Array.isArray(selectedActivity?.platforms) && selectedActivity.platforms.length ? selectedActivity.platforms : ['steam']; return ap.length > 1 || ap[0] !== 'steam' ? <th>版本</th> : null })()}<th className="th-sort" onClick={() => toggleOverviewSort('claimed')}>是否领取 Key{overviewSort?.key === 'claimed' ? <span className="th-sort-arrow">{overviewSort.dir === -1 ? '↑' : '↓'}</span> : null}</th><th className="th-sort" onClick={() => toggleOverviewSort('delivered')}>是否提交内容{overviewSort?.key === 'delivered' ? <span className="th-sort-arrow">{overviewSort.dir === -1 ? '↑' : '↓'}</span> : null}</th><th>合作方推荐</th><th>操作</th></tr></thead><tbody>{overviewApplications.length ? overviewApplications.map((person) => <tr key={person.id}><td><div className="person">{answererByName[person.zhihu_name]?.avatar_url ? <img className="person-avatar-img" src={answererByName[person.zhihu_name].avatar_url} alt="" onClick={() => { const a = answererByName[person.zhihu_name]; if (a) setSelectedAnswerer(a) }} title="查看活动参与记录" style={{cursor:'pointer'}} /> : <span className="person-avatar" onClick={() => { const a = answererByName[person.zhihu_name]; if (a) setSelectedAnswerer(a) }} title="查看活动参与记录" style={{cursor:'pointer'}}>{person.zhihu_name[0]}</span>}<div><strong>{person.zhihu_name}</strong><small>知乎答主</small></div></div></td><td><a className="profile-link" href={person.profile_url} target="_blank" rel="noreferrer">查看主页</a></td><td><span className={`pill ${person.status === 'selected' ? 'success' : person.status === 'pending' ? 'warning' : 'muted'}`}>{statusLabel[person.status]}</span></td>{(() => { const ap = Array.isArray(selectedActivity?.platforms) && selectedActivity.platforms.length ? selectedActivity.platforms : ['steam']; return ap.length > 1 || ap[0] !== 'steam' ? <td><span className="pill">{platformLabel[person.selected_platform] || 'Steam'}</span></td> : null })()}<td><span className={`pill ${person.keyflow_keys?.claimed_at || exemptedIds.includes(person.answerer_id) ? 'success' : 'muted'}`}>{person.keyflow_keys?.claimed_at || exemptedIds.includes(person.answerer_id) ? '已领取' : '未领取'}</span></td><td><button className={`pill pill-link ${(Array.isArray(person.keyflow_deliveries) ? person.keyflow_deliveries.length > 0 : person.keyflow_deliveries?.id) ? 'success' : 'muted'}`} onClick={() => setActive('交付验收')}>{(Array.isArray(person.keyflow_deliveries) ? person.keyflow_deliveries.length > 0 : person.keyflow_deliveries?.id) ? '已提交' : '未提交'}</button></td><td>{person.partner_recommended ? <span className="highlight-red">推荐</span> : '—'}</td><td><div className="review-actions">{person.status === 'pending' ? <><button className="select-action" onClick={() => reviewApplication(person.id, 'selected')}>入选</button><button className="reject-action" onClick={() => reviewApplication(person.id, 'rejected')}>不选</button></> : <button className="reset-action" disabled={!!person.keyflow_keys?.claimed_at} onClick={() => reviewApplication(person.id, 'pending')}>重新筛选</button>}</div></td></tr>) : <tr><td colSpan={(() => { const ap = Array.isArray(selectedActivity?.platforms) && selectedActivity.platforms.length ? selectedActivity.platforms : ['steam']; return ap.length > 1 || ap[0] !== 'steam' ? 8 : 7 })()} className="table-empty">还没有报名记录。可添加测试报名，或后续将表单公开给答主填写。</td></tr>}</tbody></table></div></section>
-        </> : active === '活动看板' ? <div className="activity-cards">{filteredBoardActivities.map((item) => { const apps = applications.filter((a) => a.activity_id === item.id); const creatingCount = apps.filter(a => a.status === 'selected' && a.keyflow_keys?.claimed_at).length; const deliveredCount = apps.filter(a => Array.isArray(a.keyflow_deliveries) ? a.keyflow_deliveries.length > 0 : a.keyflow_deliveries?.id).length; const mainQuestionUrl = item.main_question?.match(/https?:\/\/[^\s]+/)?.[0]; return <div key={item.id} className={`activity-card ${item.id === selectedId ? 'selected' : ''}`} onClick={() => { setSelectedId(item.id); setActive('活动概览') }}><button className="activity-card-delete" title="删除活动" onClick={(e) => deleteActivity(item.id, e)}><Icon name="close" size={14}/></button><button className={`activity-card-fav ${item.is_favorite ? 'active' : ''}`} title={item.is_favorite ? '取消收藏' : '收藏'} onClick={(e) => toggleFavorite(item.id, item.is_favorite, e)}><Icon name="star" size={14}/></button><div className="activity-card-cover">{item.game_cover ? <img src={item.game_cover} alt={item.game_name}/> : <span>{item.game_name[0]}</span>}</div><div className="activity-card-body"><p className="activity-card-game">{item.game_name}</p><h3>{item.title}</h3><div className="activity-card-meta"><span className={`pill ${STAGE_COLOR[item.status] || ''}`}>{STAGE_LABEL[item.status] || item.status}</span><span>{item.status === 'delivery' ? `${creatingCount} 人创作中` : item.status === 'completed' ? `${deliveredCount} 篇作品` : <>{apps.length} 报名{apps.filter(a => a.status === 'pending').length > 0 && <span className="text-red"> {apps.filter(a => a.status === 'pending').length} 未处理</span>}</>}</span></div><small className={(item.status === 'recruiting' && item.application_deadline && new Date(item.application_deadline) < new Date()) ? 'text-red' : ''}>{getStatusTimeText(item, apps)}</small><div className="activity-card-actions"><div className="activity-card-online" onClick={(e) => toggleOnline(item.id, item.is_online !== false, e)} title={item.is_online !== false ? '已上线，点击下线' : '未上线，点击上线'}><span className={`online-toggle ${item.is_online !== false ? 'active' : ''}`}><span className="online-toggle-knob"/></span><span className="online-label">{item.is_online !== false ? '已上线' : '未上线'}</span></div>{mainQuestionUrl ? <a className="main-question-link" href={mainQuestionUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>跳转主问题</a> : <span className="main-question-unconfigured">暂未配置主问题</span>}</div></div></div> })}</div> : active === '答主报名' ? <ApplicationsPage activity={selectedActivity} applications={filteredApplications} answerers={answerers} authorStats={authorStats} statusLabel={statusLabel} onSelectActivity={openDrawer} onAddApplication={() => setApplicationModal(true)} onReviewApplication={reviewApplication} onDeleteApplication={deleteApplication} toast={toast} participationByAnswerer={participationByAnswerer} onViewAnswererParticipation={setSelectedAnswerer} /> : active === 'Key 管理' ? <KeyManagement activity={selectedActivity} input={keyInput} parsedKeys={parsedKeys} platformCounts={platformCounts} importedKeys={keys.filter((item) => item.activity_id === selectedActivity?.id)} importing={keyImporting} onInput={setKeyInput} onImport={importKeys} onDeleteKeys={deleteKeys} onSelectActivity={openDrawer} applications={filteredApplications} toast={toast}/> : active === '交付验收' ? <DeliveriesPage activity={selectedActivity} deliveries={activityDeliveries} applications={filteredApplications} answerers={answerers} statusLabel={deliveryStatusLabel} notes={deliveryNotes} onNoteChange={(id, value) => setDeliveryNotes((items) => ({ ...items, [id]: value }))} onReview={reviewDelivery} onSelectActivity={openDrawer} pendingCount={pendingDeliveries} approvedCount={approvedDeliveries} revisionCount={revisionDeliveries} toast={toast} participationByAnswerer={participationByAnswerer} onWordCountUpdate={(id, wordCount) => setDeliveries((items) => items.map((item) => item.id === id ? { ...item, verified_word_count: wordCount } : item))} /> : active === '答主管理' ? <AnswererManagement codes={invitationCodes} answerers={answerers} setAnswerers={setAnswerers} activities={activities} applications={applications} deliveries={deliveries} dailySubmissions={dailySubmissions} onAddCodes={prependCodes} onDeleteAnswerer={(id) => setAnswerers((items) => items.filter((item) => item.id !== id))} adminToken={adminToken} participationByAnswerer={participationByAnswerer} onViewAnswererParticipation={setSelectedAnswerer} /> : active === '合作方管理' ? <PartnerManagement codes={invitationCodes} answerers={answerers} setAnswerers={setAnswerers} activities={activities} setActivities={setActivities} onAddCodes={prependCodes} onRefresh={loadData} adminToken={adminToken} participationByAnswerer={participationByAnswerer} onViewAnswererParticipation={setSelectedAnswerer} /> : active === '数据概览' ? <AnalyticsOverview adminToken={adminToken} /> : active === '全部活动投稿' ? <AllActivitySubmissionsPage deliveries={deliveries} applications={applications} activities={activities} answerers={answerers} toast={toast} /> : active === '答主日常投稿' ? <DailySubmissionsPage submissions={dailySubmissions} answerers={answerers} toast={toast} setDailySubmissions={setDailySubmissions} participationByAnswerer={participationByAnswerer} onViewAnswererParticipation={setSelectedAnswerer} setConfirmState={setConfirmState} /> : active === '日常问题&回答运营' ? <DailyQuestionOperationsPage questions={dailyQuestions} setQuestions={setDailyQuestions} adminToken={adminToken} toast={toast} /> : active === '剩余KEY管理' ? <RemainingKeyManagement keys={keys} activities={activities} toast={toast} onDeleteKeys={deleteKeys} onClaimKey={claimKeyRemotely} /> : active === '页面编辑' ? <PageEditor asset={pageAsset} loading={pageAssetLoading} saving={pageAssetSaving} onSelectFile={handlePageAssetFile} onSave={savePageAsset} badgesEnabled={badgesEnabled} badgesSaving={badgesSaving} onToggleBadges={saveBadgesEnabled} /> : active === '小工具' ? <TextFormatter /> : active === '收件箱' ? <InboxPage messages={inboxMessages} requests={passwordResetRequests} answerers={answerers} adminToken={adminToken} onRefresh={loadData} onMessageRead={(id) => setInboxMessages((items) => items.map((item) => item.id === id ? { ...item, status: 'read', read_at: new Date().toISOString() } : item))} onDeleteMessages={(ids) => { const deletedIds = new Set(ids); setInboxMessages((items) => items.filter((item) => !deletedIds.has(item.id))) }} toast={toast} setConfirmState={setConfirmState} /> : <div className="empty-state"><div className="empty-icon"><Icon name="clock" size={26}/></div><h2>{active}即将开放</h2><p>请先完成活动与答主报名管理。</p></div>}
+        </> : active === '活动看板' ? <div className="activity-cards">{filteredBoardActivities.map((item) => { const apps = applications.filter((a) => a.activity_id === item.id); const creatingCount = apps.filter(a => a.status === 'selected' && a.keyflow_keys?.claimed_at).length; const deliveredCount = apps.filter(a => Array.isArray(a.keyflow_deliveries) ? a.keyflow_deliveries.length > 0 : a.keyflow_deliveries?.id).length; const mainQuestionUrl = item.main_question?.match(/https?:\/\/[^\s]+/)?.[0]; return <div key={item.id} className={`activity-card ${item.id === selectedId ? 'selected' : ''}`} onClick={() => { setSelectedId(item.id); setActive('活动概览') }}><button className="activity-card-delete" title="删除活动" onClick={(e) => deleteActivity(item.id, e)}><Icon name="close" size={14}/></button><button className={`activity-card-fav ${item.is_favorite ? 'active' : ''}`} title={item.is_favorite ? '取消收藏' : '收藏'} onClick={(e) => toggleFavorite(item.id, item.is_favorite, e)}><Icon name="star" size={14}/></button><div className="activity-card-cover">{item.game_cover ? <img src={item.game_cover} alt={item.game_name}/> : <span>{item.game_name[0]}</span>}</div><div className="activity-card-body"><p className="activity-card-game">{item.game_name}</p><h3>{item.title}</h3><div className="activity-card-meta"><span className={`pill ${STAGE_COLOR[item.status] || ''}`}>{STAGE_LABEL[item.status] || item.status}</span><span>{item.status === 'delivery' ? `${creatingCount} 人创作中` : item.status === 'completed' ? `${deliveredCount} 篇作品` : <>{apps.length} 报名{apps.filter(a => a.status === 'pending').length > 0 && <span className="text-red"> {apps.filter(a => a.status === 'pending').length} 未处理</span>}</>}</span></div><small className={(item.status === 'recruiting' && item.application_deadline && new Date(item.application_deadline) < new Date()) ? 'text-red' : ''}>{getStatusTimeText(item, apps)}</small><div className="activity-card-actions"><div className="activity-card-online" onClick={(e) => toggleOnline(item.id, item.is_online !== false, e)} title={item.is_online !== false ? '已上线，点击下线' : '未上线，点击上线'}><span className={`online-toggle ${item.is_online !== false ? 'active' : ''}`}><span className="online-toggle-knob"/></span><span className="online-label">{item.is_online !== false ? '已上线' : '未上线'}</span></div>{mainQuestionUrl ? <a className="main-question-link" href={mainQuestionUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>跳转主问题</a> : <span className="main-question-unconfigured">暂未配置主问题</span>}</div></div></div> })}</div> : active === '答主报名' ? <ApplicationsPage activity={selectedActivity} applications={filteredApplications} answerers={answerers} authorStats={authorStats} statusLabel={statusLabel} onSelectActivity={openDrawer} onAddApplication={() => setApplicationModal(true)} onReviewApplication={reviewApplication} onDeleteApplication={deleteApplication} toast={toast} participationByAnswerer={participationByAnswerer} onViewAnswererParticipation={setSelectedAnswerer} /> : active === 'Key 管理' ? <KeyManagement activity={selectedActivity} input={keyInput} parsedKeys={parsedKeys} platformCounts={platformCounts} importedKeys={keys.filter((item) => item.activity_id === selectedActivity?.id)} importing={keyImporting} onInput={setKeyInput} onImport={importKeys} onDeleteKeys={deleteKeys} onSelectActivity={openDrawer} applications={filteredApplications} toast={toast}/> : active === '交付验收' ? <DeliveriesPage activity={selectedActivity} deliveries={activityDeliveries} applications={filteredApplications} answerers={answerers} statusLabel={deliveryStatusLabel} notes={deliveryNotes} onNoteChange={(id, value) => setDeliveryNotes((items) => ({ ...items, [id]: value }))} onReview={reviewDelivery} onSelectActivity={openDrawer} pendingCount={pendingDeliveries} approvedCount={approvedDeliveries} revisionCount={revisionDeliveries} toast={toast} participationByAnswerer={participationByAnswerer} onWordCountUpdate={(id, wordCount) => setDeliveries((items) => items.map((item) => item.id === id ? { ...item, verified_word_count: wordCount } : item))} /> : active === '答主管理' ? <AnswererManagement codes={invitationCodes} answerers={answerers} setAnswerers={setAnswerers} activities={activities} applications={applications} deliveries={deliveries} dailySubmissions={dailySubmissions} onAddCodes={prependCodes} onDeleteAnswerer={(id) => setAnswerers((items) => items.filter((item) => item.id !== id))} adminToken={adminToken} participationByAnswerer={participationByAnswerer} onViewAnswererParticipation={setSelectedAnswerer} /> : active === '合作方管理' ? <PartnerManagement codes={invitationCodes} answerers={answerers} setAnswerers={setAnswerers} activities={activities} setActivities={setActivities} onAddCodes={prependCodes} onRefresh={loadData} adminToken={adminToken} participationByAnswerer={participationByAnswerer} onViewAnswererParticipation={setSelectedAnswerer} /> : active === '数据概览' ? <AnalyticsOverview adminToken={adminToken} /> : active === '全部活动投稿' ? <AllActivitySubmissionsPage deliveries={deliveries} applications={applications} activities={activities} answerers={answerers} toast={toast} /> : active === '答主日常投稿' ? <DailySubmissionsPage submissions={dailySubmissions} answerers={answerers} toast={toast} setDailySubmissions={setDailySubmissions} participationByAnswerer={participationByAnswerer} onViewAnswererParticipation={setSelectedAnswerer} setConfirmState={setConfirmState} /> : active === '日常问题运营' ? <DailyQuestionOperationsPage questions={dailyQuestions} setQuestions={setDailyQuestions} adminToken={adminToken} toast={toast} setDailySubmissions={setDailySubmissions} /> : active === '剩余KEY管理' ? <RemainingKeyManagement keys={keys} activities={activities} toast={toast} onDeleteKeys={deleteKeys} onClaimKey={claimKeyRemotely} /> : active === '页面编辑' ? <PageEditor asset={pageAsset} loading={pageAssetLoading} saving={pageAssetSaving} onSelectFile={handlePageAssetFile} onSave={savePageAsset} badgesEnabled={badgesEnabled} badgesSaving={badgesSaving} onToggleBadges={saveBadgesEnabled} /> : active === '小工具' ? <TextFormatter /> : active === '收件箱' ? <InboxPage messages={inboxMessages} requests={passwordResetRequests} answerers={answerers} adminToken={adminToken} onRefresh={loadData} onMessageRead={(id) => setInboxMessages((items) => items.map((item) => item.id === id ? { ...item, status: 'read', read_at: new Date().toISOString() } : item))} onDeleteMessages={(ids) => { const deletedIds = new Set(ids); setInboxMessages((items) => items.filter((item) => !deletedIds.has(item.id))) }} toast={toast} setConfirmState={setConfirmState} /> : active === '管理员中心' ? <AdminManagementPage adminSession={adminSession} isSuperAdmin={isSuperAdmin} adminSubTabs={adminSubTabs} adminTab={adminTab} setAdminTab={setAdminTab} onUpdateAdminSession={(next, opts) => {
+  const raw = localStorage.getItem(ADMIN_SESSION_KEY) || '{}'
+  let base = {}
+  try { base = JSON.parse(raw) } catch {}
+  const merged = { ...base, ...next }
+  localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(merged))
+  setAdminSessionState(merged)
+  if (opts?.reload) window.location.reload()
+}} toast={toast} setConfirmState={setConfirmState} setError={setError} /> : <div className="empty-state"><div className="empty-icon"><Icon name="clock" size={26}/></div><h2>{active}即将开放</h2><p>请先完成活动与答主报名管理。</p></div>}
       </section>
         {selectedAnswerer && <AnswererParticipationModal answerer={selectedAnswerer} records={participationByAnswerer[selectedAnswerer.id] || []} onClose={() => setSelectedAnswerer(null)} toast={toast} />}
       </main>
@@ -1204,6 +1265,7 @@ function ConfirmDialog({ message, confirmLabel = '确认删除', onConfirm, onCa
 }
 
 function HomeTrendChart({ data }) {
+  const [activeIndex, setActiveIndex] = useState(null)
   const days = data || []
   const width = 720
   const height = 200
@@ -1220,10 +1282,19 @@ function HomeTrendChart({ data }) {
   const gridYs = [0, 0.5, 1].map((f) => padTop + innerH * f)
   const labelEvery = Math.ceil(days.length / 6)
   const xLabels = days.map((d, i) => ({ i, text: String(d.day || '').slice(5) })).filter((l) => l.i % labelEvery === 0)
-  return <svg className="analytics-chart-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="近 30 天首页 PV 和 UV 趋势">
+  const activeDay = activeIndex === null ? null : days[activeIndex]
+  const tooltipX = activeIndex === null ? 0 : Math.min(Math.max(xAt(activeIndex), 74), width - 74)
+  const updateActiveDay = (event) => {
+    if (days.length < 1) return
+    const bounds = event.currentTarget.getBoundingClientRect()
+    const pointerX = (event.clientX - bounds.left) / bounds.width * width
+    setActiveIndex(Math.min(days.length - 1, Math.max(0, Math.round((pointerX - padX) / stepX))))
+  }
+  return <svg className="analytics-chart-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="近 30 天首页 PV 和 UV 趋势" onMouseMove={updateActiveDay} onMouseLeave={() => setActiveIndex(null)}>
     {gridYs.map((y) => <line key={y} x1={padX} x2={width - padX} y1={y} y2={y} className="analytics-chart-grid" />)}
     <polyline className="analytics-chart-line analytics-chart-line-uv" points={uvPoints} />
     <polyline className="analytics-chart-line analytics-chart-line-pv" points={pvPoints} />
+    {activeDay && <><line x1={xAt(activeIndex)} x2={xAt(activeIndex)} y1={padTop} y2={padTop + innerH} className="analytics-chart-cursor" /><circle className="analytics-chart-point analytics-chart-point-pv" cx={xAt(activeIndex)} cy={yAt(Number(activeDay.pv) || 0)} r="4" /><circle className="analytics-chart-point analytics-chart-point-uv" cx={xAt(activeIndex)} cy={yAt(Number(activeDay.uv) || 0)} r="4" /><g className="analytics-chart-tooltip" transform={`translate(${tooltipX - 64} ${padTop + 4})`}><rect width="128" height="48" rx="4" /><text x="8" y="15">{String(activeDay.day || '').slice(5)}</text><text x="8" y="33">PV {Number(activeDay.pv) || 0} · UV {Number(activeDay.uv) || 0}</text></g></>}
     {xLabels.map((l) => <text key={l.i} x={xAt(l.i)} y={height - 8} className="analytics-chart-axis" textAnchor="middle">{l.text}</text>)}
   </svg>
 }
@@ -1236,6 +1307,7 @@ function AnalyticsOverview({ adminToken }) {
   const [activeTab, setActiveTab] = useState('users')
   const [showAllActivities, setShowAllActivities] = useState(false)
   const [selectedUser, setSelectedUser] = useState(null)
+  const [userSort, setUserSort] = useState({ key: null, dir: -1 })
   const loadOverview = async () => {
     setLoading(true); setError('')
     const { data: result, error: requestError } = await supabase.rpc('keyflow_admin_analytics_overview', { p_token: adminToken, p_search: '' })
@@ -1252,9 +1324,16 @@ function AnalyticsOverview({ adminToken }) {
   const visibleActivities = showAllActivities ? activities : activities.slice(0, 20)
   const homeTotal = data?.home_total || { pv: 0, uv: 0 }
   const homeDaily = data?.home_daily || []
+  const formatDailyAverage = (value) => (Number(value || 0) / 30).toFixed(1)
   const totalUsers = users.length
+  const dailyActiveAnswerers = users.reduce((sum, user) => sum + Number(user.active_days || 0), 0)
   const maxActivityViews = Math.max(...activities.map((item) => item.views), 1)
   const filteredUsers = users.filter((item) => matchesSearch(`${item.zhihu_name || ''} ${item.account_address || ''}`, search))
+  const userSortValue = (item) => userSort.key === 'zhihu_name' ? (item.zhihu_name || '') : userSort.key === 'last_activity' ? new Date(item.last_activity).getTime() || 0 : Number(item[userSort.key]) || 0
+  const sortedUsers = userSort.key ? [...filteredUsers].sort((a, b) => { const va = userSortValue(a), vb = userSortValue(b); return typeof va === 'string' ? va.localeCompare(vb, 'zh-CN') * userSort.dir : (va - vb) * userSort.dir }) : filteredUsers
+  const sortTh = (field, label) => (
+    <th className="th-sort" onClick={() => setUserSort((prev) => (prev.key === field ? { key: field, dir: -prev.dir } : { key: field, dir: -1 }))}>{label}{userSort.key === field ? <span className="th-sort-arrow">{userSort.dir === -1 ? '↑' : '↓'}</span> : null}</th>
+  )
   const formatDate = (value) => value ? new Date(value).toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }) : '—'
   const eventLabels = (item) => (item.event_labels || []).filter((event) => Number(event.count) > 0).map((event) => `${event.label} ${event.count}`).join(' · ') || '—'
   const activeDates = new Set((selectedUser?.active_dates || []).map((date) => String(date).slice(0, 10)))
@@ -1268,8 +1347,14 @@ function AnalyticsOverview({ adminToken }) {
   const calendarLeadingDays = Array.from({ length: calendarDays[0]?.weekday || 0 })
   return <div className="analytics-overview">
     <section className="analytics-hero">
-      <div className="analytics-stat"><strong>{homeTotal.pv}</strong><span>首页 PV · 近 30 天</span></div>
-      <div className="analytics-stat"><strong>{homeTotal.uv}</strong><span>首页 UV · 近 30 天</span></div>
+      <div className="analytics-stats-grid">
+        <div className="analytics-stat"><strong>{homeTotal.pv}</strong><span>首页 PV · 近 30 天</span></div>
+        <div className="analytics-stat"><strong>{homeTotal.uv}</strong><span>首页 UV · 近 30 天</span></div>
+        <div className="analytics-stat"><strong>{formatDailyAverage(homeTotal.pv)}</strong><span>首页 PV 日均 · 近 30 天</span></div>
+        <div className="analytics-stat"><strong>{formatDailyAverage(homeTotal.uv)}</strong><span>首页 UV 日均 · 近 30 天</span></div>
+        <div className="analytics-stat"><strong>{totalUsers}</strong><span>活跃答主数 · 近 30 天</span></div>
+        <div className="analytics-stat"><strong>{formatDailyAverage(dailyActiveAnswerers)}</strong><span>日均活跃答主数 · 近 30 天</span></div>
+      </div>
       <div className="analytics-chart">
         <div className="analytics-chart-head"><h3>近 30 天首页访问趋势</h3><div className="analytics-chart-legend"><span className="analytics-legend analytics-legend-pv">PV</span><span className="analytics-legend analytics-legend-uv">UV</span></div></div>
         <HomeTrendChart data={homeDaily} />
@@ -1278,7 +1363,7 @@ function AnalyticsOverview({ adminToken }) {
     <section className="panel analytics-panel">
       <div className="panel-head analytics-panel-head"><div><div className="analytics-tabs" role="tablist"><button className={activeTab === 'users' ? 'active' : ''} onClick={() => setActiveTab('users')} role="tab" aria-selected={activeTab === 'users'}><Icon name="users" size={16}/><span>用户活动</span><b>{totalUsers}</b></button><button className={activeTab === 'games' ? 'active' : ''} onClick={() => setActiveTab('games')} role="tab" aria-selected={activeTab === 'games'}><Icon name="grid" size={16}/><span>游戏访问</span><b>{activities.length}</b></button></div><p>{activeTab === 'games' ? '默认展示访问量最高的 20 个活动，按访问量排序。' : '汇总页面访问、报名、领取 Key 和交付；点击用户名查看活跃日期。'}</p></div>{activeTab === 'games' ? <button className="outline-button compact" onClick={() => setShowAllActivities((value) => !value)}>{showAllActivities ? '收起' : `查看全部（${activities.length}）`}</button> : <div className="analytics-search"><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索用户名、拼音或首字母" />{search && <button className="analytics-search-clear" onClick={() => setSearch('')} aria-label="清除搜索">×</button>}</div>}</div>
       {error && <p className="analytics-error">加载失败：{error}</p>}
-      {activeTab === 'games' ? <div className="analytics-game-list">{loading ? <p className="table-empty">正在加载统计数据…</p> : visibleActivities.length ? visibleActivities.map((activity) => <div className="analytics-game-row" key={activity.id}><div className="analytics-game-name"><strong>{activity.game_name || activity.title || '未命名活动'}</strong><small>{activity.title || '—'}</small></div><div className="analytics-game-bar"><i style={{ width: `${Math.max(3, Math.round(activity.views / maxActivityViews * 100))}%` }} /></div><b>{activity.views}</b><span>PV</span></div>) : <p className="table-empty">暂无申领页访问数据。</p>}</div> : <div className="table-wrap"><table><thead><tr><th>答主</th><th>页面访问</th><th>报名</th><th>领取 Key</th><th>交付</th><th>活跃天数</th><th>活跃总分</th><th>最近活动</th><th>事件标签</th></tr></thead><tbody>{loading ? <tr><td colSpan="9" className="table-empty">正在加载统计数据…</td></tr> : filteredUsers.length ? filteredUsers.map((item) => <tr key={item.id}><td><button className="analytics-user-name" onClick={() => setSelectedUser(item)}>{item.zhihu_name || '—'}</button><div className="analytics-address">{item.account_address || '—'}</div></td><td>{item.page_views}</td><td>{item.applications}</td><td>{item.claimed_keys}</td><td>{item.deliveries}</td><td>{item.active_days}</td><td><b>{item.score}</b></td><td>{formatDate(item.last_activity)}</td><td className="analytics-event-labels">{eventLabels(item)}</td></tr>) : <tr><td colSpan="9" className="table-empty">暂无符合条件的用户活动。</td></tr>}</tbody></table></div>}
+      {activeTab === 'games' ? <div className="analytics-game-list">{loading ? <p className="table-empty">正在加载统计数据…</p> : visibleActivities.length ? visibleActivities.map((activity) => <div className="analytics-game-row" key={activity.id}><div className="analytics-game-name"><strong>{activity.game_name || activity.title || '未命名活动'}</strong><small>{activity.title || '—'}</small></div><div className="analytics-game-bar"><i style={{ width: `${Math.max(3, Math.round(activity.views / maxActivityViews * 100))}%` }} /></div><b>{activity.views}</b><span>PV</span></div>) : <p className="table-empty">暂无申领页访问数据。</p>}</div> : <div className="table-wrap"><table><thead><tr>{sortTh('zhihu_name', '答主')}{sortTh('page_views', '页面访问')}{sortTh('applications', '报名')}{sortTh('claimed_keys', '领取 Key')}{sortTh('deliveries', '交付')}{sortTh('active_days', '活跃天数')}{sortTh('score', '活跃总分')}{sortTh('last_activity', '最近活动')}<th>事件标签</th></tr></thead><tbody>{loading ? <tr><td colSpan="9" className="table-empty">正在加载统计数据…</td></tr> : sortedUsers.length ? sortedUsers.map((item) => <tr key={item.id}><td><button className="analytics-user-name" onClick={() => setSelectedUser(item)}>{item.zhihu_name || '—'}</button><div className="analytics-address">{item.account_address || '—'}</div></td><td>{item.page_views}</td><td>{item.applications}</td><td>{item.claimed_keys}</td><td>{item.deliveries}</td><td>{item.active_days}</td><td><b>{item.score}</b></td><td>{formatDate(item.last_activity)}</td><td className="analytics-event-labels">{eventLabels(item)}</td></tr>) : <tr><td colSpan="9" className="table-empty">暂无符合条件的用户活动。</td></tr>}</tbody></table></div>}
     </section>
     {selectedUser && <Modal title={`${selectedUser.zhihu_name || '答主'} · 近 30 天活跃日期`} onClose={() => setSelectedUser(null)} className="analytics-activity-modal"><div className="analytics-calendar-weekdays">{['周一', '周二', '周三', '周四', '周五', '周六', '周日'].map((day) => <span key={day}>{day}</span>)}</div><div className="analytics-activity-calendar">{calendarLeadingDays.map((_, index) => <div key={`leading-${index}`} className="analytics-calendar-day placeholder" />)}{calendarDays.map((day) => <div key={day.key} className={`analytics-calendar-day ${day.active ? 'active' : ''}`}><span>{day.label}</span><small>{day.active ? '活跃' : '—'}</small></div>)}</div><p className="analytics-activity-summary">近 30 天活跃 {selectedUser.active_days || 0} 天</p></Modal>}
   </div>
@@ -1326,7 +1411,7 @@ function TextFormatter() {
     <div className="text-formatter-intro"><div className="text-formatter-icon"><Icon name="wrench" size={20}/></div><div><div className="text-formatter-kicker">文本工具</div><h2>URL 换行格式化</h2><p>将文本中的每个 URL 单独换行，便于复制和整理。</p></div></div>
     <div className="text-formatter-grid">
       <label className="text-formatter-panel"><div className="text-formatter-panel-head"><span>输入内容</span><small>{input.length} 字符</small></div><textarea value={input} onChange={(event) => { setInput(event.target.value); setCopied(false) }} placeholder="粘贴包含 URL 的文本…" rows={14} /></label>
-      <label className="text-formatter-panel text-formatter-output"><div className="text-formatter-panel-head"><span>输出结果</span><small>{output.length} 字符</small></div><textarea value={output} readOnly placeholder="格式化后的内容将显示在这里" rows={14} /></label>
+      <label className="text-formatter-panel text-formatter-output"><div className="text-formatter-panel-head"><span>输出结果</span><small>{output.length} 字符</small></div><textarea value={output} onChange={(event) => setOutput(event.target.value)} placeholder="格式化后的内容将显示在这里" rows={14} /></label>
     </div>
     <div className="text-formatter-actions"><button className="secondary" onClick={clear} disabled={!input && !output}><Icon name="close" size={16}/> 清空</button><button className="secondary" onClick={copy} disabled={!output}><Icon name={copied ? 'check' : 'file'} size={16}/> {copied ? '已复制' : '复制结果'}</button><button className="primary" onClick={format} disabled={!input.trim()}><Icon name="check" size={16}/> 格式化</button></div>
   </section>
@@ -2042,12 +2127,7 @@ function AnswererDashboard() {
   const [answererInbox, setAnswererInbox] = useState([])
   const [unreadInboxCount, setUnreadInboxCount] = useState(0)
   const [isPartner, setIsPartner] = useState(false)
-  const [dailyUrl, setDailyUrl] = useState('')
-  const [dailyTitle, setDailyTitle] = useState('')
-  const [dailySubmitting, setDailySubmitting] = useState(false)
-  const [dailyMsg, setDailyMsg] = useState('')
-  const [dailySuccessOpen, setDailySuccessOpen] = useState(false)
-  const [qMode, setQMode] = useState('link') // 'link' 知乎问题链接+文本 | 'paste' 知乎标准分享格式
+  const [qMode, setQMode] = useState('link') // 'link' 填写链接+文本 | 'paste' 知乎标准分享格式
   const [qUrl, setQUrl] = useState('')
   const [qTitle, setQTitle] = useState('')
   const [qPaste, setQPaste] = useState('')
@@ -2288,70 +2368,66 @@ function AnswererDashboard() {
     }
   }
 
-  const submitDaily = async (e) => {
-    e.preventDefault()
-    // #region debug-point A:daily-submit-start
-    const traceId = crypto.randomUUID(); const reportDaily = (hypothesisId, msg, data = {}) => fetch('http://127.0.0.1:7777/event', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: 'daily-submit-freeze', runId: 'pre-fix', hypothesisId, traceId, location: 'App.jsx:submitDaily', msg: `[DEBUG] ${msg}`, data, ts: Date.now() }) }).catch(() => {}); reportDaily('A', '日常投稿开始', { urlLength: dailyUrl.trim().length, titleLength: dailyTitle.trim().length })
-    // #endregion
-    if (!dailyUrl.trim()) { setDailyMsg('请填写知乎回答链接'); return }
-    if (!dailyTitle.trim()) { setDailyMsg('请填写作品标题'); return }
-    setDailySubmitting(true)
-    setDailyMsg('')
-    const activitiesStartedAt = performance.now()
-    const { data: activities, error: activitiesErr } = await supabase.from('keyflow_activities').select('game_name').limit(500)
-    // #region debug-point A:activities-response
-    reportDaily('A', '活动列表查询返回', { durationMs: Math.round(performance.now() - activitiesStartedAt), count: activities?.length ?? 0, error: activitiesErr?.message ?? null })
-    // #endregion
-    if (activitiesErr) { setDailyMsg(activitiesErr.message); setDailySubmitting(false); return }
-    const normalizedTitle = dailyTitle.trim().normalize('NFKC').toLocaleLowerCase()
-    if (activities.some(({ game_name }) => game_name?.trim() && normalizedTitle.includes(game_name.trim().normalize('NFKC').toLocaleLowerCase())) && !window.confirm('您的稿件可能是活动稿件，不建议日常投稿。确定要投稿吗？')) { setDailySubmitting(false); return }
-    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
-    const countStartedAt = performance.now()
-    const { count: todayCount, error: countErr } = await supabase.from('keyflow_daily_submissions')
-      .select('*', { count: 'exact', head: true }).eq('answerer_id', answerer.id).gte('created_at', todayStart.toISOString())
-    // #region debug-point B:daily-count-response
-    reportDaily('B', '当日投稿计数返回', { durationMs: Math.round(performance.now() - countStartedAt), count: todayCount ?? null, error: countErr?.message ?? null })
-    // #endregion
-    if (countErr) { setDailyMsg(countErr.message); setDailySubmitting(false); return }
-    if (todayCount >= 1) { setDailyMsg('今日已投稿，每天限投一条'); setDailySubmitting(false); return }
-    const insertStartedAt = performance.now()
-    const { error: insertErr } = await supabase.from('keyflow_daily_submissions').insert({
-      answerer_id: answerer.id,
-      article_url: cleanZhihuAnswerUrl(dailyUrl.trim()),
-      article_title: dailyTitle.trim(),
-    })
-    // #region debug-point B:daily-insert-response
-    reportDaily('B', '日常投稿写入返回', { durationMs: Math.round(performance.now() - insertStartedAt), error: insertErr?.message ?? null })
-    // #endregion
-    setDailySubmitting(false)
-    if (insertErr) { setDailyMsg(insertErr.message); return }
-    setDailyUrl('')
-    setDailyTitle('')
-    setDailyMsg('投稿成功！')
-    setDailySuccessOpen(true)
-    setDashboard(current => current ? { ...current, daily_submission_count: (current.daily_submission_count || 0) + 1 } : current)
-    // #region debug-point C:daily-submit-complete
-    reportDaily('C', '投稿成功并更新本地计数')
-    // #endregion
-  }
-
+  // 合并投稿：识别出「回答」格式的条目进入答主日常投稿（keyflow_daily_submissions），
+  // 识别出「问题」格式的条目进入日常问题运营（keyflow_daily_questions）。
   const submitQuestion = async (e) => {
     e.preventDefault()
     const entries = qMode === 'paste'
       ? parseQuestions(qPaste)
       : parseQuestions(`${qTitle.trim()}\n${qUrl.trim()}`)
     if (!entries.length) {
-      setQMsg(qMode === 'paste' ? '未检测到有效内容：请同时包含问题文本与知乎问题链接' : '请填写知乎问题链接和问题文本')
+      setQMsg(qMode === 'paste' ? '未检测到有效内容：请同时包含标题与知乎链接' : '请填写链接和问题（作品标题）文本')
       setQErrorOpen(true)
       return
     }
     setQSubmitting(true)
     setQMsg('')
-    const { data, error } = await supabase.rpc('keyflow_answerer_create_daily_questions', { p_answerer_id: answerer.id, p_questions: entries })
+    const answerEntries = entries.filter((item) => item.content_type === 'answer')
+    const questionEntries = entries.filter((item) => item.content_type !== 'answer')
+    let answerSaved = 0, answerSkipped = 0, answerNote = ''
+    if (answerEntries.length) {
+      const { data: activities } = await supabase.from('keyflow_activities').select('game_name').limit(500)
+      const titles = answerEntries.map((item) => (item.title || '').trim().normalize('NFKC').toLocaleLowerCase())
+      const isActivityLike = (activities || []).some(({ game_name }) => game_name?.trim() && titles.some((t) => t.includes(game_name.trim().normalize('NFKC').toLocaleLowerCase())))
+      if (isActivityLike && !window.confirm('您的稿件可能是活动稿件，不建议日常投稿。确定要投稿吗？')) {
+        answerSkipped = answerEntries.length
+      } else {
+        const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
+        const { count: todayCount } = await supabase.from('keyflow_daily_submissions')
+          .select('*', { count: 'exact', head: true }).eq('answerer_id', answerer.id).gte('created_at', todayStart.toISOString())
+        if ((todayCount || 0) >= 1) {
+          answerSkipped = answerEntries.length
+          answerNote = '今日已回答投稿已达上限（每天限投1条回答）'
+        } else {
+          const toInsert = answerEntries.slice(0, 1)
+          const { error: insertErr } = await supabase.from('keyflow_daily_submissions').insert(toInsert.map((item) => ({
+            answerer_id: answerer.id,
+            article_url: cleanZhihuAnswerUrl(item.zhihu_url),
+            article_title: item.title,
+          })))
+          if (insertErr) { answerNote = insertErr.message }
+          else { answerSaved = toInsert.length; answerSkipped = answerEntries.length - toInsert.length }
+        }
+      }
+      if (answerSaved) setDashboard(current => current ? { ...current, daily_submission_count: (current.daily_submission_count || 0) + answerSaved } : current)
+    }
+    let questionSaved = 0, questionError = ''
+    if (questionEntries.length) {
+      const { data, error } = await supabase.rpc('keyflow_answerer_create_daily_questions', { p_answerer_id: answerer.id, p_questions: questionEntries })
+      if (error) questionError = error.message
+      else questionSaved = data?.length || 0
+    }
     setQSubmitting(false)
-    if (error) { setQMsg(error.message); return }
     setQUrl(''); setQTitle(''); setQPaste('')
-    setQMsg(`投稿成功！已提交 ${data?.length || entries.length} 条问题`)
+    if (!answerSaved && !questionSaved) {
+      setQMsg(answerNote || questionError || '投稿失败，请检查内容后重试')
+      setQErrorOpen(true)
+      return
+    }
+    const parts = []
+    if (questionSaved) parts.push(`${questionSaved} 条问题`)
+    if (answerSaved) parts.push(`${answerSaved} 条回答`)
+    setQMsg(`投稿成功！已提交 ${parts.join('、')}${answerNote ? `（${answerNote}）` : ''}`)
     setQSuccessOpen(true)
   }
 
@@ -2417,10 +2493,9 @@ function AnswererDashboard() {
   const tierInfo = getTierInfo(points)
   const prevMin = tierInfo.min, nextMin = tierInfo.nextMin || prevMin + 500
   const progressPct = prevMin === 0 && points === 0 ? 0 : Math.min(100, Math.round(((points - prevMin) / (nextMin - prevMin)) * 100))
-  return <div className="partner-page"><header className="partner-header"><a className="partner-brand" href="?home"><span className="brand-mark zhihu-mark">知</span><span>GameJourney</span><small>答主看板</small></a><div className="partner-header-right">{(isPartner || answerer?.zhihu_name === '灰域信风') && <button className="reload outline" onClick={() => { window.location.href = '?partner' }}>切换到合作方看板</button>}{answerer?.zhihu_name === '灰域信风' && <button className="reload outline" onClick={() => { window.location.href = '?admin' }}>切换到管理员后台</button>}<button className="reload" onClick={loadDashboard}>刷新数据</button><button className="reload" onClick={() => { window.location.href = '?home' }}>回到封面</button><div className="dashboard-user-area" onClick={() => setDropdownOpen(!dropdownOpen)}><div className="dashboard-avatar-wrap">{answerer?.avatar_url ? <img className="dashboard-avatar-img" src={answerer.avatar_url} alt="" /> : <span className="dashboard-avatar-placeholder">{answerer?.zhihu_name?.[0] || '?'}</span>}</div>{unreadInboxCount > 0 && <span className="dashboard-avatar-dot"/>}<span className="dashboard-username">{answerer?.zhihu_name || dashboard?.answerer?.zhihu_name}<Icon name="arrow" size={12}/></span>{dropdownOpen && <><div className="dashboard-dropdown-backdrop" onClick={(e) => { e.stopPropagation(); setDropdownOpen(false) }}/><div className="dashboard-dropdown"><button onClick={() => { setDropdownOpen(false); setAvatarModalOpen(true) }}><Icon name="image" size={16}/> 修改头像</button><button onClick={() => { setDropdownOpen(false); setPwdResetModalOpen(true); setPwdResetStep('idle'); setPwdResetMsg(''); setNewPassword(''); setConfirmPassword(''); loadResetStatus() }}><Icon name="key" size={16}/> 重置密码</button><button onClick={() => { setDropdownOpen(false); setInboxModalOpen(true); loadInbox() }}><Icon name="inbox" size={16}/> 收件箱{unreadInboxCount > 0 && <span className="dashboard-dropdown-dot"/>}</button><button className="dashboard-logout-btn" onClick={() => { localStorage.removeItem(SESSION_KEY); window.location.href = '?login' }}><Icon name="logout" size={16}/> 退出登录</button></div></>}</div></div></header><main className="partner-main answerer-dashboard"><section className="partner-hero dashboard-hero" style={{ '--dashboard-hero-cover': dashboard.answerer.dashboard_cover_url ? `url("${dashboard.answerer.dashboard_cover_url}")` : 'none' }}><div className="partner-hero-content"><p>你好，{dashboard.answerer.zhihu_name}</p><h1>我的测评活动</h1><span>查看正在参与的活动和已提交的作品。</span><button className="dashboard-cover-upload" onClick={() => { setCoverPreview(dashboard.answerer.dashboard_cover_url || ''); setCoverFile(null); setCoverMsg(''); setCoverModalOpen(true) }}><Icon name="image" size={16}/> 设置封面</button><div className="answerer-stats-row"><div className="hero-shared-code"><div className="hero-shared-code-inner">{sharedCode ? <div className="hero-shared-code-card"><span className="hero-shared-code-value" title="点击复制" onClick={() => { navigator.clipboard.writeText(sharedCode.code); setSharedMsg('邀请码已复制') }}>{sharedCode.code}</span><small>生成于 {new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(sharedCode.created_at))}</small></div> : <button className="hero-shared-code-btn" onClick={generateSharedCode} disabled={generatingShared}>{generatingShared ? '生成中…' : '分享邀请码'}<small>每日可生成一个</small></button>}{sharedMsg && <span className="hero-shared-code-msg" style={sharedMsg.includes('已生成') || sharedMsg.includes('已复制') ? undefined : { color: '#fca5a5' }}>{sharedMsg}</span>}</div></div><div className="answerer-stats"><div className="answerer-stats-left"><div className="answerer-tier-row"><span className="answerer-tier-icon">Lv{tierInfo.tier}</span><div><span className="answerer-tier-title">{tierInfo.title}</span><span className="answerer-tier-points">{points} 积分</span></div></div><div className="answerer-tier-progress"><div className="answerer-progress-bar"><div className="answerer-progress-fill" style={{width: progressPct + '%'}}></div></div>{tierInfo.nextTitle && <span className="answerer-next-tier">距「{tierInfo.nextTitle}」还需 {tierInfo.nextMin - points} 积分</span>}</div></div></div><div className="answerer-hero-metrics"><div className="answerer-metric answerer-metric-clickable" onClick={() => { setParticipatedModalOpen(true); loadParticipatedActivities() }} title="查看已参与活动详情"><span className="answerer-metric-value">{dashboard.participated_count || 0}</span><span className="answerer-metric-label">已参与活动</span><span className="answerer-metric-note">50 积分/个</span></div><div className="answerer-metric answerer-metric-clickable" onClick={() => { setCompletedModalOpen(true); loadCompletedActivities() }} title="查看已完成活动详情"><span className="answerer-metric-value">{dashboard.submission_count || 0}</span><span className="answerer-metric-label">已完成活动</span><span className="answerer-metric-note">300 积分/个</span></div><div className="answerer-metric"><span className="answerer-metric-value">{dashboard.daily_submission_count || 0}</span><span className="answerer-metric-label">已投稿日常回答</span><span className="answerer-metric-note">80 积分/个</span></div></div></div>{showBadges && <div className="answerer-hero-badges"><div className="answerer-hero-badges-head"><span>我的徽章</span><small>已解锁 {badges.length} 枚</small></div>{badges.length ? <div className="answerer-hero-badge-list">{badges.map((b) => <button key={b.game_name} className="answerer-hero-badge" onClick={() => setSelectedBadge(b)} title={`查看${b.game_name}徽章详情`}><img src={b.image_url || badgeImageUrl(b.game_name)} alt={b.name} loading="lazy"/></button>)}</div> : <small className="answerer-hero-badges-empty">提交交付物即可解锁</small>}</div>}</div></section><section className="dashboard-daily-form"><div className="panel-head dashboard-section-head"><div><h3>今日创作投稿（非测评活动内容）</h3><p>任何知乎游戏领域回答都可以投稿，可提升积分；每日可投稿1条；灌水投稿会导致账户扣分甚至封禁。</p></div></div><form onSubmit={submitDaily}><div className="daily-form-fields"><input type="url" placeholder="知乎回答链接（必填，不收今日之前老投稿）" value={dailyUrl} onChange={(e) => setDailyUrl(e.target.value)} required/><input type="text" placeholder="作品标题（必填，不收今日之前老投稿）" value={dailyTitle} onChange={(e) => setDailyTitle(e.target.value)} required/><button type="submit" className="primary" disabled={dailySubmitting}>{dailySubmitting ? '投稿中…' : '提交投稿'}</button></div>{dailyMsg && <p className="daily-form-msg">{dailyMsg}</p>}</form></section><section className="dashboard-daily-form"><div className="panel-head dashboard-section-head"><div><h3>今日提问投稿</h3><p>向运营投递知乎问题；下方两种填写格式任选一种输入，激活其中一种时另一种自动置灰。</p></div></div><form onSubmit={submitQuestion}><div className="daily-question-form"><div className={`daily-question-form-row${qMode === 'link' ? ' active' : ''}`}><input type="url" placeholder="知乎问题链接" value={qUrl} onFocus={() => setQMode('link')} onChange={(e) => setQUrl(e.target.value)}/><input type="text" placeholder="问题文本" value={qTitle} onFocus={() => setQMode('link')} onChange={(e) => setQTitle(e.target.value)}/></div><div className="daily-question-form-paste-row"><textarea className={`daily-question-form-paste${qMode === 'paste' ? ' active' : ''}`} placeholder={'知乎标准分享格式（PC端 问题下点【分享】-【链接】，可多填），例如：\n如何评价《黑神话：悟空》？ - 知乎\nhttps://www.zhihu.com/question/123456789'} value={qPaste} onFocus={() => setQMode('paste')} onChange={(e) => setQPaste(e.target.value)}/><button type="submit" className="primary" disabled={qSubmitting}>{qSubmitting ? '投稿中…' : '提交提问'}</button></div></div>{qMsg && <p className="daily-form-msg">{qMsg}</p>}</form></section><section><div className="panel-head dashboard-section-head"><div><h3>正在参与</h3><p>点击活动卡片回到申领页。</p></div></div><div className="dashboard-activity-cards">{dashboard.activities.length ? dashboard.activities.map((activity) => <a className="dashboard-activity-card" href={`?apply=${activity.id}`} key={activity.id}><div className="dashboard-activity-cover">{activity.game_cover ? <img src={activity.game_cover} alt={activity.game_name} loading="lazy"/> : <span>{activity.game_name?.[0] || '游'}</span>}</div><div className="dashboard-activity-body"><p>{activity.game_name}</p><h3>{activity.title}</h3><div><span className={`pill stage-${getPersonalStage(activity) === 'claim_key' || getPersonalStage(activity) === 'key_distribution' ? 'orange' : getPersonalStage(activity) === 'delivery' ? 'purple' : getPersonalStage(activity) === 'completed' ? 'green' : 'blue'}`}>{stageLabel[getPersonalStage(activity)] || getPersonalStage(activity)}</span>{getPersonalStage(activity) === 'delivery' && activity.delivery_deadline && <span className="dashboard-deadline">距截稿还剩 {daysLeft(activity.delivery_deadline)} 天</span>}</div></div></a>) : <div className="dashboard-empty">暂无正在参与的活动。</div>}</div></section><section><div className="panel-head dashboard-section-head"><div><h3>更多体验活动</h3><p>后台已上线的活动，点击卡片前往报名。</p></div></div><div className="dashboard-activity-cards">{moreActivities.length ? moreActivities.map((activity) => <a className="dashboard-activity-card" href={`?apply=${activity.id}`} key={activity.id}><div className="dashboard-activity-cover">{activity.game_cover ? <img src={activity.game_cover} alt={activity.game_name} loading="lazy"/> : <span>{activity.game_name?.[0] || '游'}</span>}</div><div className="dashboard-activity-body"><p>{activity.game_name}</p><h3>{activity.title}</h3><div><span className={`pill stage-${activity.status === 'key_distribution' ? 'orange' : activity.status === 'delivery' ? 'purple' : activity.status === 'completed' ? 'green' : 'blue'}`}>{stageLabel[activity.status] || activity.status}</span>{activity.status === 'delivery' && activity.delivery_deadline && <span className="dashboard-deadline">距截稿还剩 {daysLeft(activity.delivery_deadline)} 天</span>}</div></div></a>) : <div className="dashboard-empty">{dashboard.more_activities === undefined ? '活动卡片加载中，请耐心等候' : '暂无更多可体验的活动。'}</div>}</div></section><section><div className="panel-head dashboard-section-head"><div><h3>历史活动</h3><p>招募已结束的活动回顾。</p></div></div><div className="dashboard-activity-cards">{historicalActivities.length ? (<>{historicalActivities.slice(0, HISTORICAL_VISIBLE).map((activity) => <a className="dashboard-activity-card" href={`?apply=${activity.id}`} key={activity.id}><div className="dashboard-activity-cover">{activity.game_cover ? <img src={activity.game_cover} alt={activity.game_name} loading="lazy"/> : <span>{activity.game_name?.[0] || '游'}</span>}</div><div className="dashboard-activity-body"><p>{activity.game_name}</p><h3>{activity.title}</h3><div>{activity.application_status === 'rejected' ? <span className="pill muted">未能入选</span> : activity.has_delivery ? <span className="pill stage-green">成功参与</span> : <span className={`pill stage-${activity.status === 'key_distribution' ? 'orange' : activity.status === 'delivery' ? 'purple' : activity.status === 'completed' ? 'green' : 'blue'}`}>{stageLabel[activity.status] || activity.status}</span>}</div></div></a>)}{historicalActivities.length > HISTORICAL_VISIBLE && <a className="dashboard-activity-card dashboard-activity-more" href="?home" style={{textDecoration:'none'}}><div className="dashboard-activity-cover dashboard-activity-more-cover">{(() => { const colors = ['#6366f1','#8b5cf6','#3b82f6','#06b6d4','#10b981','#f59e0b','#ef4444','#ec4899','#14b8a6']; const picked = historicalMoreCovers; return Array.from({length:9}, (_,i) => { const act = picked[i]; const cover = act?.game_cover; return <div key={i} className="dashboard-activity-more-tile" style={cover ? {backgroundImage:`url(${cover})`} : {background:colors[i%9]}} /> }) })()}</div><div className="dashboard-activity-body"><h3>查看更多</h3><p>还有 {historicalActivities.length - HISTORICAL_VISIBLE} 个历史活动</p></div></a>}</>) : <div className="dashboard-empty">{dashboard.historical_activities === undefined ? '活动卡片加载中，请耐心等候' : '暂无历史活动。'}</div>}</div></section><section className="panel partner-table"><div className="panel-head"><div><h3>曾提交作品</h3><p>已提交的知乎作品记录。</p></div><button className="outline-button compact" onClick={() => { const headers = ['稿件类型', '作品标题', '作品链接']; const rows = (dashboard.submissions || []).map(s => [s.type === 'daily' ? '日常稿件' : '活动稿件', s.article_title || s.activity_title || '-', cleanZhihuAnswerUrl(s.article_url) || '']); const csv = '\uFEFF' + [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n'); const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${dashboard.answerer.zhihu_name}作品集_${fileTimestamp()}.csv`; a.click(); URL.revokeObjectURL(url) }}>下载 Excel</button></div><div className="table-wrap"><table><thead><tr><th>稿件类型</th><th>作品标题</th><th>作品链接</th></tr></thead><tbody>{(dashboard.submissions || []).length ? (dashboard.submissions || []).map((submission, idx) => <tr key={`submission-${idx}`}><td><span className={`submission-type ${submission.type === 'daily' ? 'daily' : 'activity'}`}>{submission.type === 'daily' ? '日常稿件' : '活动稿件'}</span></td><td>{submission.article_title || submission.activity_title || '-'}</td><td>{submission.article_url ? (() => { const u = cleanZhihuAnswerUrl(submission.article_url); return <a href={u} target="_blank" rel="noreferrer" title={u} className="profile-link" style={{wordBreak:'break-all'}}>{u.length > 50 ? u.slice(0, 50) + '...' : u} <Icon name="arrow" size={13}/></a> })() : '-'}</td></tr>) : <tr><td colSpan="3" className="table-empty">尚未提交作品。</td></tr>}</tbody></table></div></section></main>
-    {dailySuccessOpen && <Modal title="投稿成功" onClose={() => setDailySuccessOpen(false)}><div className="daily-success-modal"><div className="step-message-icon success"><Icon name="check" size={24}/></div><p>今日创作投稿已提交</p><span>管理员审核后会进行后续处理。</span><button className="primary" onClick={() => setDailySuccessOpen(false)}>知道了</button></div></Modal>}
-    {qSuccessOpen && <Modal title="投稿成功" onClose={() => setQSuccessOpen(false)}><div className="daily-success-modal"><div className="step-message-icon success"><Icon name="check" size={24}/></div><p>今日提问投稿已提交</p><span>已进入「日常问题&回答运营」后台，管理员处理后会进行后续跟进。</span><button className="primary" onClick={() => setQSuccessOpen(false)}>知道了</button></div></Modal>}
-    {qErrorOpen && <Modal title="检测失败" onClose={() => setQErrorOpen(false)}><div className="daily-success-modal"><div className="step-message-icon waiting"><Icon name="alert" size={24}/></div><p>{qMsg}</p><span>请同时包含问题文本与有效的知乎问题链接，再重新提交。</span><button className="primary" onClick={() => setQErrorOpen(false)}>知道了</button></div></Modal>}
+  return <div className="partner-page"><header className="partner-header"><a className="partner-brand" href="?home"><span className="brand-mark zhihu-mark">知</span><span>GameJourney</span><small>答主看板</small></a><div className="partner-header-right">{(isPartner || answerer?.zhihu_name === '灰域信风') && <button className="reload outline" onClick={() => { window.location.href = '?partner' }}>切换到合作方看板</button>}{answerer?.zhihu_name === '灰域信风' && <button className="reload outline" onClick={() => { window.location.href = '?admin' }}>切换到管理员后台</button>}<button className="reload" onClick={loadDashboard}>刷新数据</button><button className="reload" onClick={() => { window.location.href = '?home' }}>回到封面</button><div className="dashboard-user-area" onClick={() => setDropdownOpen(!dropdownOpen)}><div className="dashboard-avatar-wrap">{answerer?.avatar_url ? <img className="dashboard-avatar-img" src={answerer.avatar_url} alt="" /> : <span className="dashboard-avatar-placeholder">{answerer?.zhihu_name?.[0] || '?'}</span>}</div>{unreadInboxCount > 0 && <span className="dashboard-avatar-dot"/>}<span className="dashboard-username">{answerer?.zhihu_name || dashboard?.answerer?.zhihu_name}<Icon name="arrow" size={12}/></span>{dropdownOpen && <><div className="dashboard-dropdown-backdrop" onClick={(e) => { e.stopPropagation(); setDropdownOpen(false) }}/><div className="dashboard-dropdown"><button onClick={() => { setDropdownOpen(false); setAvatarModalOpen(true) }}><Icon name="image" size={16}/> 修改头像</button><button onClick={() => { setDropdownOpen(false); setPwdResetModalOpen(true); setPwdResetStep('idle'); setPwdResetMsg(''); setNewPassword(''); setConfirmPassword(''); loadResetStatus() }}><Icon name="key" size={16}/> 重置密码</button><button onClick={() => { setDropdownOpen(false); setInboxModalOpen(true); loadInbox() }}><Icon name="inbox" size={16}/> 收件箱{unreadInboxCount > 0 && <span className="dashboard-dropdown-dot"/>}</button><button className="dashboard-logout-btn" onClick={() => { localStorage.removeItem(SESSION_KEY); window.location.href = '?login' }}><Icon name="logout" size={16}/> 退出登录</button></div></>}</div></div></header><main className="partner-main answerer-dashboard"><section className="partner-hero dashboard-hero" style={{ '--dashboard-hero-cover': dashboard.answerer.dashboard_cover_url ? `url("${dashboard.answerer.dashboard_cover_url}")` : 'none' }}><div className="partner-hero-content"><p>你好，{dashboard.answerer.zhihu_name}</p><h1>我的测评活动</h1><span>查看正在参与的活动和已提交的作品。</span><button className="dashboard-cover-upload" onClick={() => { setCoverPreview(dashboard.answerer.dashboard_cover_url || ''); setCoverFile(null); setCoverMsg(''); setCoverModalOpen(true) }}><Icon name="image" size={16}/> 设置封面</button><div className="answerer-stats-row"><div className="hero-shared-code"><div className="hero-shared-code-inner">{sharedCode ? <div className="hero-shared-code-card"><span className="hero-shared-code-value" title="点击复制" onClick={() => { navigator.clipboard.writeText(sharedCode.code); setSharedMsg('邀请码已复制') }}>{sharedCode.code}</span><small>生成于 {new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(sharedCode.created_at))}</small></div> : <button className="hero-shared-code-btn" onClick={generateSharedCode} disabled={generatingShared}>{generatingShared ? '生成中…' : '分享邀请码'}<small>每日可生成一个</small></button>}{sharedMsg && <span className="hero-shared-code-msg" style={sharedMsg.includes('已生成') || sharedMsg.includes('已复制') ? undefined : { color: '#fca5a5' }}>{sharedMsg}</span>}</div></div><div className="answerer-stats"><div className="answerer-stats-left"><div className="answerer-tier-row"><span className="answerer-tier-icon">Lv{tierInfo.tier}</span><div><span className="answerer-tier-title">{tierInfo.title}</span><span className="answerer-tier-points">{points} 积分</span></div></div><div className="answerer-tier-progress"><div className="answerer-progress-bar"><div className="answerer-progress-fill" style={{width: progressPct + '%'}}></div></div>{tierInfo.nextTitle && <span className="answerer-next-tier">距「{tierInfo.nextTitle}」还需 {tierInfo.nextMin - points} 积分</span>}</div></div></div><div className="answerer-hero-metrics"><div className="answerer-metric answerer-metric-clickable" onClick={() => { setParticipatedModalOpen(true); loadParticipatedActivities() }} title="查看已参与活动详情"><span className="answerer-metric-value">{dashboard.participated_count || 0}</span><span className="answerer-metric-label">已参与活动</span><span className="answerer-metric-note">50 积分/个</span></div><div className="answerer-metric answerer-metric-clickable" onClick={() => { setCompletedModalOpen(true); loadCompletedActivities() }} title="查看已完成活动详情"><span className="answerer-metric-value">{dashboard.submission_count || 0}</span><span className="answerer-metric-label">已完成活动</span><span className="answerer-metric-note">300 积分/个</span></div><div className="answerer-metric"><span className="answerer-metric-value">{dashboard.daily_submission_count || 0}</span><span className="answerer-metric-label">已投稿日常回答</span><span className="answerer-metric-note">80 积分/个</span></div></div></div>{showBadges && <div className="answerer-hero-badges"><div className="answerer-hero-badges-head"><span>我的徽章</span><small>已解锁 {badges.length} 枚</small></div>{badges.length ? <div className="answerer-hero-badge-list">{badges.map((b) => <button key={b.game_name} className="answerer-hero-badge" onClick={() => setSelectedBadge(b)} title={`查看${b.game_name}徽章详情`}><img src={b.image_url || badgeImageUrl(b.game_name)} alt={b.name} loading="lazy"/></button>)}</div> : <small className="answerer-hero-badges-empty">提交交付物即可解锁</small>}</div>}</div></section><section className="dashboard-daily-form"><div className="panel-head dashboard-section-head"><div><h3>今日创作/提问投稿（非测评活动内容）</h3><p>回答投稿可提升积分（每日限1条）；问题将进入「日常问题运营」后台。下方两种填写格式任选一种输入，激活其中一种时另一种自动置灰。</p></div></div><form onSubmit={submitQuestion}><div className="daily-question-form"><div className={`daily-question-form-row${qMode === 'link' ? ' active' : ''}`}><input type="url" placeholder="填写链接（必填，知乎回答或问题链接）" value={qUrl} onFocus={() => setQMode('link')} onChange={(e) => setQUrl(e.target.value)}/><input type="text" placeholder="问题（作品标题）文本（必填）" value={qTitle} onFocus={() => setQMode('link')} onChange={(e) => setQTitle(e.target.value)}/></div><div className="daily-question-form-paste-row"><textarea className={`daily-question-form-paste${qMode === 'paste' ? ' active' : ''}`} placeholder={'知乎标准分享格式（PC端 点【分享】-【链接】复制，可多填），例如：\n如何评价《黑神话：悟空》？ - 知乎\nhttps://www.zhihu.com/question/123456789\nhttps://www.zhihu.com/question/123456789/answer/987654321'} value={qPaste} onFocus={() => setQMode('paste')} onChange={(e) => setQPaste(e.target.value)}/><button type="submit" className="primary" disabled={qSubmitting}>{qSubmitting ? '投稿中…' : '提交投稿'}</button></div></div>{qMsg && <p className="daily-form-msg">{qMsg}</p>}</form></section><section><div className="panel-head dashboard-section-head"><div><h3>正在参与</h3><p>点击活动卡片回到申领页。</p></div></div><div className="dashboard-activity-cards">{dashboard.activities.length ? dashboard.activities.map((activity) => <a className="dashboard-activity-card" href={`?apply=${activity.id}`} key={activity.id}><div className="dashboard-activity-cover">{activity.game_cover ? <img src={activity.game_cover} alt={activity.game_name} loading="lazy"/> : <span>{activity.game_name?.[0] || '游'}</span>}</div><div className="dashboard-activity-body"><p>{activity.game_name}</p><h3>{activity.title}</h3><div><span className={`pill stage-${getPersonalStage(activity) === 'claim_key' || getPersonalStage(activity) === 'key_distribution' ? 'orange' : getPersonalStage(activity) === 'delivery' ? 'purple' : getPersonalStage(activity) === 'completed' ? 'green' : 'blue'}`}>{stageLabel[getPersonalStage(activity)] || getPersonalStage(activity)}</span>{getPersonalStage(activity) === 'delivery' && activity.delivery_deadline && <span className="dashboard-deadline">距截稿还剩 {daysLeft(activity.delivery_deadline)} 天</span>}</div></div></a>) : <div className="dashboard-empty">暂无正在参与的活动。</div>}</div></section><section><div className="panel-head dashboard-section-head"><div><h3>更多体验活动</h3><p>后台已上线的活动，点击卡片前往报名。</p></div></div><div className="dashboard-activity-cards">{moreActivities.length ? moreActivities.map((activity) => <a className="dashboard-activity-card" href={`?apply=${activity.id}`} key={activity.id}><div className="dashboard-activity-cover">{activity.game_cover ? <img src={activity.game_cover} alt={activity.game_name} loading="lazy"/> : <span>{activity.game_name?.[0] || '游'}</span>}</div><div className="dashboard-activity-body"><p>{activity.game_name}</p><h3>{activity.title}</h3><div><span className={`pill stage-${activity.status === 'key_distribution' ? 'orange' : activity.status === 'delivery' ? 'purple' : activity.status === 'completed' ? 'green' : 'blue'}`}>{stageLabel[activity.status] || activity.status}</span>{activity.status === 'delivery' && activity.delivery_deadline && <span className="dashboard-deadline">距截稿还剩 {daysLeft(activity.delivery_deadline)} 天</span>}</div></div></a>) : <div className="dashboard-empty">{dashboard.more_activities === undefined ? '活动卡片加载中，请耐心等候' : '暂无更多可体验的活动。'}</div>}</div></section><section><div className="panel-head dashboard-section-head"><div><h3>历史活动</h3><p>招募已结束的活动回顾。</p></div></div><div className="dashboard-activity-cards">{historicalActivities.length ? (<>{historicalActivities.slice(0, HISTORICAL_VISIBLE).map((activity) => <a className="dashboard-activity-card" href={`?apply=${activity.id}`} key={activity.id}><div className="dashboard-activity-cover">{activity.game_cover ? <img src={activity.game_cover} alt={activity.game_name} loading="lazy"/> : <span>{activity.game_name?.[0] || '游'}</span>}</div><div className="dashboard-activity-body"><p>{activity.game_name}</p><h3>{activity.title}</h3><div>{activity.application_status === 'rejected' ? <span className="pill muted">未能入选</span> : activity.has_delivery ? <span className="pill stage-green">成功参与</span> : <span className={`pill stage-${activity.status === 'key_distribution' ? 'orange' : activity.status === 'delivery' ? 'purple' : activity.status === 'completed' ? 'green' : 'blue'}`}>{stageLabel[activity.status] || activity.status}</span>}</div></div></a>)}{historicalActivities.length > HISTORICAL_VISIBLE && <a className="dashboard-activity-card dashboard-activity-more" href="?home" style={{textDecoration:'none'}}><div className="dashboard-activity-cover dashboard-activity-more-cover">{(() => { const colors = ['#6366f1','#8b5cf6','#3b82f6','#06b6d4','#10b981','#f59e0b','#ef4444','#ec4899','#14b8a6']; const picked = historicalMoreCovers; return Array.from({length:9}, (_,i) => { const act = picked[i]; const cover = act?.game_cover; return <div key={i} className="dashboard-activity-more-tile" style={cover ? {backgroundImage:`url(${cover})`} : {background:colors[i%9]}} /> }) })()}</div><div className="dashboard-activity-body"><h3>查看更多</h3><p>还有 {historicalActivities.length - HISTORICAL_VISIBLE} 个历史活动</p></div></a>}</>) : <div className="dashboard-empty">{dashboard.historical_activities === undefined ? '活动卡片加载中，请耐心等候' : '暂无历史活动。'}</div>}</div></section><section className="panel partner-table"><div className="panel-head"><div><h3>曾提交作品</h3><p>已提交的知乎作品记录。</p></div><button className="outline-button compact" onClick={() => { const headers = ['稿件类型', '作品标题', '作品链接']; const rows = (dashboard.submissions || []).map(s => [s.type === 'daily' ? '日常稿件' : '活动稿件', s.article_title || s.activity_title || '-', cleanZhihuAnswerUrl(s.article_url) || '']); const csv = '\uFEFF' + [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n'); const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${dashboard.answerer.zhihu_name}作品集_${fileTimestamp()}.csv`; a.click(); URL.revokeObjectURL(url) }}>下载 Excel</button></div><div className="table-wrap"><table><thead><tr><th>稿件类型</th><th>作品标题</th><th>作品链接</th></tr></thead><tbody>{(dashboard.submissions || []).length ? (dashboard.submissions || []).map((submission, idx) => <tr key={`submission-${idx}`}><td><span className={`submission-type ${submission.type === 'daily' ? 'daily' : 'activity'}`}>{submission.type === 'daily' ? '日常稿件' : '活动稿件'}</span></td><td>{submission.article_title || submission.activity_title || '-'}</td><td>{submission.article_url ? (() => { const u = cleanZhihuAnswerUrl(submission.article_url); return <a href={u} target="_blank" rel="noreferrer" title={u} className="profile-link" style={{wordBreak:'break-all'}}>{u.length > 50 ? u.slice(0, 50) + '...' : u} <Icon name="arrow" size={13}/></a> })() : '-'}</td></tr>) : <tr><td colSpan="3" className="table-empty">尚未提交作品。</td></tr>}</tbody></table></div></section></main>
+    {qSuccessOpen && <Modal title="投稿成功" onClose={() => setQSuccessOpen(false)}><div className="daily-success-modal"><div className="step-message-icon success"><Icon name="check" size={24}/></div><p>今日创作/提问投稿已提交</p><span>问题已进入「日常问题运营」后台，回答已进入「答主日常投稿」后台，管理员处理后会进行后续跟进。</span><button className="primary" onClick={() => setQSuccessOpen(false)}>知道了</button></div></Modal>}
+    {qErrorOpen && <Modal title="检测失败" onClose={() => setQErrorOpen(false)}><div className="daily-success-modal"><div className="step-message-icon waiting"><Icon name="alert" size={24}/></div><p>{qMsg}</p><span>请同时包含标题与有效的知乎链接，再重新提交。</span><button className="primary" onClick={() => setQErrorOpen(false)}>知道了</button></div></Modal>}
     {selectedBadge && <Modal title="徽章详情" onClose={() => setSelectedBadge(null)}><div className="badge-detail-body"><img src={selectedBadge.image_url || badgeImageUrl(selectedBadge.game_name)} alt={selectedBadge.name}/><h3>{selectedBadge.game_name}</h3><p>解锁时间：{selectedBadge.awarded_at ? new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(selectedBadge.awarded_at)) : '-'}</p></div></Modal>}
     {avatarModalOpen && <Modal title="修改头像" onClose={() => { setAvatarModalOpen(false); setAvatarMsg(''); setAvatarFile(null) }}>
       <div className="avatar-upload-body">
@@ -4167,24 +4242,45 @@ function DailySubmissionsCalendar({ submissions, selectedDate, onSelectDate }) {
   </div>
 }
 
-function DailyQuestionOperationsPage({ questions, setQuestions, adminToken, toast }) {
+function DailyQuestionOperationsPage({ questions, setQuestions, adminToken, toast, setDailySubmissions }) {
   const [paste, setPaste] = useState('')
   const [selectedDate, setSelectedDate] = useState(null)
   const [saving, setSaving] = useState(false)
   const [selectedIds, setSelectedIds] = useState(new Set())
   const toDateKey = (value) => new Date(value).toLocaleDateString('sv-SE')
+  // 粘贴区仍支持问题与回答：识别为「回答」的条目写入答主日常投稿（keyflow_daily_submissions），
+  // 「问题」条目写入本页（keyflow_daily_questions）。
   const savePasted = async () => {
     const entries = parseQuestions(paste)
     if (!entries.length) { toast?.('请按“标题 + 知乎问题/回答 URL”粘贴内容'); return }
     setSaving(true)
-    const { data, error } = await supabase.rpc('keyflow_admin_create_daily_questions', { p_token: adminToken, p_questions: entries })
+    const answerEntries = entries.filter((item) => item.content_type === 'answer')
+    const questionEntries = entries.filter((item) => item.content_type !== 'answer')
+    let answerSaved = 0, questionSaved = 0
+    if (answerEntries.length) {
+      const { data: inserted, error: answerErr } = await supabase.from('keyflow_daily_submissions').insert(answerEntries.map((item) => ({
+        answerer_id: null,
+        article_url: cleanZhihuAnswerUrl(item.zhihu_url),
+        article_title: item.title,
+      }))).select()
+      if (answerErr) { setSaving(false); toast?.(answerErr.message); return }
+      answerSaved = inserted?.length || 0
+      if (answerSaved) setDailySubmissions?.((items) => [...(inserted || []), ...items].sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at)))
+    }
+    if (questionEntries.length) {
+      const { data, error } = await supabase.rpc('keyflow_admin_create_daily_questions', { p_token: adminToken, p_questions: questionEntries })
+      if (error) { setSaving(false); toast?.(error.message); return }
+      questionSaved = data?.length || 0
+      if (questionSaved) setQuestions((items) => [...(data || []), ...items.filter((item) => !(data || []).some((saved) => saved.id === item.id))].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)))
+    }
     setSaving(false)
-    if (error) { toast?.(error.message); return }
-    setQuestions((items) => [...(data || []), ...items.filter((item) => !(data || []).some((saved) => saved.id === item.id))].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)))
     setPaste('')
-    toast?.(`已保存 ${entries.length} 条日常问题 & 回答`)
+    const parts = []
+    if (questionSaved) parts.push(`${questionSaved} 条问题`)
+    if (answerSaved) parts.push(`${answerSaved} 条回答`)
+    toast?.(`已保存 ${parts.join('、') || '0 条'}`)
   }
-  const visible = selectedDate ? questions.filter((item) => toDateKey(item.created_at) === selectedDate) : questions
+  const visible = (selectedDate ? questions.filter((item) => toDateKey(item.created_at) === selectedDate) : questions).filter((item) => item.content_type !== 'answer')
   const processQuestions = async (ids) => {
     const pendingIds = ids.filter((id) => !questions.find((item) => item.id === id)?.processed)
     if (!pendingIds.length) { toast?.('所选问题均已处理'); return }
@@ -4196,10 +4292,11 @@ function DailyQuestionOperationsPage({ questions, setQuestions, adminToken, toas
     toast?.(`已处理 ${pendingIds.length} 条问题`)
   }
   const processToday = () => {
-    const today = toDateKey(new Date())
-    const todayIds = questions.filter((item) => !item.processed && toDateKey(item.created_at) === today).map((item) => item.id)
-    if (!todayIds.length) { toast?.('今日没有未处理的问题'); return }
-    processQuestions(todayIds)
+    const targetDate = selectedDate || toDateKey(new Date())
+    const targetItems = selectedDate ? visible : questions.filter((item) => toDateKey(item.created_at) === targetDate)
+    const targetIds = targetItems.filter((item) => !item.processed).map((item) => item.id)
+    if (!targetIds.length) { toast?.(`${targetDate} 没有未处理的问题`); return }
+    processQuestions(targetIds)
   }
   const copyQuestion = async (question) => {
     try { await navigator.clipboard.writeText(question.zhihu_url); toast?.('知乎链接已复制') }
@@ -4213,18 +4310,19 @@ function DailyQuestionOperationsPage({ questions, setQuestions, adminToken, toas
   }
   const exportCsv = () => {
     if (!visible.length) { toast?.('当前没有可导出的问题'); return }
-    const rows = [['标题', '问题/回答', '知乎 URL', '状态', '创建时间'], ...visible.map((item) => [item.title, item.content_type === 'answer' ? '回答' : '问题', item.zhihu_url, item.processed ? '已处理' : '未处理', new Date(item.created_at).toLocaleString('zh-CN')])]
+    const rows = [['标题', '知乎 URL', '状态', '创建时间'], ...visible.map((item) => [item.title, item.zhihu_url, item.processed ? '已处理' : '未处理', new Date(item.created_at).toLocaleString('zh-CN')])]
     const csv = '\uFEFF' + rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n')
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
-    const link = document.createElement('a'); link.href = url; link.download = `日常问题&回答_${selectedDate || '全部'}_${fileTimestamp()}.csv`; link.click(); URL.revokeObjectURL(url)
+    const link = document.createElement('a'); link.href = url; link.download = `日常问题运营_${selectedDate || '全部'}_${fileTimestamp()}.csv`; link.click(); URL.revokeObjectURL(url)
   }
-  const daySummary = useMemo(() => questions.reduce((map, item) => {
+  const daySummary = useMemo(() => questions.filter((item) => item.content_type !== 'answer').reduce((map, item) => {
     const key = toDateKey(item.created_at)
     map[key] = map[key] || { total: 0, pending: 0 }
     map[key].total++; if (!item.processed) map[key].pending++
     return map
   }, {}), [questions])
   const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1))
+  const today = toDateKey(new Date())
   const firstDay = new Date(month.getFullYear(), month.getMonth(), 1).getDay()
   const days = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate()
   const cells = [...Array(firstDay).fill(null), ...Array.from({ length: days }, (_, i) => {
@@ -4233,9 +4331,9 @@ function DailyQuestionOperationsPage({ questions, setQuestions, adminToken, toas
   })]
   const allVisibleSelected = visible.length > 0 && visible.every((item) => selectedIds.has(item.id))
   return <div className="daily-question-operations">
-    <section className="daily-question-entry panel"><div className="panel-head"><div><h3>粘贴日常问题 & 回答</h3><p>每条内容包含标题和知乎问题/回答 URL，支持多条连续粘贴。</p></div><button className="primary" onClick={savePasted} disabled={saving}>{saving ? '保存中…' : '清洗并保存'}</button></div><textarea className="daily-question-paste" value={paste} onChange={(event) => setPaste(event.target.value)} placeholder={'标题\nhttps://www.zhihu.com/question/123456789\n\n回答标题 https://www.zhihu.com/question/123456789/answer/987654321'} /></section>
-    <section className="daily-question-workspace"><aside className="daily-question-calendar panel"><div className="daily-calendar-head"><button className="daily-calendar-nav" title="上个月" onClick={() => setMonth((value) => new Date(value.getFullYear(), value.getMonth() - 1, 1))}>&lt;</button><strong>{month.getFullYear()}年{month.getMonth() + 1}月</strong><button className="daily-calendar-nav" title="下个月" onClick={() => setMonth((value) => new Date(value.getFullYear(), value.getMonth() + 1, 1))}>&gt;</button></div><div className="daily-calendar-grid">{['日', '一', '二', '三', '四', '五', '六'].map((day) => <div className="daily-calendar-weekday" key={day}>{day}</div>)}{cells.map((cell, index) => <button key={index} className={`daily-calendar-cell${!cell ? ' empty' : ''}${cell?.key === selectedDate ? ' selected' : ''}`} disabled={!cell} onClick={() => setSelectedDate(cell.key === selectedDate ? null : cell.key)}>{cell && <><span className="daily-calendar-day">{cell.day}</span>{cell.summary && <span className={`daily-calendar-dot${cell.summary.pending ? ' unreviewed' : ''}`}>{cell.summary.total}</span>}</>}</button>)}</div>{selectedDate && <button className="daily-calendar-clear" onClick={() => setSelectedDate(null)}>清除日期筛选</button>}</aside>
-      <section className="panel"><div className="application-toolbar"><span className="daily-question-count">{selectedDate ? `${selectedDate}：` : ''}共 {visible.length} 条，未处理 {visible.filter((item) => !item.processed).length} 条</span><div className="daily-question-actions"><button className="outline-button compact" onClick={() => window.open('https://docs.qq.com/sheet/DWFFweEVIaVNrc3Bz', '_blank', 'noopener')}>打开腾讯文档</button><button className="outline-button compact" onClick={openUnprocessed}>打开未处理</button><button className="outline-button compact" onClick={processToday}>一键处理当日</button><button className="outline-button compact" onClick={exportCsv}>导出 CSV</button>{selectedIds.size > 0 && <button className="primary compact" onClick={() => processQuestions([...selectedIds])}>处理选中 ({selectedIds.size})</button>}</div></div><div className="table-wrap"><table><thead><tr><th><input type="checkbox" checked={allVisibleSelected} onChange={() => setSelectedIds(allVisibleSelected ? new Set() : new Set(visible.map((item) => item.id)))} /></th><th>标题</th><th>问题/回答</th><th>知乎 URL</th><th>创建时间</th><th>状态</th><th>操作</th></tr></thead><tbody>{visible.length ? visible.map((item) => <tr key={item.id}><td><input type="checkbox" checked={selectedIds.has(item.id)} onChange={() => setSelectedIds((ids) => { const next = new Set(ids); next.has(item.id) ? next.delete(item.id) : next.add(item.id); return next })} /></td><td className="daily-question-title">{item.title}</td><td>{item.content_type === 'answer' ? '回答' : '问题'}</td><td><a className="profile-link" href={item.zhihu_url} target="_blank" rel="noreferrer">打开链接</a></td><td>{new Date(item.created_at).toLocaleString('zh-CN')}</td><td><span className={`pill ${item.processed ? 'success' : 'warning'}`}>{item.processed ? '已处理' : '未处理'}</span></td><td><div className="daily-question-row-actions"><button className="outline-button compact" onClick={() => copyQuestion(item)}>复制</button>{!item.processed && <button className="primary compact" onClick={() => processQuestions([item.id])}>处理</button>}</div></td></tr>) : <tr><td colSpan="7" className="table-empty">当前日期没有日常问题 & 回答。</td></tr>}</tbody></table></div></section></section>
+    <section className="daily-question-entry panel"><div className="panel-head"><div><h3>粘贴日常问题/回答</h3><p>每条内容包含标题和知乎问题/回答 URL，支持多条连续粘贴；识别为「回答」的条目将自动进入「答主日常投稿」并同步至每日投稿腾讯文档。</p></div><button className="primary" onClick={savePasted} disabled={saving}>{saving ? '保存中…' : '清洗并保存'}</button></div><textarea className="daily-question-paste" value={paste} onChange={(event) => setPaste(event.target.value)} placeholder={'标题\nhttps://www.zhihu.com/question/123456789\n\n回答标题 https://www.zhihu.com/question/123456789/answer/987654321'} /></section>
+    <section className="daily-question-workspace"><aside className="daily-question-calendar panel"><div className="daily-calendar-head"><button className="daily-calendar-nav" title="上个月" onClick={() => setMonth((value) => new Date(value.getFullYear(), value.getMonth() - 1, 1))}>&lt;</button><strong>{month.getFullYear()}年{month.getMonth() + 1}月</strong><button className="daily-calendar-nav" title="下个月" onClick={() => setMonth((value) => new Date(value.getFullYear(), value.getMonth() + 1, 1))}>&gt;</button></div><div className="daily-calendar-grid">{['日', '一', '二', '三', '四', '五', '六'].map((day) => <div className="daily-calendar-weekday" key={day}>{day}</div>)}{cells.map((cell, index) => <button key={index} className={`daily-calendar-cell${!cell ? ' empty' : ''}${cell?.key === selectedDate ? ' selected' : ''}${cell?.key === today ? ' today' : ''}`} disabled={!cell} onClick={() => setSelectedDate(cell.key === selectedDate ? null : cell.key)}>{cell && <><span className="daily-calendar-day">{cell.day}</span>{cell.summary && <span className={`daily-calendar-dot${cell.summary.pending ? ' unreviewed' : ''}`}>{cell.summary.total}</span>}</>}</button>)}</div>{selectedDate && <button className="daily-calendar-clear" onClick={() => setSelectedDate(null)}>清除日期筛选</button>}</aside>
+      <section className="panel"><div className="application-toolbar"><span className="daily-question-count">{selectedDate ? `${selectedDate}：` : ''}共 {visible.length} 条，未处理 {visible.filter((item) => !item.processed).length} 条</span><div className="daily-question-actions"><button className="outline-button compact" onClick={() => window.open('https://docs.qq.com/sheet/DWFFweEVIaVNrc3Bz', '_blank', 'noopener')}>打开腾讯文档</button><button className="outline-button compact" onClick={openUnprocessed}>打开未处理</button><button className="outline-button compact" onClick={processToday}>一键处理当日</button><button className="outline-button compact" onClick={exportCsv}>导出 CSV</button>{selectedIds.size > 0 && <button className="primary compact" onClick={() => processQuestions([...selectedIds])}>处理选中 ({selectedIds.size})</button>}</div></div><div className="table-wrap"><table><thead><tr><th><input type="checkbox" checked={allVisibleSelected} onChange={() => setSelectedIds(allVisibleSelected ? new Set() : new Set(visible.map((item) => item.id)))} /></th><th>标题</th><th>知乎 URL</th><th>创建时间</th><th>状态</th><th>操作</th></tr></thead><tbody>{visible.length ? visible.map((item) => <tr key={item.id}><td><input type="checkbox" checked={selectedIds.has(item.id)} onChange={() => setSelectedIds((ids) => { const next = new Set(ids); next.has(item.id) ? next.delete(item.id) : next.add(item.id); return next })} /></td><td className="daily-question-title">{item.title}</td><td><a className="profile-link" href={item.zhihu_url} target="_blank" rel="noreferrer">打开链接</a></td><td>{new Date(item.created_at).toLocaleString('zh-CN')}</td><td><span className={`pill ${item.processed ? 'success' : 'warning'}`}>{item.processed ? '已处理' : '未处理'}</span></td><td><div className="daily-question-row-actions"><button className="outline-button compact" onClick={() => copyQuestion(item)}>复制</button>{!item.processed && <button className="primary compact" onClick={() => processQuestions([item.id])}>处理</button>}</div></td></tr>) : <tr><td colSpan="6" className="table-empty">当前日期没有日常问题。</td></tr>}</tbody></table></div></section></section>
   </div>
 }
 
@@ -4417,7 +4515,8 @@ function DailySubmissionsPage({ submissions, answerers, toast, setDailySubmissio
     const headers = ['答主', '知乎主页', '作品标题', '投稿链接', '投稿时间']
     const rows = todaySubs.map(s => {
       const a = answererById[s.answerer_id]
-      return [a?.zhihu_name || '未知答主', a?.account_address || '', s.article_title || '', cleanZhihuAnswerUrl(s.article_url), formatSubmissionDate(s.submitted_at)]
+      const isAdmin = !s.answerer_id
+      return [isAdmin ? '管理员' : (a?.zhihu_name || '未知答主'), isAdmin ? '' : (a?.account_address || ''), s.article_title || '', cleanZhihuAnswerUrl(s.article_url), formatSubmissionDate(s.submitted_at)]
     })
     const csv = '\uFEFF' + [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
@@ -4430,7 +4529,8 @@ function DailySubmissionsPage({ submissions, answerers, toast, setDailySubmissio
     const headers = ['答主', '知乎主页', '作品标题', '投稿链接', '投稿时间']
     const rows = filtered.map(s => {
       const a = answererById[s.answerer_id]
-      return [a?.zhihu_name || '未知答主', a?.account_address || '', s.article_title || '', cleanZhihuAnswerUrl(s.article_url), formatSubmissionDate(s.submitted_at)]
+      const isAdmin = !s.answerer_id
+      return [isAdmin ? '管理员' : (a?.zhihu_name || '未知答主'), isAdmin ? '' : (a?.account_address || ''), s.article_title || '', cleanZhihuAnswerUrl(s.article_url), formatSubmissionDate(s.submitted_at)]
     })
     const csv = '\uFEFF' + [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
@@ -4457,7 +4557,7 @@ function DailySubmissionsPage({ submissions, answerers, toast, setDailySubmissio
       </div>
     </div>
     <div className="table-wrap"><table><thead><tr><th style={{ width: 40 }}><input type="checkbox" checked={paged.length > 0 && paged.every(s => selectedIds.has(s.id))} onChange={toggleSelectAll} /></th><th style={{ width: 120 }}>答主</th><th style={{ width: 90 }}>知乎主页</th><th>作品标题</th><th style={{ width: 90 }}>投稿链接</th><th style={{ width: 80 }}>处理</th><th style={{ width: 150 }}>投稿时间</th><th style={{ width: 50 }}>精华</th><th style={{ width: 60 }}>操作</th></tr></thead><tbody>
-      {paged.length ? paged.map(s => { const a = answererById[s.answerer_id]; return <tr key={s.id}><td><input type="checkbox" checked={selectedIds.has(s.id)} onChange={() => toggleSelect(s.id)} /></td><td><div className="person">{a?.avatar_url ? <img className="person-avatar-img" src={a.avatar_url} alt="" onClick={() => { if (a) onViewAnswererParticipation(a) }} title="查看活动参与记录" style={{cursor:'pointer'}} /> : <span className="person-avatar" onClick={() => { if (a) onViewAnswererParticipation(a) }} title="查看活动参与记录" style={{cursor:'pointer'}}>{a?.zhihu_name?.[0] || '?'}</span>}<div><strong>{a?.zhihu_name || '未知答主'}</strong><small>知乎答主</small></div></div></td><td>{a?.account_address ? <a className="profile-link" href={a.account_address} target="_blank" rel="noreferrer">查看主页</a> : <span style={{ color: 'var(--c-ink-4)', fontSize: 'var(--fs-meta)' }}>未填写</span>}</td><td>{s.article_title || <span style={{ color: 'var(--c-ink-4)' }}>—</span>}</td><td>{s.article_url ? <a className="profile-link" href={cleanZhihuAnswerUrl(s.article_url)} target="_blank" rel="noreferrer" onClick={e => { e.preventDefault(); handleViewSubmission(s) }}>查看投稿 <Icon name="arrow" size={13} /></a> : '—'}</td><td>{s.processed ? <span style={{ color: 'var(--c-ink-4)', fontSize: 'var(--fs-meta)' }}>已处理</span> : <button className="outline-button compact" onClick={() => handleProcess(s)}>处理</button>}</td><td>{formatSubmissionDate(s.submitted_at)}</td><td><button className="featured-toggle" onClick={() => toggleFeatured(s)} title={s.featured ? '取消精华' : '标记精华'} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: '18px', padding: 0, lineHeight: 1, color: s.featured ? '#f0a500' : undefined }}>{s.featured ? '★' : '☆'}</button></td><td><button className="delete-action" onClick={() => handleDelete(s.id)} title="删除投稿">删除</button></td></tr> }) : <tr><td colSpan="9" className="table-empty">{keyword ? '无匹配结果。' : '暂无日常投稿。'}</td></tr>}
+      {paged.length ? paged.map(s => { const a = answererById[s.answerer_id]; const isAdmin = !s.answerer_id; return <tr key={s.id}><td><input type="checkbox" checked={selectedIds.has(s.id)} onChange={() => toggleSelect(s.id)} /></td><td><div className="person">{isAdmin ? <span className="person-avatar">管</span> : (a?.avatar_url ? <img className="person-avatar-img" src={a.avatar_url} alt="" onClick={() => { if (a) onViewAnswererParticipation(a) }} title="查看活动参与记录" style={{cursor:'pointer'}} /> : <span className="person-avatar" onClick={() => { if (a) onViewAnswererParticipation(a) }} title="查看活动参与记录" style={{cursor:'pointer'}}>{a?.zhihu_name?.[0] || '?'}</span>)}<div><strong>{isAdmin ? '管理员' : (a?.zhihu_name || '未知答主')}</strong><small>{isAdmin ? '后台录入' : '知乎答主'}</small></div></div></td><td>{isAdmin ? <span style={{ color: 'var(--c-ink-4)', fontSize: 'var(--fs-meta)' }}>—</span> : (a?.account_address ? <a className="profile-link" href={a.account_address} target="_blank" rel="noreferrer">查看主页</a> : <span style={{ color: 'var(--c-ink-4)', fontSize: 'var(--fs-meta)' }}>未填写</span>)}</td><td>{s.article_title || <span style={{ color: 'var(--c-ink-4)' }}>—</span>}</td><td>{s.article_url ? <a className="profile-link" href={cleanZhihuAnswerUrl(s.article_url)} target="_blank" rel="noreferrer" onClick={e => { e.preventDefault(); handleViewSubmission(s) }}>查看投稿 <Icon name="arrow" size={13} /></a> : '—'}</td><td>{s.processed ? <span style={{ color: 'var(--c-ink-4)', fontSize: 'var(--fs-meta)' }}>已处理</span> : <button className="outline-button compact" onClick={() => handleProcess(s)}>处理</button>}</td><td>{formatSubmissionDate(s.submitted_at)}</td><td><button className="featured-toggle" onClick={() => toggleFeatured(s)} title={s.featured ? '取消精华' : '标记精华'} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: '18px', padding: 0, lineHeight: 1, color: s.featured ? '#f0a500' : undefined }}>{s.featured ? '★' : '☆'}</button></td><td><button className="delete-action" onClick={() => handleDelete(s.id)} title="删除投稿">删除</button></td></tr> }) : <tr><td colSpan="9" className="table-empty">{keyword ? '无匹配结果。' : '暂无日常投稿。'}</td></tr>}
     </tbody></table></div>
     {totalPages > 1 && <div className="pagination"><div className="page-info">第 {safePage} 页，共 {totalPages} 页，共 {filtered.length} 条</div><div className="page-btns"><button className="page-btn" disabled={safePage <= 1} onClick={() => setPage(p => p - 1)}><Icon name="arrow" size={13} style={{ transform: 'rotate(180deg)' }} /></button>{pages.map((p, i) => p === '…' ? <span key={`ellipsis-${i}`} className="page-ellipsis">…</span> : <button key={p} className={`page-btn${p === safePage ? ' active' : ''}`} onClick={() => setPage(p)}>{p}</button>)}<button className="page-btn" disabled={safePage >= totalPages} onClick={() => setPage(p => p + 1)}><Icon name="arrow" size={13} /></button></div></div>}
   </section>
@@ -4710,6 +4810,411 @@ function InboxPage({ messages, requests, answerers, adminToken, onRefresh, onMes
         }) : <div className="inbox-empty">暂无消息。</div>}
       </div>}
     </section>
+  </div>
+}
+
+const ADMIN_PERMISSIONS = [
+  { value: 'activity_manage', label: '活动管理', desc: '创建/编辑/删除活动', icon: '🎯' },
+  { value: 'application_manage', label: '报名审核', desc: '筛选答主、审核报名', icon: '📋' },
+  { value: 'key_manage', label: 'Key 管理', desc: '导入、分配、删除 Key', icon: '🔑' },
+  { value: 'delivery_manage', label: '交付验收', desc: '审核作品、通过/退回', icon: '✅' },
+  { value: 'answerer_manage', label: '答主管理', desc: '答主信息、豁免延期', icon: '👥' },
+  { value: 'partner_manage', label: '合作方管理', desc: '合作方账号、分配活动', icon: '🤝' },
+  { value: 'daily_submissions', label: '日常投稿运营', desc: '日常投稿/问题运营', icon: '📝' },
+  { value: 'page_edit', label: '页面编辑', desc: '头图、徽章开关', icon: '🎨' },
+  { value: 'inbox_send', label: '收件箱/私信', desc: '批量发送、审核密码重置', icon: '📬' },
+  { value: 'analytics_view', label: '数据概览', desc: '访问统计、用户活动', icon: '📊' },
+]
+
+const PAGE_PERMISSION_MAP = {
+  '活动看板': 'activity_manage',
+  '活动概览': 'activity_manage',
+  '答主报名': 'application_manage',
+  'Key 管理': 'key_manage',
+  '交付验收': 'delivery_manage',
+  '答主管理': 'answerer_manage',
+  '合作方管理': 'partner_manage',
+  '数据概览': 'analytics_view',
+  '全部活动投稿': 'delivery_manage',
+  '答主日常投稿': 'daily_submissions',
+  '日常问题运营': 'daily_submissions',
+  '剩余KEY管理': 'key_manage',
+  '页面编辑': 'page_edit',
+  '收件箱': 'inbox_send',
+}
+
+const hasAdminPermission = (adminSession, isSuperAdmin, pageLabel) => {
+  if (isSuperAdmin) return true
+  const perm = PAGE_PERMISSION_MAP[pageLabel]
+  if (!perm) return true
+  return Array.isArray(adminSession?.permissions) && adminSession.permissions.includes(perm)
+}
+
+function PermissionBlockedPlaceholder() {
+  return <div className="empty-state" style={{ minHeight: 320 }}>
+    <div className="empty-icon" style={{ opacity: 0.5 }}><Icon name="lock" size={30}/></div>
+    <h2 style={{ color: 'var(--c-ink-3)' }}>该权限未开放</h2>
+    <p style={{ color: 'var(--c-ink-4)', marginTop: 4 }}>请联系超级管理员为你分配对应功能权限。</p>
+  </div>
+}
+
+function AdminManagementPage({ adminSession, isSuperAdmin, adminSubTabs, adminTab, setAdminTab, onUpdateAdminSession, toast, setConfirmState, setError }) {
+  const [avatarFile, setAvatarFile] = useState(null)
+  const [avatarPreview, setAvatarPreview] = useState(adminSession?.avatar_url || '')
+  const [avatarUploading, setAvatarUploading] = useState(false)
+  const [displayName, setDisplayName] = useState(adminSession?.display_name || '')
+  const [displayNameSaving, setDisplayNameSaving] = useState(false)
+  const [oldPwd, setOldPwd] = useState('')
+  const [newPwd, setNewPwd] = useState('')
+  const [confirmPwd, setConfirmPwd] = useState('')
+  const [pwdSaving, setPwdSaving] = useState(false)
+  const [pwdMsg, setPwdMsg] = useState('')
+
+  const [adminList, setAdminList] = useState([])
+  const [adminListLoading, setAdminListLoading] = useState(false)
+  const [createModalOpen, setCreateModalOpen] = useState(false)
+  const [newAdmin, setNewAdmin] = useState({ username: '', password: '', display_name: '', role: 'admin', permissions: [] })
+  const [createSaving, setCreateSaving] = useState(false)
+  const [editModal, setEditModal] = useState(null) // {admin, role, permissions}
+  const [editSaving, setEditSaving] = useState(false)
+  const [resetModal, setResetModal] = useState(null) // {admin, newPwd}
+  const [resetSaving, setResetSaving] = useState(false)
+  const [searchKeyword, setSearchKeyword] = useState('')
+
+  const loadAdminList = async () => {
+    if (!isSuperAdmin) return
+    setAdminListLoading(true)
+    const { data, error: rpcErr } = await supabase.rpc('keyflow_admin_list', { p_super_admin_id: adminSession?.username })
+    setAdminListLoading(false)
+    if (rpcErr) { setError(rpcErr.message); return }
+    setAdminList(data || [])
+  }
+  useEffect(() => { if (adminTab === '管理员管理') loadAdminList() }, [adminTab])
+
+  // ---- 头像上传 ----
+  const handleAvatarFile = async (file) => {
+    if (!file) return
+    if (!file.type.startsWith('image/')) { setError('请选择图片文件'); return }
+    if (file.size > 10 * 1024 * 1024) { setError('图片大小不能超过 10MB'); return }
+    try {
+      const compressed = await compressImageFile(file, 256, 0.85)
+      setAvatarFile(compressed)
+      const reader = new FileReader()
+      reader.onload = (e) => setAvatarPreview(e.target.result)
+      reader.readAsDataURL(compressed)
+    } catch {
+      setError('图片处理失败，请重新选择')
+    }
+  }
+
+  const uploadAvatar = async () => {
+    if (!avatarFile) return
+    setAvatarUploading(true)
+    let publicUrl
+    try {
+      // ⚠️ 管理员头像不依赖 PHP media-upload（那边鉴权逻辑改不动），
+      //    直接把 compressImageFile 压缩好的 256px WebP 转 base64 存 avatar_url 列。
+      //    压缩后 WebP 约 10~30KB，base64 文本完全可以放在 text 列里。
+      publicUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onerror = () => reject(new Error('图片读失败'))
+        reader.onload = () => resolve(reader.result)
+        reader.readAsDataURL(avatarFile)
+      })
+    } catch (e) {
+      setAvatarUploading(false)
+      setError('媒体上传失败：' + (e.message || String(e)))
+      return
+    }
+    const { error: updateErr } = await supabase.rpc('keyflow_admin_update_avatar', { p_admin_id: adminSession?.username, p_avatar_url: publicUrl })
+    setAvatarUploading(false)
+    if (updateErr) { setError('保存头像失败：' + updateErr.message); return }
+    setAvatarFile(null)
+    toast('头像已更新')
+    onUpdateAdminSession({ avatar_url: publicUrl })
+  }
+
+  // ---- 显示名修改 ----
+  const saveDisplayName = async () => {
+    if (displayName.trim() === adminSession?.display_name) return
+    setDisplayNameSaving(true)
+    const { error: updateErr } = await supabase.rpc('keyflow_admin_update_display_name', { p_admin_id: adminSession?.username, p_display_name: displayName.trim() })
+    setDisplayNameSaving(false)
+    if (updateErr) { setError(updateErr.message); return }
+    toast('显示名已更新')
+    onUpdateAdminSession({ display_name: displayName.trim() })
+  }
+
+  // ---- 密码修改 ----
+  const changePassword = async () => {
+    setPwdMsg('')
+    if (!oldPwd) { setPwdMsg('请输入原密码'); return }
+    if (newPwd.length < 4) { setPwdMsg('新密码至少 4 位'); return }
+    if (newPwd !== confirmPwd) { setPwdMsg('两次输入的新密码不一致'); return }
+    setPwdSaving(true)
+    const { error: rpcErr } = await supabase.rpc('keyflow_admin_change_password', { p_admin_id: adminSession?.username, p_old_password: oldPwd, p_new_password: newPwd })
+    setPwdSaving(false)
+    if (rpcErr) { setPwdMsg(rpcErr.message); return }
+    setOldPwd(''); setNewPwd(''); setConfirmPwd('')
+    setPwdMsg('密码已更新，请使用新密码重新登录。')
+    setTimeout(() => { localStorage.removeItem(ADMIN_SESSION_KEY); window.location.href = window.location.pathname + '?admin' }, 1800)
+  }
+
+  // ---- 新建管理员 ----
+  const openCreateModal = () => {
+    setNewAdmin({ username: '', password: '', display_name: '', role: 'admin', permissions: [] })
+    setCreateModalOpen(true)
+  }
+  const toggleNewPerm = (p) => setNewAdmin(prev => {
+    const set = new Set(prev.permissions)
+    if (set.has(p)) set.delete(p); else set.add(p)
+    return { ...prev, permissions: [...set] }
+  })
+  const createAdmin = async () => {
+    if (newAdmin.username.trim().length < 2) { setError('用户名至少 2 位'); return }
+    if (newAdmin.password.length < 4) { setError('密码至少 4 位'); return }
+    if (!newAdmin.display_name.trim()) { setError('请填写显示名'); return }
+    setCreateSaving(true)
+    const { error: rpcErr } = await supabase.rpc('keyflow_admin_create', {
+      p_super_admin_id: adminSession?.username,
+      p_username: newAdmin.username.trim(),
+      p_password: newAdmin.password,
+      p_display_name: newAdmin.display_name.trim(),
+      p_role: newAdmin.role,
+      p_permissions: newAdmin.permissions,
+    })
+    setCreateSaving(false)
+    if (rpcErr) { setError(rpcErr.message); return }
+    setCreateModalOpen(false)
+    toast('管理员已创建')
+    loadAdminList()
+  }
+
+  // ---- 修改管理员权限/角色 ----
+  const openEditModal = (admin) => setEditModal({ admin, role: admin.role, permissions: new Set(admin.permissions || []) })
+  const toggleEditPerm = (p) => setEditModal(prev => { if (!prev) return prev; const s = new Set(prev.permissions); if (s.has(p)) s.delete(p); else s.add(p); return { ...prev, permissions: s } })
+  const saveEditRole = async () => {
+    if (!editModal) return
+    setEditSaving(true)
+    const { error: rpcErr } = await supabase.rpc('keyflow_admin_update_role', {
+      p_super_admin_id: adminSession?.username,
+      p_target_admin_id: editModal.admin.id,
+      p_role: editModal.role,
+      p_permissions: [...editModal.permissions],
+    })
+    setEditSaving(false)
+    if (rpcErr) { setError(rpcErr.message); return }
+    setEditModal(null)
+    toast('权限已更新')
+    loadAdminList()
+  }
+
+  // ---- 删除管理员 ----
+  const deleteAdmin = (admin) => {
+    setConfirmState({
+      message: `确定要删除管理员「${admin.display_name}」(${admin.username})吗？此操作不可撤销。`,
+      confirmLabel: '确认删除',
+      onConfirm: async () => {
+        setConfirmState(null)
+        const { error: rpcErr } = await supabase.rpc('keyflow_admin_delete', { p_super_admin_id: adminSession?.username, p_target_admin_id: admin.id })
+        if (rpcErr) { setError(rpcErr.message); return }
+        toast('管理员已删除')
+        loadAdminList()
+      },
+    })
+  }
+
+  // ---- 重置管理员密码 ----
+  const openResetModal = (admin) => setResetModal({ admin, newPwd: '' })
+  const saveResetPwd = async () => {
+    if (!resetModal) return
+    if (resetModal.newPwd.length < 4) { setError('新密码至少 4 位'); return }
+    setResetSaving(true)
+    const { error: rpcErr } = await supabase.rpc('keyflow_admin_reset_password', {
+      p_super_admin_id: adminSession?.username,
+      p_target_admin_id: resetModal.admin.id,
+      p_new_password: resetModal.newPwd,
+    })
+    setResetSaving(false)
+    if (rpcErr) { setError(rpcErr.message); return }
+    setResetModal(null)
+    toast(`已重置 ${resetModal.admin.display_name} 的密码`)
+  }
+
+  const visibleAdmins = useMemo(() => {
+    const k = searchKeyword.trim()
+    if (!k) return adminList
+    return adminList.filter(a => matchesSearch(`${a.username || ''} ${a.display_name || ''}`, k))
+  }, [adminList, searchKeyword])
+
+  return <div className="admin-management">
+    {isSuperAdmin && <div className="admin-tabs">
+      {adminSubTabs.map(([label, icon]) => <button key={label} className={`admin-tab-btn ${adminTab === label ? 'active' : ''}`} onClick={() => setAdminTab(label)}>
+        <Icon name={icon} size={16} /><span>{label}</span>
+      </button>)}
+    </div>}
+
+    {(!isSuperAdmin || adminTab === '个人设置') && <div className="admin-settings-grid">
+      <section className="panel admin-settings-card">
+        <div className="panel-head"><div><h3>个人资料</h3><p>设置你的头像和显示名称，展示在左下角区域。</p></div></div>
+        <div className="admin-avatar-section">
+          <div className="admin-avatar-preview">{avatarPreview ? <img src={avatarPreview} alt="" /> : <span>{(displayName || adminSession?.display_name || '管').charAt(0)}</span>}</div>
+          <div className="admin-avatar-actions">
+            <label className="outline-button"><Icon name="upload" size={16} /> 选择头像<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => handleAvatarFile(e.target.files[0])} hidden /></label>
+            {avatarFile && <button className="primary" onClick={uploadAvatar} disabled={avatarUploading}>{avatarUploading ? '上传中…' : '确认上传'}</button>}
+            <p className="hint">支持 JPG / PNG / WebP，原图不超过 10MB，将自动压缩到 256px。</p>
+          </div>
+        </div>
+        <div className="admin-field-row">
+          <Field label="用户名" value={adminSession?.username || ''} onChange={() => {}} disabled />
+          <Field label="显示名称" required value={displayName} onChange={setDisplayName} placeholder="显示在界面上的名称" />
+          <div style={{ display: 'flex', gap: 'var(--sp-2)' }}>
+            <button className="primary" onClick={saveDisplayName} disabled={displayNameSaving || displayName.trim() === adminSession?.display_name}>{displayNameSaving ? '保存中…' : '保存显示名'}</button>
+          </div>
+        </div>
+        <div className="admin-field-row">
+          <div className="field"><span>角色</span><span className={`pill ${isSuperAdmin ? 'success' : 'warning'}`} style={{ alignSelf: 'flex-start' }}>{isSuperAdmin ? '超级管理员' : '普通管理员'}</span></div>
+          <div className="field"><span>{isSuperAdmin ? '权限范围' : '当前权限'}</span><div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {isSuperAdmin ? <span className="pill success" style={{ fontSize: 11 }}>全部权限（含管理员系统管理）</span>
+              : (adminSession?.permissions || []).length ? (adminSession?.permissions || []).map(p => {
+              const meta = ADMIN_PERMISSIONS.find(x => x.value === p)
+              return <span key={p} className="pill muted" style={{ fontSize: 11 }}>{meta?.label || p}</span>
+            }) : <span className="pill muted" style={{ fontSize: 11 }}>未分配具体权限</span>}
+          </div></div>
+        </div>
+      </section>
+
+      <section className="panel admin-settings-card">
+        <div className="panel-head"><div><h3>修改密码</h3><p>定期修改密码可提升账号安全性。</p></div></div>
+        <div className="form-grid admin-pwd-grid">
+          <Field label="原密码" type="password" required value={oldPwd} onChange={setOldPwd} placeholder="输入当前登录密码" />
+          <Field label="新密码" type="password" required value={newPwd} onChange={setNewPwd} placeholder="至少 4 位字符" />
+          <Field label="确认新密码" type="password" required value={confirmPwd} onChange={setConfirmPwd} placeholder="再次输入新密码" />
+          <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 'var(--sp-3)' }}>
+            <button className="primary" onClick={changePassword} disabled={pwdSaving}>{pwdSaving ? '提交中…' : '更新密码'}</button>
+            {pwdMsg && <span className={`pwd-msg ${pwdMsg.includes('成功') || pwdMsg.includes('已更新') ? 'success-msg' : 'error-msg'}`}>{pwdMsg}</span>}
+          </div>
+        </div>
+      </section>
+    </div>}
+
+    {adminTab === '管理员管理' && isSuperAdmin && <>
+      <div className="admin-toolbar-row">
+        <div className="partner-search-wrap" style={{ background: '#fff', minWidth: 280 }}>
+          <Icon name="search" size={14} />
+          <input className="partner-search-input" placeholder="搜索管理员用户名或显示名…" value={searchKeyword} onChange={e => setSearchKeyword(e.target.value)} />
+          {searchKeyword && <button className="partner-search-clear" onClick={() => setSearchKeyword('')}><Icon name="close" size={14} /></button>}
+        </div>
+        <div style={{ display: 'flex', gap: 'var(--sp-2)' }}>
+          <button className="outline-button" onClick={loadAdminList} disabled={adminListLoading}>{adminListLoading ? '加载中…' : '刷新列表'}</button>
+          <button className="primary" onClick={openCreateModal}><Icon name="plus" size={16} /> 新建管理员</button>
+        </div>
+      </div>
+
+      <section className="panel">
+        <div className="panel-head"><div><h3>管理员列表</h3><p>共 {adminList.length} 位管理员。仅超级管理员可查看和编辑此列表。</p></div></div>
+        <div className="table-wrap"><table><thead><tr><th>管理员</th><th>用户名</th><th>角色</th><th>权限数</th><th>创建时间</th><th>操作</th></tr></thead><tbody>
+          {adminListLoading ? <tr><td colSpan="6" className="table-empty">正在加载管理员列表…</td></tr> : visibleAdmins.length ? visibleAdmins.map(a => <tr key={a.id}>
+            <td><div className="person"><span className="person-avatar">{a.avatar_url ? <img className="person-avatar-img" src={a.avatar_url} alt="" /> : a.display_name?.charAt(0) || a.username?.charAt(0) || '管'}</span><div><strong>{a.display_name}</strong><small>{a.id === adminSession?.id ? '（当前登录）' : '管理员账号'}</small></div></div></td>
+            <td>{a.username}</td>
+            <td><span className={`pill ${a.role === 'super_admin' ? 'success' : 'warning'}`}>{a.role === 'super_admin' ? '超级管理员' : '普通管理员'}</span></td>
+            <td>{(a.permissions || []).length > 0 ? `${a.permissions.length} 项` : <span className="pill muted" style={{ fontSize: 11 }}>继承角色默认</span>}</td>
+            <td>{new Date(a.created_at).toLocaleDateString('zh-CN')}</td>
+            <td><div style={{ display: 'flex', gap: 'var(--sp-1)' }}>
+              <button className="outline-button compact" onClick={() => openEditModal(a)}>权限设置</button>
+              <button className="outline-button compact" onClick={() => openResetModal(a)}>重置密码</button>
+              {a.id !== adminSession?.id && <button className="outline-button compact danger" onClick={() => deleteAdmin(a)}>删除</button>}
+            </div></td>
+          </tr>) : <tr><td colSpan="6" className="table-empty">没有匹配的管理员。</td></tr>}
+        </tbody></table></div>
+      </section>
+    </>}
+
+    {createModalOpen && <Modal title="新建管理员账号" onClose={() => setCreateModalOpen(false)} wide>
+      <div className="admin-create-form">
+        <div className="form-grid">
+          <Field label="用户名" required value={newAdmin.username} onChange={(v) => setNewAdmin(p => ({ ...p, username: v }))} placeholder="用于登录的账号，至少 2 位" />
+          <Field label="显示名称" required value={newAdmin.display_name} onChange={(v) => setNewAdmin(p => ({ ...p, display_name: v }))} placeholder="展示在界面上的名称" />
+          <Field label="初始密码" type="password" required value={newAdmin.password} onChange={(v) => setNewAdmin(p => ({ ...p, password: v }))} placeholder="至少 4 位，创建后可自行修改" />
+          <label className="field"><span>角色</span>
+            <div className="role-select-wrap">
+              <select value={newAdmin.role} onChange={(e) => setNewAdmin(p => ({ ...p, role: e.target.value, permissions: e.target.value === 'super_admin' ? ['all'] : p.permissions }))}>
+                <option value="admin">普通管理员</option>
+                <option value="super_admin">超级管理员</option>
+              </select>
+            </div>
+            {newAdmin.role === 'super_admin' && <div className="super-admin-tip"><span className="tip-icon">⚡</span>超级管理员拥有全部权限，并可管理其他管理员账号。</div>}
+          </label>
+        </div>
+        {newAdmin.role !== 'super_admin' && <div className="field field-wide permissions-section"><span className="permissions-label"><span className="perms-title">功能权限</span><span className="perms-sub">可多选，已选 {newAdmin.permissions.length} 项</span></span>
+          <div className="permissions-grid">
+            {ADMIN_PERMISSIONS.map(p => <label key={p.value} className={`permission-card ${newAdmin.permissions.includes(p.value) ? 'checked' : ''}`}>
+              <div className="perm-check">
+                <input type="checkbox" checked={newAdmin.permissions.includes(p.value)} onChange={() => toggleNewPerm(p.value)} />
+              </div>
+              <div className="perm-body">
+                <span className="perm-icon">{p.icon}</span>
+                <div className="perm-text">
+                  <span className="perm-label">{p.label}</span>
+                  <small className="perm-desc">{p.desc}</small>
+                </div>
+              </div>
+            </label>)}
+          </div>
+        </div>}
+        <div className="modal-actions">
+          <button className="outline-button" onClick={() => setCreateModalOpen(false)}>取消</button>
+          <button className="primary" onClick={createAdmin} disabled={createSaving}>{createSaving ? '创建中…' : '确认创建'}</button>
+        </div>
+      </div>
+    </Modal>}
+
+    {editModal && <Modal title={`编辑权限：${editModal.admin.display_name}`} onClose={() => setEditModal(null)} wide>
+      <div className="admin-create-form">
+        <div className="form-grid">
+          <label className="field"><span>角色</span>
+            <div className="role-select-wrap">
+              <select value={editModal.role} onChange={(e) => setEditModal(p => p ? { ...p, role: e.target.value, permissions: e.target.value === 'super_admin' ? new Set(['all']) : p.permissions } : p)}>
+                <option value="admin">普通管理员</option>
+                <option value="super_admin">超级管理员</option>
+              </select>
+            </div>
+            {editModal.admin.id === adminSession?.id && <div className="self-downgrade-tip"><span className="tip-icon">⚠️</span>注意：将自己降级为普通管理员后，将无法再管理管理员列表（必须保留至少一个超级管理员）。</div>}
+            {editModal.role === 'super_admin' && editModal.admin.id !== adminSession?.id && <div className="super-admin-tip"><span className="tip-icon">⚡</span>超级管理员拥有全部权限，并可管理其他管理员账号。</div>}
+          </label>
+        </div>
+        {editModal.role !== 'super_admin' && <div className="field field-wide permissions-section"><span className="permissions-label"><span className="perms-title">功能权限</span><span className="perms-sub">可多选，已选 {editModal.permissions.size} 项</span></span>
+          <div className="permissions-grid">
+            {ADMIN_PERMISSIONS.map(p => <label key={p.value} className={`permission-card ${editModal.permissions.has(p.value) ? 'checked' : ''}`}>
+              <div className="perm-check">
+                <input type="checkbox" checked={editModal.permissions.has(p.value)} onChange={() => toggleEditPerm(p.value)} />
+              </div>
+              <div className="perm-body">
+                <span className="perm-icon">{p.icon}</span>
+                <div className="perm-text">
+                  <span className="perm-label">{p.label}</span>
+                  <small className="perm-desc">{p.desc}</small>
+                </div>
+              </div>
+            </label>)}
+          </div>
+        </div>}
+        <div className="modal-actions">
+          <button className="outline-button" onClick={() => setEditModal(null)}>取消</button>
+          <button className="primary" onClick={saveEditRole} disabled={editSaving}>{editSaving ? '保存中…' : '保存更改'}</button>
+        </div>
+      </div>
+    </Modal>}
+
+    {resetModal && <Modal title={`重置密码：${resetModal.admin.display_name}`} onClose={() => setResetModal(null)}>
+      <div className="form-grid">
+        <Field label="新密码" type="password" required value={resetModal.newPwd} onChange={(v) => setResetModal(p => p ? { ...p, newPwd: v } : p)} placeholder="至少 4 位字符" />
+        <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', gap: 'var(--sp-2)' }}>
+          <button className="outline-button" onClick={() => setResetModal(null)}>取消</button>
+          <button className="primary" onClick={saveResetPwd} disabled={resetSaving}>{resetSaving ? '重置中…' : '确认重置'}</button>
+        </div>
+      </div>
+    </Modal>}
   </div>
 }
 

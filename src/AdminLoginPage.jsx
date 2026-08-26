@@ -21,6 +21,7 @@ export default function AdminLoginPage() {
     setLoading(false)
     if (rpcErr) { setError(rpcErr.message); return }
     localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(data))
+    try { sessionStorage.removeItem('KEYFLOW_ADMIN_FORCE_LOGIN') } catch {}
     window.location.href = window.location.pathname + '?admin'
   }
 

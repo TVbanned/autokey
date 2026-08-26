@@ -83,9 +83,12 @@ async function enrich(
   table: string,
   record: Record<string, unknown>,
 ) {
-  if (table === "keyflow_daily_submissions" && record.answerer_id) {
-    const { data } = await supabase.from("keyflow_answerers").select("zhihu_name").eq("id", record.answerer_id).maybeSingle();
-    return { answerer_name: data?.zhihu_name ?? "" };
+  if (table === "keyflow_daily_submissions") {
+    if (record.answerer_id) {
+      const { data } = await supabase.from("keyflow_answerers").select("zhihu_name").eq("id", record.answerer_id).maybeSingle();
+      return { answerer_name: data?.zhihu_name ?? "" };
+    }
+    return { answerer_name: "管理员" };
   }
   if (table === "keyflow_deliveries" && record.application_id) {
     const { data } = await supabase
@@ -127,11 +130,11 @@ async function resortDailyQuestionsSheet(
   token: string,
   cfg: { client_id: string; open_id: string },
 ): Promise<number> {
-  const contentType = sheetKey.endsWith(":answer") ? "answer" : "question";
+  // 回答已分流至 keyflow_daily_submissions（答主日常投稿），此表仅剩问题记录。
   const { data, error } = await supabase
     .from("keyflow_daily_questions")
     .select("id,title,zhihu_url,processed,created_at")
-    .eq("content_type", contentType);
+    .eq("content_type", "question");
 
   if (error) throw new Error(`读取日常问题记录失败: ${error.message}`);
 
@@ -232,7 +235,7 @@ async function resortSubmissionsSheet(
       submitted_at: s.submitted_at,
       cells: [
         fmt(s.submitted_at),
-        answererById[s.answerer_id]?.zhihu_name ?? "",
+        s.answerer_id ? (answererById[s.answerer_id]?.zhihu_name ?? "") : "管理员",
         s.article_title ?? "",
         s.article_url ?? "",
         s.reviewed ? "已审" : "未审",
@@ -294,10 +297,9 @@ serve(async (req) => {
       return json({ ok: true, skipped: true });
     }
 
-    // 日常问题&回答：按 content_type 路由到不同子表（question → 原表，answer → :answer 子表）
-    const sheetKey = table === "keyflow_daily_questions"
-      ? (record.content_type === "answer" ? "keyflow_daily_questions:answer" : table)
-      : table;
+    // 回答已分流至答主日常投稿（keyflow_daily_submissions），日常问题&回答表不再写入回答，
+    // 无需再按 content_type 路由子表，直接以表名作为 sheetKey。
+    const sheetKey = table;
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
