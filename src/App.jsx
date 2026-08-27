@@ -2515,9 +2515,9 @@ function AnswererDashboard() {
     setQSuccessOpen(true)
   }
 
-  const loadGameHotspots = async () => {
-    setHotspotsLoading(true)
+  const loadGameHotspots = async (attempt = 1) => {
     setHotspotsError('')
+    if (attempt === 1) setHotspotsLoading(true)
     try {
       const response = await fetch(`/autokey/hotspots.json?ts=${Date.now()}`, { cache: 'no-store' })
       if (!response.ok) throw new Error('热点聚合服务暂不可用，请稍后重试。')
@@ -2530,10 +2530,14 @@ function AnswererDashboard() {
       if (!data?.success) throw new Error(data?.error || '热点加载失败')
       setGameHotspots(data.items || [])
       setHotspotsUpdatedAt(data.updatedAt || '')
-    } catch (requestError) {
-      setHotspotsError(requestError.message || '热点加载失败，请稍后重试。')
-    } finally {
       setHotspotsLoading(false)
+    } catch (requestError) {
+      if (attempt < 3) {
+        setTimeout(() => loadGameHotspots(attempt + 1), 1500)
+        return
+      }
+      setHotspotsLoading(false)
+      setHotspotsError(requestError.message || '热点加载失败，请稍后重试。')
     }
   }
 
