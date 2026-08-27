@@ -51,11 +51,29 @@ const tagsFor = (title, summary) => {
 const signatureOf = title => title.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
 const stopTokens = /公布|发布|宣布|上线|发售|更新|预告|实机|测试|全新|正式|即将|公开|曝光|确认|泄露|的|了|在|与|和|及|将|已|等|推出|开启|游戏|玩家|官方|the|a|an|and|for|with|from|its|new|first|has|have|into|after|says|more|this|that|you|your|will|can|out|all|get|gets|here|what|when|where|how|about/i
 const tokensOf = title => [...new Set(title.replace(/《([^》]+)》/g, ' $1 ').replace(/[^\p{L}\p{N} ]/gu, ' ').toLowerCase().split(/\s+/).filter(t => t.length >= 3 && !stopTokens.test(t)))]
-const score = (item, reportCounts = new Map(), tokenSources = new Map()) => {
+async function fetchHotWords() {
+  const words = new Set()
+  const grab = async (url, parse) => {
+    try {
+      const response = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126 Safari/537.36' }, signal: AbortSignal.timeout(8000) })
+      if (!response.ok) return
+      const data = await response.json()
+      for (const word of parse(data)) if (word && word.length >= 2) words.add(word)
+    } catch { /* 热榜抓取失败不影响榜单 */ }
+  }
+  await Promise.all([
+    grab('https://www.toutiao.com/hot-event/hot-board/?origin=toutiao_pc', d => (d.data || []).map(item => item.Title)),
+    grab('https://api.bilibili.com/x/web-interface/search/square?limit=50', d => (d.data?.trending?.list || []).map(item => item.keyword)),
+  ])
+  return [...words]
+}
+const score = (item, reportCounts = new Map(), tokenSources = new Map(), hotWords = []) => {
   const reportCount = reportCounts.get(signatureOf(item.title)) || 1
   let collision = 0
   for (const token of tokensOf(item.title)) collision += (tokenSources.get(token)?.size || 1) - 1
-  return Math.round((eventTerms.test(item.title) ? 30 : 0) + (trustedPublishers.test(item.source) ? 20 : 0) + (isChineseSource(item.source) ? 15 : 0) + Math.min(24, (reportCount - 1) * 12) + Math.min(30, collision * 3) + Math.max(0, 50 - hoursAgo(item.publishedAt) / 2))
+  const hotText = `${item.title} ${item.summary}`
+  const hotHit = hotWords.filter(word => hotText.includes(word)).length
+  return Math.round((eventTerms.test(item.title) ? 30 : 0) + (trustedPublishers.test(item.source) ? 20 : 0) + (isChineseSource(item.source) ? 25 : 0) + Math.min(24, (reportCount - 1) * 12) + Math.min(30, collision * 3) + Math.min(40, hotHit * 15) + Math.max(0, 50 - hoursAgo(item.publishedAt) / 2))
 }
 const valid = (title, summary) => eventTerms.test(title) && !excludedTerms.test(`${title} ${summary}`)
 
@@ -87,9 +105,9 @@ async function searchNews([source, query]) {
   }).filter(item => item.url.startsWith('http') && item.title.length >= 8 && hoursAgo(item.publishedAt) <= 72 && valid(item.title, item.summary) && (source !== 'Google 新闻' || trustedPublishers.test(item.publisher)))
 }
 
-function deduplicate(items, reportCounts, tokenSources) {
+function deduplicate(items, reportCounts, tokenSources, hotWords) {
   const saved = []
-  for (const item of [...items].sort((a, b) => score(b, reportCounts, tokenSources) - score(a, reportCounts, tokenSources))) {
+  for (const item of [...items].sort((a, b) => score(b, reportCounts, tokenSources, hotWords) - score(a, reportCounts, tokenSources, hotWords))) {
     const signature = signatureOf(item.title)
     const duplicate = saved.findIndex(other => {
       const target = signatureOf(other.title)
@@ -171,7 +189,8 @@ for (const item of candidates) {
     tokenSources.set(token, set)
   }
 }
-const picked = selectTop20(deduplicate(candidates, reportCounts, tokenSources)).map((item, index) => ({ ...item, rank: index + 1, heat: score(item, reportCounts, tokenSources) }))
+const hotWords = await fetchHotWords()
+const picked = selectTop20(deduplicate(candidates, reportCounts, tokenSources, hotWords)).map((item, index) => ({ ...item, rank: index + 1, heat: score(item, reportCounts, tokenSources, hotWords) }))
 const items = await translate(await enrichImages(picked))
 if (!items.length) throw new Error('No high-quality game news')
 const payload = { success: true, updatedAt: new Date().toISOString(), items, sources: [...new Set(items.map(item => item.source))], unavailableSourceCount }
