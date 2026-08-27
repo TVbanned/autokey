@@ -1,4 +1,4 @@
-﻿/* ========================================
+/* ========================================
    KeyFlow Dashboard — Complete Redesign
    ======================================== */
 
@@ -2520,10 +2520,7 @@ span.stage-green { background: #dcfce7; color: #15803d; }
   .game-hotspot-summary {
     font-size: 12.5px;
     line-height: 1.55;
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
+    -webkit-line-clamp: 2;
   }
   /* Footer: row1 = tags(left) + heat(right); row2 = sources(full) */
   .game-hotspot-footer {
