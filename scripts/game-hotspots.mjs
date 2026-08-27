@@ -1,7 +1,7 @@
 import { readFile, rename, writeFile } from 'node:fs/promises'
 
 const config = JSON.parse(await readFile(process.env.HOTSPOTS_CONFIG || '/etc/autokey-hotspots.json', 'utf8'))
-const output = process.env.HOTSPOTS_OUTPUT || '/www/wwwroot/39.96.61.144/AutokeyProject/app/hotspots.json'
+const output = process.env.HOTSPOTS_OUTPUT || '/www/wwwroot/39.96.61.144/AutokeyProject/hotspots/hotspots.json'
 const rssFeeds = [
   ['机核', 'https://www.gcores.com/rss'],
   ['PC Gamer', 'https://www.pcgamer.com/rss/'],
@@ -94,14 +94,19 @@ function selectTop20(items) {
 async function translate(items) {
   const targets = items.filter(item => !/[\u4e00-\u9fff]/.test(item.title))
   if (!targets.length) return items
-  const response = await fetch('https://api.deepseek.com/v1/chat/completions', { method: 'POST', headers: { authorization: `Bearer ${config.deepseekApiKey}`, 'content-type': 'application/json' }, body: JSON.stringify({ model: 'deepseek-v4-flash', temperature: 0.1, max_tokens: 6000, messages: [{ role: 'system', content: '你是专业游戏新闻编辑。将英文游戏新闻标题和摘要准确翻译成简体中文，保留游戏名、公司名、平台名、DLC、版本号等专有名词。只返回 JSON 对象，包含 translations 数组，每项有 index、title、summary 字段。' }, { role: 'user', content: JSON.stringify(targets.map((item, index) => ({ index, title: item.title, summary: item.summary.slice(0, 250) }))) } ] }), signal: AbortSignal.timeout(60000) })
-  if (!response.ok) throw new Error(`DeepSeek: ${response.status}`)
-  const payload = await response.json()
-  const content = String(payload.choices?.[0]?.message?.content || '{}').replace(/^```(?:json)?\s*|\s*```$/g, '')
-  const translations = JSON.parse(content).translations || []
-  for (const translation of translations) {
-    const item = targets[translation.index]
-    if (item && /[\u4e00-\u9fff]/.test(translation.title || '')) { item.title = decode(translation.title); item.summary = decode(translation.summary || item.summary); item.tags = tagsFor(item.source, item.title, item.summary) }
+  try {
+    const response = await fetch('https://api.deepseek.com/v1/chat/completions', { method: 'POST', headers: { authorization: `Bearer ${config.deepseekApiKey}`, 'content-type': 'application/json' }, body: JSON.stringify({ model: 'deepseek-v4-flash', temperature: 0.1, max_tokens: 6000, messages: [{ role: 'system', content: '你是专业游戏新闻编辑。将英文游戏新闻标题和摘要准确翻译成简体中文，保留游戏名、公司名、平台名、DLC、版本号等专有名词。只返回 JSON 对象，包含 translations 数组，每项有 index、title、summary 字段。' }, { role: 'user', content: JSON.stringify(targets.map((item, index) => ({ index, title: item.title, summary: item.summary.slice(0, 250) }))) } ] }), signal: AbortSignal.timeout(60000) })
+    if (!response.ok) throw new Error(`DeepSeek: ${response.status}`)
+    const payload = await response.json()
+    const content = String(payload.choices?.[0]?.message?.content || '{}').replace(/^```(?:json)?\s*|\s*```$/g, '')
+    const translations = JSON.parse(content).translations || []
+    for (const translation of translations) {
+      const item = targets[translation.index]
+      if (item && /[\u4e00-\u9fff]/.test(translation.title || '')) { item.title = decode(translation.title); item.summary = decode(translation.summary || item.summary); item.tags = tagsFor(item.source, item.title, item.summary) }
+    }
+  } catch (error) {
+    // 翻译失败时保留英文原文，保证榜单仍能正常产出，等待下次定时任务重试
+    console.error(`translate failed: ${error.message}`)
   }
   return items
 }
