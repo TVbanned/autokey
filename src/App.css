@@ -2333,6 +2333,11 @@ span.stage-green { background: #dcfce7; color: #15803d; }
   object-fit: cover;
   display: block;
 }
+.game-hotspot-thumb a {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
 .game-hotspot-thumb.no-image { display: none; }
 .game-hotspot-thumb-placeholder {
   font-size: 24px;

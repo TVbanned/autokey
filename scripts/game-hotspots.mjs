@@ -21,7 +21,8 @@ const eventTerms = /宣布|官宣|公布|发布|上线|发售|定档|预告|实�
 const excludedTerms = /直播带货|明星|演员|电视剧|综艺|电影票房|博彩|赌场|攻略|配装|社区 ::|Steam 社区 ::|抽奖|福利|送游戏|送激活码|免费领取|抢码|review|hands-on|preview|opinion|interview|feature|guide|what are we playing/i
 const trustedPublishers = /游民星空|3DM|机核|GCORES|游研社|触乐|游戏葡萄|IGN中国|IGN|GameSpot|Polygon|Eurogamer|Kotaku|VGC|Game Informer|PlayStation Blog|Xbox Wire|Nintendo|Epic Games|腾讯游戏|网易游戏|TapTap|篝火营地|新浪游戏|GamesIndustry.biz|PC Gamer|Rock Paper Shotgun/i
 
-const decode = (text = '') => text.replace(/<!\[CDATA\[|\]\]>/g, '').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code))).replace(/\s+/g, ' ').trim()
+const decode = (text = '') => text.replace(/<!\[CDATA\[|\]\]>/g, '').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&#39;/g, "'").replace(/&amp;/gi, '&').replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code))).replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
+const cleanSummary = text => decode(text).replace(/在\[[^\]]*\]搜索|相关链接|分享到|更多内容|热门推荐|关注我们|阅读原文|阅读全文|查看原文|查看全文/g, ' ').replace(/\s+/g, ' ').trim()
 const field = (entry, name) => decode(entry.match(new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${name}>`, 'i'))?.[1] || '')
 const hoursAgo = (date = '') => {
   const relative = date.match(/(\d+)\s*(minute|min|hour|day|分钟|小时|天)/i)
@@ -30,22 +31,31 @@ const hoursAgo = (date = '') => {
   return Number.isFinite(value) ? Math.max(0, (Date.now() - value) / 3600000) : 999
 }
 const isChineseSource = source => /游民星空|3DM|机核|GCORES|游研社|触乐|IGN中国|腾讯游戏|网易游戏|TapTap|篝火营地/.test(source)
-const tagsFor = (source, title, summary) => {
+const tagsFor = (title, summary) => {
   const text = `${title} ${summary}`
-  const tags = [isChineseSource(source) ? '国内' : '海外']
-  if (/收购|裁员|关闭|停售|acquisition|layoffs?|shuts? down|closure/i.test(text)) tags.push('行业动态')
-  else if (/发售|上线|launches?|releases?|early access|date/i.test(text)) tags.push('发售节点')
-  else if (/DLC|扩展|更新|补丁|update|patch|expansion/i.test(text)) tags.push('版本更新')
-  else if (/预告|实机|公布|宣布|reveals?|announces?|trailer|gameplay/i.test(text)) tags.push('新品公布')
-  else if (/测试|试玩|beta|playtest/i.test(text)) tags.push('测试体验')
-  if (/PlayStation|PS[45+]?|Xbox|Switch|任天堂|Steam|主机|platform/i.test(text)) tags.push('平台动态')
-  if (/销量|获奖|突破|sales|million|award/i.test(text)) tags.push('市场表现')
-  return tags.slice(0, 3)
+  const tags = []
+  for (const game of title.match(/《([^》]+)》/g) || []) tags.push(`#${game.replace(/[《》]/g, '')}`)
+  if (/预告|宣传片|实机演示|trailer|gameplay/i.test(text)) tags.push('#宣传片')
+  else if (/预购|预售|pre-?order/i.test(text)) tags.push('#预购')
+  else if (/发售|上线|上市|定档|launch|release|early access/i.test(text)) tags.push('#发售')
+  else if (/DLC|扩展|资料片|更新|补丁|重制|remake|remaster|update|patch|expansion/i.test(text)) tags.push('#版本更新')
+  else if (/收购|裁员|关闭|停售|离职|acquisition|layoffs?|closure/i.test(text)) tags.push('#行业动态')
+  else if (/测试|试玩|封测|beta|playtest/i.test(text)) tags.push('#测试体验')
+  else if (/公布|宣布|曝光|泄露|reveals?|announces?|leak/i.test(text)) tags.push('#新品公布')
+  if (/PlayStation|PS5|PS4/i.test(text)) tags.push('#PlayStation')
+  else if (/Xbox/i.test(text)) tags.push('#Xbox')
+  else if (/Switch|任天堂|Nintendo/i.test(text)) tags.push('#任天堂')
+  else if (/Steam|\bPC\b/i.test(text)) tags.push('#PC')
+  return [...new Set(tags)].slice(0, 4)
 }
 const signatureOf = title => title.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
-const score = (item, reportCounts = new Map()) => {
+const stopTokens = /公布|发布|宣布|上线|发售|更新|预告|实机|测试|全新|正式|即将|公开|曝光|确认|泄露|的|了|在|与|和|及|将|已|等|推出|开启|游戏|玩家|官方|the|a|an|and|for|with|from|its|new|first|has|have|into|after|says|more|this|that|you|your|will|can|out|all|get|gets|here|what|when|where|how|about/i
+const tokensOf = title => [...new Set(title.replace(/《([^》]+)》/g, ' $1 ').replace(/[^\p{L}\p{N} ]/gu, ' ').toLowerCase().split(/\s+/).filter(t => t.length >= 3 && !stopTokens.test(t)))]
+const score = (item, reportCounts = new Map(), tokenSources = new Map()) => {
   const reportCount = reportCounts.get(signatureOf(item.title)) || 1
-  return Math.round((eventTerms.test(item.title) ? 30 : 0) + (trustedPublishers.test(item.source) ? 20 : 0) + (isChineseSource(item.source) ? 15 : 0) + Math.min(24, (reportCount - 1) * 12) + Math.max(0, 50 - hoursAgo(item.publishedAt) / 2))
+  let collision = 0
+  for (const token of tokensOf(item.title)) collision += (tokenSources.get(token)?.size || 1) - 1
+  return Math.round((eventTerms.test(item.title) ? 30 : 0) + (trustedPublishers.test(item.source) ? 20 : 0) + (isChineseSource(item.source) ? 15 : 0) + Math.min(24, (reportCount - 1) * 12) + Math.min(30, collision * 3) + Math.max(0, 50 - hoursAgo(item.publishedAt) / 2))
 }
 const valid = (title, summary) => eventTerms.test(title) && !excludedTerms.test(`${title} ${summary}`)
 
@@ -56,12 +66,12 @@ async function fetchRss([source, url]) {
   return (xml.match(/<(?:item|entry)(?:\s[^>]*)?>[\s\S]*?<\/(?:item|entry)>/gi) || []).slice(0, 25).map(entry => {
     const title = field(entry, 'title')
     const itemUrl = entry.match(/<link[^>]*href=["']([^"']+)["']/i)?.[1] || field(entry, 'link')
-    const summary = field(entry, 'description') || field(entry, 'summary') || field(entry, 'content')
+    const summary = cleanSummary(field(entry, 'description') || field(entry, 'summary') || field(entry, 'content'))
     const publishedAt = field(entry, 'pubDate') || field(entry, 'published') || field(entry, 'updated')
     const descriptionRaw = entry.match(/<description[^>]*>([\s\S]*?)<\/description>/i)?.[1] || ''
     const imageRaw = entry.match(/<enclosure[^>]*url=["']([^"']+)["']/i)?.[1] || entry.match(/<media:content[^>]*url=["']([^"']+)["']/i)?.[1] || entry.match(/<media:thumbnail[^>]*url=["']([^"']+)["']/i)?.[1] || (descriptionRaw.match(/<img[^>]*src=["']([^"']+)["']/i)?.[1] || '')
     const image = imageRaw ? (() => { try { return new URL(imageRaw, url).href } catch { return imageRaw.startsWith('http') ? imageRaw : '' } })() : ''
-    return { source, publisher: source, title, url: itemUrl.replace(/&amp;/g, '&'), summary, publishedAt, image, tags: tagsFor(source, title, summary) }
+    return { source, publisher: source, title, url: itemUrl.replace(/&amp;/g, '&'), summary, publishedAt, image, tags: tagsFor(title, summary) }
   }).filter(item => item.url.startsWith('http') && item.title.length >= 8 && hoursAgo(item.publishedAt) <= 168 && valid(item.title, item.summary))
 }
 
@@ -72,14 +82,14 @@ async function searchNews([source, query]) {
   return (data.news || []).map(news => {
     const title = decode(news.title)
     const itemSource = source === 'Google 新闻' ? (news.source || source) : source
-    const summary = decode(news.snippet || '')
-    return { source: itemSource, publisher: news.source || itemSource, title, url: news.link || '', summary, publishedAt: news.date || '', image: news.imageUrl || '', tags: tagsFor(itemSource, title, summary) }
+    const summary = cleanSummary(news.snippet || '')
+    return { source: itemSource, publisher: news.source || itemSource, title, url: news.link || '', summary, publishedAt: news.date || '', image: news.imageUrl || '', tags: tagsFor(title, summary) }
   }).filter(item => item.url.startsWith('http') && item.title.length >= 8 && hoursAgo(item.publishedAt) <= 72 && valid(item.title, item.summary) && (source !== 'Google 新闻' || trustedPublishers.test(item.publisher)))
 }
 
-function deduplicate(items, reportCounts) {
+function deduplicate(items, reportCounts, tokenSources) {
   const saved = []
-  for (const item of [...items].sort((a, b) => score(b, reportCounts) - score(a, reportCounts))) {
+  for (const item of [...items].sort((a, b) => score(b, reportCounts, tokenSources) - score(a, reportCounts, tokenSources))) {
     const signature = signatureOf(item.title)
     const duplicate = saved.findIndex(other => {
       const target = signatureOf(other.title)
@@ -106,6 +116,19 @@ function selectTop20(items) {
   }
   return result
 }
+async function enrichImages(items) {
+  const missing = items.filter(item => !item.image)
+  await Promise.all(missing.slice(0, 10).map(async item => {
+    try {
+      const response = await fetch(item.url, { headers: { 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126 Safari/537.36' }, signal: AbortSignal.timeout(8000), redirect: 'follow' })
+      if (!response.ok) return
+      const html = await response.text()
+      const og = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i)?.[1] || html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:image["']/i)?.[1] || ''
+      if (og.startsWith('http')) item.image = og
+    } catch { /* 单条补图失败不影响榜单 */ }
+  }))
+  return items
+}
 async function translate(items) {
   const targets = items.filter(item => /[A-Za-z]{3,}/.test(item.title))
   if (!targets.length) return items
@@ -122,7 +145,7 @@ async function translate(items) {
       const translations = Array.isArray(parsed) ? parsed : (parsed.translations || [])
       for (const translation of translations) {
         const item = chunk[translation.index]
-        if (item && /[\u4e00-\u9fff]/.test(translation.title || '')) { item.title = decode(translation.title); item.summary = decode(translation.summary || item.summary); item.tags = tagsFor(item.source, item.title, item.summary) }
+        if (item && /[\u4e00-\u9fff]/.test(translation.title || '')) { item.title = decode(translation.title); item.summary = cleanSummary(translation.summary || item.summary); item.tags = tagsFor(item.title, item.summary) }
       }
     } catch (error) {
       // 翻译失败时保留原文，保证榜单仍能正常产出，等待下次定时任务重试
@@ -139,8 +162,17 @@ const candidates = settled.flatMap(result => result.status === 'fulfilled' ? res
 // 统计同一事件被多少不同来源报道，作为真实热度近似值
 const reportCounts = new Map()
 for (const item of candidates) reportCounts.set(signatureOf(item.title), (reportCounts.get(signatureOf(item.title)) || 0) + 1)
-const picked = selectTop20(deduplicate(candidates, reportCounts)).map((item, index) => ({ ...item, rank: index + 1, heat: score(item, reportCounts) }))
-const items = await translate(picked)
+// 关键词碰撞：统计每个显著关键词被多少不同来源提及
+const tokenSources = new Map()
+for (const item of candidates) {
+  for (const token of tokensOf(item.title)) {
+    const set = tokenSources.get(token) || new Set()
+    set.add(item.publisher || item.source)
+    tokenSources.set(token, set)
+  }
+}
+const picked = selectTop20(deduplicate(candidates, reportCounts, tokenSources)).map((item, index) => ({ ...item, rank: index + 1, heat: score(item, reportCounts, tokenSources) }))
+const items = await translate(await enrichImages(picked))
 if (!items.length) throw new Error('No high-quality game news')
 const payload = { success: true, updatedAt: new Date().toISOString(), items, sources: [...new Set(items.map(item => item.source))], unavailableSourceCount }
 await writeFile(`${output}.tmp`, JSON.stringify(payload), 'utf8')
