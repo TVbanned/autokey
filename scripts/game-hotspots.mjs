@@ -4,6 +4,7 @@ const config = JSON.parse(await readFile(process.env.HOTSPOTS_CONFIG || '/etc/au
 const output = process.env.HOTSPOTS_OUTPUT || '/www/wwwroot/39.96.61.144/AutokeyProject/hotspots/hotspots.json'
 const rssFeeds = [
   ['机核', 'https://www.gcores.com/rss'],
+  ['IGN中国', 'https://cn.ign.com/rss'],
   ['PC Gamer', 'https://www.pcgamer.com/rss/'],
   ['GamesIndustry.biz', 'https://www.gamesindustry.biz/feed'],
   ['Rock Paper Shotgun', 'https://www.rockpapershotgun.com/feed'],
@@ -12,13 +13,13 @@ const rssFeeds = [
   ['Game Informer', 'https://www.gameinformer.com/rss.xml'],
 ]
 const searches = [
-  ['游民星空', 'site:gamersky.com/news 游戏 公布 OR 发售 OR 更新 OR 预告'],
-  ['3DM', 'site:3dmgame.com/news 游戏 公布 OR 发售 OR 更新 OR 预告'],
-  ['Google 新闻', '游戏 新闻 发布 公布 发售 更新'],
+  ['游民星空', 'site:gamersky.com 游戏'],
+  ['3DM', 'site:3dmgame.com 游戏'],
+  ['Google 新闻', '游戏 公布 发售 更新 预告'],
 ]
 const eventTerms = /宣布|官宣|公布|发布|上线|发售|定档|预告|实机|更新|补丁|扩展|DLC|停售|收购|裁员|关闭|重启|测试|试玩|登陆|加入|确认|曝光|泄露|改版|联动|获奖|销量|突破|announces?|reveals?|launches?|releases?|delayed|delay|acquires?|acquisition|layoffs?|shuts? down|closure|update|patch|expansion|trailer|date|confirmed|sales|million|beta|early access/i
 const excludedTerms = /直播带货|明星|演员|电视剧|综艺|电影票房|博彩|赌场|攻略|配装|社区 ::|Steam 社区 ::|review|hands-on|preview|opinion|interview|feature|guide|what are we playing/i
-const trustedPublishers = /游民星空|3DM|机核|GCORES|游研社|触乐|IGN|GameSpot|Polygon|Eurogamer|Kotaku|VGC|Game Informer|PlayStation Blog|Xbox Wire|Nintendo|Epic Games|腾讯游戏|网易游戏|TapTap|篝火营地|GamesIndustry.biz|PC Gamer|Rock Paper Shotgun/i
+const trustedPublishers = /游民星空|3DM|机核|GCORES|游研社|触乐|游戏葡萄|IGN中国|IGN|GameSpot|Polygon|Eurogamer|Kotaku|VGC|Game Informer|PlayStation Blog|Xbox Wire|Nintendo|Epic Games|腾讯游戏|网易游戏|TapTap|篝火营地|新浪游戏|GamesIndustry.biz|PC Gamer|Rock Paper Shotgun/i
 
 const decode = (text = '') => text.replace(/<!\[CDATA\[|\]\]>/g, '').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code))).replace(/\s+/g, ' ').trim()
 const field = (entry, name) => decode(entry.match(new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${name}>`, 'i'))?.[1] || '')
@@ -28,7 +29,7 @@ const hoursAgo = (date = '') => {
   const value = Date.parse(date)
   return Number.isFinite(value) ? Math.max(0, (Date.now() - value) / 3600000) : 999
 }
-const isChineseSource = source => /游民星空|3DM|机核|GCORES|游研社|触乐|腾讯游戏|网易游戏|TapTap|篝火营地/.test(source)
+const isChineseSource = source => /游民星空|3DM|机核|GCORES|游研社|触乐|IGN中国|腾讯游戏|网易游戏|TapTap|篝火营地/.test(source)
 const tagsFor = (source, title, summary) => {
   const text = `${title} ${summary}`
   const tags = [isChineseSource(source) ? '国内' : '海外']
@@ -41,7 +42,7 @@ const tagsFor = (source, title, summary) => {
   if (/销量|获奖|突破|sales|million|award/i.test(text)) tags.push('市场表现')
   return tags.slice(0, 3)
 }
-const score = item => Math.round((eventTerms.test(item.title) ? 30 : 0) + (trustedPublishers.test(item.source) ? 20 : 0) + Math.max(0, 50 - hoursAgo(item.publishedAt) / 2))
+const score = item => Math.round((eventTerms.test(item.title) ? 30 : 0) + (trustedPublishers.test(item.source) ? 20 : 0) + (isChineseSource(item.source) ? 15 : 0) + Math.max(0, 50 - hoursAgo(item.publishedAt) / 2))
 const valid = (title, summary) => eventTerms.test(title) && !excludedTerms.test(`${title} ${summary}`)
 
 async function fetchRss([source, url]) {
@@ -50,22 +51,25 @@ async function fetchRss([source, url]) {
   const xml = await response.text()
   return (xml.match(/<(?:item|entry)(?:\s[^>]*)?>[\s\S]*?<\/(?:item|entry)>/gi) || []).slice(0, 25).map(entry => {
     const title = field(entry, 'title')
-    const url = entry.match(/<link[^>]*href=["']([^"']+)["']/i)?.[1] || field(entry, 'link')
+    const itemUrl = entry.match(/<link[^>]*href=["']([^"']+)["']/i)?.[1] || field(entry, 'link')
     const summary = field(entry, 'description') || field(entry, 'summary') || field(entry, 'content')
     const publishedAt = field(entry, 'pubDate') || field(entry, 'published') || field(entry, 'updated')
-    return { source, publisher: source, title, url: url.replace(/&amp;/g, '&'), summary, publishedAt, tags: tagsFor(source, title, summary) }
+    const descriptionRaw = entry.match(/<description[^>]*>([\s\S]*?)<\/description>/i)?.[1] || ''
+    const imageRaw = entry.match(/<enclosure[^>]*url=["']([^"']+)["']/i)?.[1] || entry.match(/<media:content[^>]*url=["']([^"']+)["']/i)?.[1] || entry.match(/<media:thumbnail[^>]*url=["']([^"']+)["']/i)?.[1] || (descriptionRaw.match(/<img[^>]*src=["']([^"']+)["']/i)?.[1] || '')
+    const image = imageRaw ? (() => { try { return new URL(imageRaw, url).href } catch { return imageRaw.startsWith('http') ? imageRaw : '' } })() : ''
+    return { source, publisher: source, title, url: itemUrl.replace(/&amp;/g, '&'), summary, publishedAt, image, tags: tagsFor(source, title, summary) }
   }).filter(item => item.url.startsWith('http') && item.title.length >= 8 && hoursAgo(item.publishedAt) <= 168 && valid(item.title, item.summary))
 }
 
 async function searchNews([source, query]) {
-  const response = await fetch('https://google.serper.dev/news', { method: 'POST', headers: { 'x-api-key': config.serperApiKey, 'content-type': 'application/json' }, body: JSON.stringify({ q: query, gl: 'cn', hl: 'zh-cn', tbs: 'qdr:d', num: 20 }), signal: AbortSignal.timeout(15000) })
+  const response = await fetch('https://google.serper.dev/news', { method: 'POST', headers: { 'x-api-key': config.serperApiKey, 'content-type': 'application/json' }, body: JSON.stringify({ q: query, gl: 'cn', hl: 'zh-cn', tbs: 'qdr:d', num: 10 }), signal: AbortSignal.timeout(15000) })
   if (!response.ok) throw new Error(`${source}: ${response.status}`)
   const data = await response.json()
   return (data.news || []).map(news => {
     const title = decode(news.title)
     const itemSource = source === 'Google 新闻' ? (news.source || source) : source
     const summary = decode(news.snippet || '')
-    return { source: itemSource, publisher: news.source || itemSource, title, url: news.link || '', summary, publishedAt: news.date || '', tags: tagsFor(itemSource, title, summary) }
+    return { source: itemSource, publisher: news.source || itemSource, title, url: news.link || '', summary, publishedAt: news.date || '', image: news.imageUrl || '', tags: tagsFor(itemSource, title, summary) }
   }).filter(item => item.url.startsWith('http') && item.title.length >= 8 && hoursAgo(item.publishedAt) <= 72 && valid(item.title, item.summary) && (source !== 'Google 新闻' || trustedPublishers.test(item.publisher)))
 }
 
@@ -95,7 +99,7 @@ async function translate(items) {
   const targets = items.filter(item => !/[\u4e00-\u9fff]/.test(item.title))
   if (!targets.length) return items
   try {
-    const response = await fetch('https://api.deepseek.com/v1/chat/completions', { method: 'POST', headers: { authorization: `Bearer ${config.deepseekApiKey}`, 'content-type': 'application/json' }, body: JSON.stringify({ model: 'deepseek-v4-flash', temperature: 0.1, max_tokens: 6000, messages: [{ role: 'system', content: '你是专业游戏新闻编辑。将英文游戏新闻标题和摘要准确翻译成简体中文，保留游戏名、公司名、平台名、DLC、版本号等专有名词。只返回 JSON 对象，包含 translations 数组，每项有 index、title、summary 字段。' }, { role: 'user', content: JSON.stringify(targets.map((item, index) => ({ index, title: item.title, summary: item.summary.slice(0, 250) }))) } ] }), signal: AbortSignal.timeout(60000) })
+    const response = await fetch('https://api.deepseek.com/v1/chat/completions', { method: 'POST', headers: { authorization: `Bearer ${config.deepseekApiKey}`, 'content-type': 'application/json' }, body: JSON.stringify({ model: 'deepseek-v4-flash', temperature: 0.1, max_tokens: 6000, messages: [{ role: 'system', content: '你是专业游戏新闻编辑。将英文游戏新闻标题和摘要准确翻译成简体中文。游戏名翻译为通行简体中文名（例如 State of Decay 3 → 《腐烂国度3》、The Witcher 3 → 《巫师3》），公司名与平台名按通行译法处理，DLC、版本号保留。只返回 JSON 对象，包含 translations 数组，每项有 index、title、summary 字段。' }, { role: 'user', content: JSON.stringify(targets.map((item, index) => ({ index, title: item.title, summary: item.summary.slice(0, 250) }))) } ] }), signal: AbortSignal.timeout(60000) })
     if (!response.ok) throw new Error(`DeepSeek: ${response.status}`)
     const payload = await response.json()
     const content = String(payload.choices?.[0]?.message?.content || '{}').replace(/^```(?:json)?\s*|\s*```$/g, '')

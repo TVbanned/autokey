@@ -2170,6 +2170,8 @@ span.stage-green { background: #dcfce7; color: #15803d; }
   .dashboard-activity-cards { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .game-hotspots-list { padding: 0; }
   .game-hotspot-item { gap: 10px; padding: 12px; }
+  .game-hotspot-body { flex-direction: column; }
+  .game-hotspot-thumb { width: 100%; height: 130px; }
   .hotspot-rank-badge { width: 30px; height: 30px; font-size: 14px; }
   .game-hotspot-header { flex-direction: column; align-items: flex-start; gap: 8px; }
   .game-hotspot-heat { width: 100%; }
@@ -2308,9 +2310,42 @@ span.stage-green { background: #dcfce7; color: #15803d; }
 
 .game-hotspot-body {
   display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+.game-hotspot-thumb {
+  flex-shrink: 0;
+  width: 128px;
+  height: 82px;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: linear-gradient(135deg, rgba(107, 66, 232, .28), rgba(6, 182, 212, .28));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.game-hotspot-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.game-hotspot-thumb.no-image { display: none; }
+.game-hotspot-thumb-placeholder {
+  font-size: 24px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, .85);
+}
+
+.game-hotspot-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
   flex-direction: column;
   gap: var(--sp-2);
-  min-width: 0;
 }
 
 .game-hotspot-header {
