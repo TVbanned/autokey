@@ -2943,7 +2943,7 @@ function ClaimPage({ activityId, authCode }) {
 }
 
 function RegisterPage({ aid, redirect }) {
-  const [banner, setBanner] = useState(null)
+  const [banner, setBanner] = useState(() => getCachedBanner())
   const [form, setForm] = useState({ invitation_code: '', zhihu_name: '', account_address: '', wechat_id: '', password: '', confirm_password: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -2956,11 +2956,12 @@ function RegisterPage({ aid, redirect }) {
   const toast = (msg) => { setNotice(msg); window.setTimeout(() => setNotice(''), 2800) }
 
   useEffect(() => {
+    if (banner) return
     supabase.from('keyflow_page_assets').select('image_data').eq('key', 'register_banner').maybeSingle().then(({ data, error: requestError }) => {
       if (requestError) { console.error('[RegisterPage] 读取头图失败:', requestError.message, requestError); return }
       if (data?.image_data && data.image_data.length > 100) { setBanner(data.image_data); setCachedBanner(data.image_data) }
     }).catch((err) => { console.error('[RegisterPage] 查询异常:', err) })
-  }, [])
+  }, [banner])
 
   // 输入知乎用户名时实时检测是否重名（500ms 防抖）
   useEffect(() => {
@@ -3094,7 +3095,7 @@ function RegisterPage({ aid, redirect }) {
 }
 
 function LoginPage({ aid, redirect, token }) {
-  const [banner, setBanner] = useState(null)
+  const [banner, setBanner] = useState(() => getCachedBanner())
   const [form, setForm] = useState({ zhihu_name: '', password: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -3106,6 +3107,12 @@ function LoginPage({ aid, redirect, token }) {
   const [forgotAnswererId, setForgotAnswererId] = useState(null)
   const [forgotNewPassword, setForgotNewPassword] = useState('')
   const [forgotConfirmPassword, setForgotConfirmPassword] = useState('')
+
+  useEffect(() => {
+    if (banner) return
+    supabase.from('keyflow_page_assets').select('image_data').eq('key', 'register_banner').maybeSingle()
+      .then(({ data }) => { if (data?.image_data?.length > 100) { setBanner(data.image_data); setCachedBanner(data.image_data) } })
+  }, [])
 
   const handleLogin = async (event) => {
     event.preventDefault(); setError('')
@@ -3302,7 +3309,7 @@ function HomePage() {
     return () => { cancelled = true }
   }, [])
   const loggedIn = !!user
-  const [banner, setBanner] = useState(null)
+  const [banner, setBanner] = useState(() => getCachedBanner())
   const [loginForm, setLoginForm] = useState({ zhihu_name: '', password: '' })
   const [loginLoading, setLoginLoading] = useState(false)
   const [loginError, setLoginError] = useState('')
@@ -3353,11 +3360,10 @@ function HomePage() {
   }, [])
 
   useEffect(() => {
-    const cached = getCachedBanner()
-    if (cached) { setBanner(cached); return }
+    if (banner) return
     supabase.from('keyflow_page_assets').select('image_data').eq('key', 'register_banner').maybeSingle()
       .then(({ data }) => { if (data?.image_data?.length > 100) { setBanner(data.image_data); setCachedBanner(data.image_data) } })
-  }, [])
+  }, [banner])
 
   useEffect(() => {
     const name = regForm.zhihu_name.trim()
