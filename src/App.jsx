@@ -2521,7 +2521,12 @@ function AnswererDashboard() {
     try {
       const response = await fetch(`/autokey/hotspots.json?ts=${Date.now()}`, { cache: 'no-store' })
       if (!response.ok) throw new Error('热点聚合服务暂不可用，请稍后重试。')
-      const data = await response.json()
+      let data
+      try {
+        data = JSON.parse(await response.text())
+      } catch (parseError) {
+        throw new Error('热点数据暂未生成，请稍后刷新。')
+      }
       if (!data?.success) throw new Error(data?.error || '热点加载失败')
       setGameHotspots(data.items || [])
       setHotspotsUpdatedAt(data.updatedAt || '')
