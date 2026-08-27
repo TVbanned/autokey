@@ -2370,6 +2370,10 @@ span.stage-green { background: #dcfce7; color: #15803d; }
   font-size: 13px;
   line-height: 1.6;
   color: var(--c-ink-3);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .game-hotspot-footer {
