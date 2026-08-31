@@ -517,6 +517,10 @@ span.stage-green { background: #dcfce7; color: #15803d; }
 .drawer-card-meta { display: flex; align-items: center; gap: var(--sp-2); margin-top: 2px; }
 
 /* === Modal === */
+.token-reminder-body { display: grid; gap: var(--sp-4); padding: var(--sp-2) 0 var(--sp-1); }
+.token-reminder-body p { color: var(--c-ink-2); }
+.token-reminder-body .primary { justify-self: end; }
+
 .modal-backdrop { position: fixed; z-index: 50; inset: 0; display: grid; place-items: center; padding: var(--sp-4); background: rgba(17,24,39,0.4); backdrop-filter: blur(4px); animation: fade 0.15s ease; }.modal { width: min(520px, 100%); max-height: calc(100vh - var(--sp-8)); display: flex; flex-direction: column; background: var(--c-surface); border-radius: var(--r-lg); box-shadow: 0 20px 60px rgba(0,0,0,0.15); animation: pop 0.2s ease; overflow: hidden; }.modal header { flex-shrink: 0; }.modal > :not(header) { overflow-y: auto; flex: 1; min-height: 0; }.modal-wide { width: min(880px, 100%); }.modal-wide .modal { width: 100%; }@keyframes fade { from { opacity: 0; } to { opacity: 1; } }@keyframes pop { from { opacity: 0; transform: scale(0.97) translateY(6px); } to { opacity: 1; transform: scale(1) translateY(0); } }.modal header { display: flex; align-items: center; justify-content: space-between; padding: var(--sp-5) var(--sp-5) var(--sp-3); }.modal h2 { font-size: var(--fs-section-title); font-weight: 600; }.modal header button { display: grid; place-items: center; width: 28px; height: 28px; border-radius: var(--r-sm); color: var(--c-ink-4); transition: background 0.12s; }.modal header button:hover { background: var(--c-surface-2); color: var(--c-ink); }
 
 /* === Confirm Dialog === */

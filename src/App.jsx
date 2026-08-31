@@ -9,6 +9,8 @@ const AdminLoginPage = lazy(() => import('./AdminLoginPage.jsx'))
 
 const ADMIN_SESSION_KEY = 'keyflow_admin_session'
 const BANNER_CACHE_KEY = 'keyflow_banner'
+const TENCENT_TOKEN_EXPIRES_AT = '2026-09-27T09:20:39+08:00'
+const TENCENT_TOKEN_REMINDER_KEY = 'keyflow_tencent_token_reminder'
 
 const getAdminToken = () => {
   try { return JSON.parse(localStorage.getItem(ADMIN_SESSION_KEY))?.session_token || null } catch { return null }
@@ -144,6 +146,12 @@ const initialActivity = {
   exempted_answerer_ids: '[]',
   deferred_answerer_ids: '[]',
   platforms: ['steam'],
+}
+
+const parseAnswererIds = (value) => {
+  if (Array.isArray(value)) return value
+  try { return JSON.parse(value || '[]') }
+  catch { return [] }
 }
 
 const getDefaultDeadlines = () => {
@@ -416,6 +424,7 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [tokenReminderOpen, setTokenReminderOpen] = useState(false)
   const [activityModal, setActivityModal] = useState(false)
   const [applicationModal, setApplicationModal] = useState(false)
   const [editActivityModal, setEditActivityModal] = useState(false)
@@ -492,8 +501,7 @@ function App() {
     return answerers.filter(a => partnerAnswererIds.has(a.id))
   }, [answerers, invitationCodes])
   const exemptedIds = useMemo(() => {
-    try { return JSON.parse(selectedActivity?.exempted_answerer_ids || '[]') }
-    catch { return [] }
+    return parseAnswererIds(selectedActivity?.exempted_answerer_ids)
   }, [selectedActivity?.exempted_answerer_ids])
   const pendingCount = filteredApplications.filter((item) => item.status === 'pending').length
   const selectedCount = filteredApplications.filter((item) => item.status === 'selected').length
@@ -1135,6 +1143,13 @@ function App() {
   const [adminSessionState, setAdminSessionState] = useState(null)
   const adminSession = adminSessionState || adminSessionBase
   const adminToken = getAdminToken()
+  useEffect(() => {
+    const expiresAt = new Date(TENCENT_TOKEN_EXPIRES_AT).getTime()
+    const shouldRemind = expiresAt - Date.now() <= 24 * 60 * 60 * 1000
+    let remindedFor = null
+    try { remindedFor = localStorage.getItem(TENCENT_TOKEN_REMINDER_KEY) } catch {}
+    if (shouldRemind && remindedFor !== TENCENT_TOKEN_EXPIRES_AT) setTokenReminderOpen(true)
+  }, [])
   const SUPER_ADMIN_USERNAMES = new Set(['admin', '灰域信风'])
   const isSuperAdmin = adminSession?.role === 'super_admin' || (!adminSession?.role && SUPER_ADMIN_USERNAMES.has(adminSession?.username))
   const adminSubTabs = [['个人设置', 'user'], ['管理员管理', 'users']]
@@ -1276,6 +1291,7 @@ function App() {
     {applicationModal && <Modal title="新增答主报名" onClose={() => setApplicationModal(false)}><form onSubmit={createApplication} className="form-grid"><Field label="知乎 ID（可选，用于防重复）" value={applicationForm.zhihu_id} onChange={(value) => setApplicationForm({ ...applicationForm, zhihu_id: value })} placeholder="知乎 OAuth 返回的用户 ID"/><Field label="知乎名称" required value={applicationForm.zhihu_name} onChange={(value) => setApplicationForm({ ...applicationForm, zhihu_name: value })}/><Field label="微信名" required value={applicationForm.wechat_name} onChange={(value) => setApplicationForm({ ...applicationForm, wechat_name: value })}/><Field label="知乎主页地址" type="url" required value={applicationForm.profile_url} onChange={(value) => setApplicationForm({ ...applicationForm, profile_url: value })}/><Field label="预计完成字数" type="number" required value={applicationForm.expected_word_count} onChange={(value) => setApplicationForm({ ...applicationForm, expected_word_count: value })} onBlur={(event) => { const numberValue = Number(event.target.value) || 800; if (numberValue < 800) setApplicationForm({ ...applicationForm, expected_word_count: 800 }) }}/><span className="word-min-hint">最低 800 字</span>{(() => { const platforms = Array.isArray(selectedActivity?.platforms) && selectedActivity.platforms.length ? selectedActivity.platforms : ['steam']; return platforms.length > 1 || platforms[0] !== 'steam' ? <label className="field"><span>游戏版本</span><select value={applicationForm.selected_platform || 'steam'} onChange={(e) => setApplicationForm({ ...applicationForm, selected_platform: e.target.value })}>{platforms.map(p => <option key={p} value={p}>{platformLabel[p] || p}</option>)}</select></label> : null })()}<button className="primary form-submit">保存报名</button></form></Modal>}
     {editActivityModal && <Modal title="编辑活动" onClose={() => setEditActivityModal(false)}><form onSubmit={updateActivity} className="form-grid"><Field label="活动标题" required value={activityForm.title} onChange={(value) => setActivityForm({ ...activityForm, title: value })}/><Field label="游戏名称" required value={activityForm.game_name} onChange={(value) => setActivityForm({ ...activityForm, game_name: value })}/><label className="field steam-field"><span>Steam 商店地址</span><div className="steam-input-row"><input type="url" placeholder="https://store.steampowered.com/app/..." value={activityForm.steam_url || ''} onChange={(event) => setActivityForm({ ...activityForm, steam_url: event.target.value })}/><button type="button" className="btn-secondary steam-fetch-btn" onClick={handleSteamFetch} disabled={steamFetching}>{steamFetching ? '抓取中…' : '抓取'}</button></div></label><label className="field steam-field"><span>PlayStation 游戏页面</span><div className="steam-input-row"><input type="url" placeholder="https://www.playstation.com/.../games/..." value={activityForm.ps_url || ''} onChange={(event) => setActivityForm({ ...activityForm, ps_url: event.target.value })}/><button type="button" className="btn-secondary steam-fetch-btn" onClick={handlePSFetch} disabled={psFetching}>{psFetching ? '抓取中…' : '抓取'}</button></div></label><label className="field"><span>关联合作方</span><select value={activityForm.partner_answerer_id || ''} onChange={(e) => setActivityForm({ ...activityForm, partner_answerer_id: e.target.value || null })}><option value="">— 不关联合作方 —</option>{partnerAnswerers.map((a) => <option key={a.id} value={a.id}>{a.zhihu_name}{a.wechat_id ? ` (${a.wechat_id})` : ''}</option>)}</select><small style={{color:'var(--c-ink-3)',fontSize:'var(--fs-label)',marginTop:'4px'}}>关联后，该合作方登录可查看此活动协作页。需先在「合作方管理」中生成并注册合作方账号。</small></label><Field label="目标答主数" type="number" required value={activityForm.target_authors} onChange={(value) => setActivityForm({ ...activityForm, target_authors: value })}/><DateTimeField label="报名截止时间" value={activityForm.application_deadline} onChange={(value) => setActivityForm({ ...activityForm, application_deadline: value })}/><DateTimeField label="交付截止时间" value={activityForm.delivery_deadline} onChange={(value) => setActivityForm({ ...activityForm, delivery_deadline: value })}/><DateTimeField label="游戏发售时间" value={activityForm.release_date || ''} onChange={(value) => setActivityForm({ ...activityForm, release_date: value })}/><Field label="游戏简介" textarea value={activityForm.description || ''} onChange={(value) => setActivityForm({ ...activityForm, description: value })}/><Field label="测评要求" textarea value={activityForm.review_requirement || '测评要求：图文并茂，主观视角，生动有趣！'} onChange={(value) => setActivityForm({ ...activityForm, review_requirement: value })}/><PlatformSelector value={activityForm.platforms} onChange={(platforms) => setActivityForm({ ...activityForm, platforms })}/><div className="cover-upload-section"><label className="field"><span>游戏封面</span><small style={{color:'var(--c-ink-3)',fontSize:'var(--fs-label)',marginTop:'4px'}}>优先从 Steam 或 PlayStation 抓取；如未抓取到封面，可手动上传。图片不超过 500KB。</small></label><div className="cover-upload-row"><label className="outline-button cover-upload-btn"><Icon name="upload" size={16}/> 选择图片<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => handleGameCoverFile(e.target.files[0])} hidden/></label>{gameCoverUpload && <button type="button" className="btn-secondary" onClick={() => { setGameCoverUpload(null); setActivityForm(prev => ({ ...prev, game_cover: '' })) }}>移除上传</button>}</div>{gameCoverUpload ? <div className="cover-upload-preview"><img src={gameCoverUpload} alt="手动上传封面"/><span>已手动上传封面（{Math.round(gameCoverUpload.length * 0.75 / 1024)}KB）</span></div> : activityForm.game_cover && <div className="steam-preview"><img src={activityForm.game_cover} alt="封面预览"/><span>已抓取游戏封面</span></div>}</div><button className="primary form-submit">保存修改</button></form></Modal>}
     {notice && <div className="toast"><Icon name="check" size={17}/>{notice}</div>}
+    {tokenReminderOpen && <Modal title="腾讯文档令牌提醒" onClose={() => { setTokenReminderOpen(false); try { localStorage.setItem(TENCENT_TOKEN_REMINDER_KEY, TENCENT_TOKEN_EXPIRES_AT) } catch {} }}><div className="token-reminder-body"><p>腾讯文档同步令牌将在 2026 年 9 月 27 日 09:20 到期。</p><p>请提前更新 Access Token，否则投稿状态和新投稿可能无法同步到腾讯文档。</p><button className="primary" onClick={() => { setTokenReminderOpen(false); try { localStorage.setItem(TENCENT_TOKEN_REMINDER_KEY, TENCENT_TOKEN_EXPIRES_AT) } catch {} }}>知道了</button></div></Modal>}
     {confirmState && <ConfirmDialog message={confirmState.message} confirmLabel={confirmState.confirmLabel} onConfirm={confirmState.onConfirm} onCancel={() => setConfirmState(null)} />}
   </div>
 }
@@ -2762,8 +2778,7 @@ function ClaimPage({ activityId, authCode }) {
   const [platformStock, setPlatformStock] = useState({})
   const isExempted = useMemo(() => {
     if (!activity || !answerer) return false
-    try { return JSON.parse(activity.exempted_answerer_ids || '[]').includes(answerer.id) }
-    catch { return false }
+    return parseAnswererIds(activity.exempted_answerer_ids).includes(answerer.id)
   }, [activity, answerer])
   const storageKey = `claim_${activityId}`
   const toast = (msg) => { setNotice(msg); window.setTimeout(() => setNotice(''), 2800) }
