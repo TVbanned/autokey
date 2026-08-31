@@ -794,7 +794,8 @@ span.stage-green { background: #dcfce7; color: #15803d; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .mobile-nav-profile { display: grid; place-items: center; width: 36px; height: 36px; border-radius: var(--r-full); border: 1px solid var(--c-border); background: var(--c-surface); flex-shrink: 0; }
-.mobile-nav-profile .avatar { width: 30px; height: 30px; border: 0; }
+.mobile-nav-profile .avatar { width: 30px; height: 30px; border: 0; background: linear-gradient(135deg, #34d399, #0d9488); color: #fff; }
+.mobile-nav-profile-row .avatar { background: linear-gradient(135deg, #34d399, #0d9488); color: #fff; border: 0; }
 
 .mobile-nav-backdrop { position: fixed; inset: 0; z-index: 55; background: rgba(17,24,39,.45); backdrop-filter: blur(4px); animation: fade .15s ease; }
 .mobile-nav-sheet {
