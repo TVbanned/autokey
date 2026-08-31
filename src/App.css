@@ -2180,6 +2180,7 @@ span.stage-green { background: #dcfce7; color: #15803d; }
     gap: 8px;
   }
   .partner-brand { min-width: 0; flex: 1 1 0; gap: 6px; font-size: 14px; line-height: 32px; }
+  .partner-brand .brand-mark { line-height: 1; text-align: center; }
   .partner-brand span:not(.brand-mark), .partner-brand small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .partner-brand small { display: none; }
   .partner-header-right {
