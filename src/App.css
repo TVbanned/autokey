@@ -2958,7 +2958,7 @@ span.stage-green { background: #dcfce7; color: #15803d; }
   .dashboard-activity-more-cover { min-height: 112px; }
   .dashboard-empty { min-height: 112px; }
 
-  .partner-table, .table-wrap { overflow-x: clip; }
+  .partner-table, .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-inline: contain; scrollbar-width: thin; }
   .table-wrap table { min-width: 640px; }
   /* 曾提交作品使用固定布局 table-layout:fixed，宽度严格 100% 自适应，豁免全局 min-width 和 clip */
   .answerer-dashboard-tabpanel > section.answerer-dashboard-submissions > .table-wrap { overflow-x: hidden; }
