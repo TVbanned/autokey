@@ -1838,9 +1838,7 @@ function ZhihuQuestionTemplate({ storageKey = 'zq-rows', colWidthsKey = 'zq-col-
       const uploadRes = await fetch(ZHIHU_HELPER_URL + '/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ csv }), signal: AbortSignal.timeout(90000) })
       const upload = await uploadRes.json().catch(() => ({}))
       if (!uploadRes.ok || !upload.ok) throw new Error(upload.error || '上传失败，请查看浏览器窗口')
-      if (!window.confirm('已在知乎解析出 ' + (upload.pending ?? '?') + ' 条问题，确认发布？自动邀请将保持关闭。')) {
-        setBusy(''); showNotice('已取消，未发布'); return
-      }
+      // 全流程自动执行，无需人工确认（自动邀请保持默认关闭）
       setBusy('zhihu-publish'); showNotice('正在发布…')
       const pubRes = await fetch(ZHIHU_HELPER_URL + '/api/publish', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ autoInvite: false }), signal: AbortSignal.timeout(90000) })
       const pub = await pubRes.json().catch(() => ({}))
@@ -1859,8 +1857,8 @@ function ZhihuQuestionTemplate({ storageKey = 'zq-rows', colWidthsKey = 'zq-col-
         saved = data?.length || 0
       }
       setBusy('')
-      showNotice('完成：发布 ' + (pub.published ?? entries.length) + ' 条，回填日常问题运营 ' + saved + ' 条')
-      if ((result.rows || []).length) window.alert((result.rows || []).map((r) => r.title + '\n' + r.url).join('\n\n'))
+      const linkText = (result.rows || []).map((r) => r.title + ' ' + r.url).join('；')
+      showNotice('完成：发布 ' + (pub.published ?? entries.length) + ' 条，回填日常问题运营 ' + saved + ' 条' + (linkText ? '；' + linkText : ''))
     } catch (error) {
       setBusy('')
       showNotice(error.message || '流程执行失败', true)
@@ -5967,5 +5965,6 @@ function AdminManagementPage({ adminSession, isSuperAdmin, adminSubTabs, adminTa
 }
 
 export default App
+
 
 
