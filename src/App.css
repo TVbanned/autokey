@@ -3242,6 +3242,10 @@ span.stage-green { background: #dcfce7; color: #15803d; }
 .zq-paste { min-height: 132px !important; }
 .zq-paste-actions { display: flex; flex-direction: column; gap: var(--sp-2); }
 .zq-paste-actions .primary, .zq-paste-actions .secondary { height: 36px; }
+.zq-link-convert { display: flex; gap: var(--sp-2); margin: 0 0 var(--sp-3); }
+.zq-link-convert input { flex: 1; min-width: 0; height: 34px; padding: 0 var(--sp-2); border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); color: var(--c-ink); outline: none; font: 13px/1.5 inherit; }
+.zq-link-convert input:focus { border-color: var(--c-primary); box-shadow: 0 0 0 3px var(--c-primary-soft); }
+.zq-link-convert .primary { height: 34px; flex: none; }
 .zq-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; }
 .zq-toolbar-left, .zq-toolbar-right { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
 .zq-toolbar button { display: inline-flex; align-items: center; gap: var(--sp-2); height: 34px; padding: 0 var(--sp-3); border-radius: var(--r-sm); font-size: var(--fs-label); font-weight: 600; }
@@ -3270,7 +3274,7 @@ span.stage-green { background: #dcfce7; color: #15803d; }
 .zq-delete { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); color: var(--c-ink-4); cursor: pointer; }
 .zq-delete:hover { color: var(--c-danger); border-color: var(--c-danger); }
 .zq-num { width: 64px !important; }
-@media (max-width: 760px) { .zq-paste-wrap { grid-template-columns: 1fr; } .zq-paste-actions { flex-direction: row; } .zq-paste-actions .primary, .zq-paste-actions .secondary { flex: 1; } }
+@media (max-width: 760px) { .zq-paste-wrap { grid-template-columns: 1fr; } .zq-paste-actions { flex-direction: row; } .zq-paste-actions .primary, .zq-paste-actions .secondary { flex: 1; } .zq-link-convert { flex-wrap: wrap; } .zq-link-convert input { flex: 1 1 100%; max-width: none; } .zq-link-convert button { flex: 1; } .zq-body { padding: 0 var(--sp-3) var(--sp-3); } }
 
 
 /* === 知乎提问模板 · Excel 风格网格 === */

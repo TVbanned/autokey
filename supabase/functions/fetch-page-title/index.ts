@@ -55,6 +55,46 @@ function extractTitle(html: string): string {
   return "";
 }
 
+function stripTags(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<br\s*\/?\s*>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .trim();
+}
+
+function extractSiteName(html: string, url: string): string {
+  const meta = html.match(/<meta[^>]+property=["']og:site_name["'][^>]+content=["']([^"']+)["']/i)
+    || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:site_name["']/i);
+  if (meta?.[1]) return decodeEntities(meta[1]).trim();
+  try {
+    const host = new URL(url).hostname;
+    if (host.includes("mp.weixin.qq.com")) return "微信公众号";
+    if (host.includes("xiaohongshu.com")) return "小红书";
+  } catch {}
+  return "";
+}
+
+function extractContent(html: string): string {
+  let body = html;
+  const start = html.search(/<div[^>]+id=["']js_content["']/i);
+  if (start >= 0) body = html.slice(start);
+  const blocks = [...body.matchAll(/<(?:p|h[1-6]|li|blockquote)[^>]*>([\s\S]*?)<\/(?:p|h[1-6]|li|blockquote)>/gi)]
+    .map((m) => decodeEntities(stripTags(m[1])))
+    .map((s) => s.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  let text = blocks.join("\n");
+  if (text.length < 40) {
+    const stateMatch = html.match(/window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\})\s*<\/script>/i);
+    const descMatch = stateMatch?.[1]?.match(/"desc"\s*:\s*"((?:[^"\\]|\\.)*)"/i);
+    if (descMatch?.[1]) {
+      try { text = JSON.parse('"' + descMatch[1] + '"') } catch { text = descMatch[1] }
+    }
+  }
+  return text.replace(/\s+/g, " ").trim().slice(0, 1500);
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ success: false, error: "Method not allowed" }, 405);
@@ -74,8 +114,10 @@ serve(async (req) => {
     if (!response.ok) return json({ success: false, error: `链接抓取失败（HTTP ${response.status}），可能是站点拦截了访问` }, 502);
     const html = await response.text();
     const title = extractTitle(html);
+    const content = extractContent(html);
+    const siteName = extractSiteName(html, url);
     if (!title) return json({ success: false, error: "未能识别到文章标题，该站点可能开启了访问拦截" }, 422);
-    return json({ success: true, title, url });
+    return json({ success: true, title, content, siteName, url });
   } catch (error) {
     return json({ success: false, error: error instanceof Error ? error.message : "链接抓取失败" }, 502);
   }

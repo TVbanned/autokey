@@ -1679,7 +1679,7 @@ const ZHIHU_GRID_COLUMNS = [
   { key: 'title', label: '问题标题', minWidth: 240, defaultWidth: 320, placeholder: '问题标题（≤50字）' },
   { key: 'token', label: '提问者token', minWidth: 120, defaultWidth: 150, placeholder: '留空自动补充' },
   { key: 'topics', label: '话题名', minWidth: 110, defaultWidth: 150, placeholder: '多个用、分割' },
-  { key: 'description', label: '问题描述', minWidth: 280, defaultWidth: 360, placeholder: 'AI 生成或手动填写 50–200 字' },
+  { key: 'description', label: '问题描述', minWidth: 280, defaultWidth: 360, placeholder: 'AI 生成或手动填写' },
   { key: 'inviteType', label: '邀请类型', minWidth: 90, defaultWidth: 110, placeholder: '留空' },
   { key: 'expectedTopics', label: '期望话题数', minWidth: 80, defaultWidth: 100, placeholder: '5' },
 ]
@@ -1710,7 +1710,7 @@ function ZhihuQuestionTemplate({ storageKey = 'zq-rows', colWidthsKey = 'zq-col-
     setNoticeError(isError)
   }
 
-  const makeRow = (title = '') => ({ id: idRef.current++, title, token: '', topics: '游戏', description: '', inviteType: '', expectedTopics: '5' })
+  const makeRow = (title = '', description = '') => ({ id: idRef.current++, title, token: '', topics: '游戏', description, inviteType: '', expectedTopics: '5' })
 
   const applyPaste = (text) => {
     const titles = parsePastedTitles(text)
@@ -1736,6 +1736,8 @@ function ZhihuQuestionTemplate({ storageKey = 'zq-rows', colWidthsKey = 'zq-col-
     try {
       let sourceTitle = input
       let sourceContent = ""
+      let sourceUrl = ''
+      let sourceSite = ''
       if (/^https?:\/\//i.test(input)) {
         const { data, error } = await supabase.functions.invoke('fetch-page-title', { body: { url: input } })
         if (error) {
@@ -1746,6 +1748,8 @@ function ZhihuQuestionTemplate({ storageKey = 'zq-rows', colWidthsKey = 'zq-col-
         if (!data?.success || !data.title) throw new Error(data?.error || '未能识别到文章标题')
         sourceTitle = data.title
         sourceContent = data.content || ""
+        sourceUrl = input
+        sourceSite = data.siteName || ''
       }
       const { data: aiData, error: aiError } = await supabase.functions.invoke('zhihu-question-ai', { body: { action: mode, texts: [{ id: 1, title: sourceTitle, content: sourceContent }] } })
       if (aiError) {
@@ -1756,9 +1760,18 @@ function ZhihuQuestionTemplate({ storageKey = 'zq-rows', colWidthsKey = 'zq-col-
       if (!aiData?.success) throw new Error(aiData?.error || 'AI 转换失败，请稍后重试')
       const question = aiData.results?.[0]?.title
       if (!question) throw new Error('未能生成问题，请重试')
-      setRows((prev) => [...prev, makeRow(question)])
+      let description = ''
+      let descWarning = ''
+      if (sourceContent) {
+        const descAction = mode === 'ask-raw' ? 'describe-raw' : 'describe-obj'
+        const { data: descData, error: descError } = await supabase.functions.invoke('zhihu-question-ai', { body: { action: descAction, texts: [{ id: 1, title: question, content: sourceContent }] } })
+        if (!descError && descData?.success) description = descData.results?.[0]?.description || ''
+        if (!description) descWarning = '（描述生成失败）'
+        else if (descAction === 'describe-obj' && sourceUrl) description += '\n\n来源' + (sourceSite || '') + '：' + sourceUrl
+      }
+      setRows((prev) => [...prev, makeRow(question, description)])
       setLinkInput('')
-      showNotice('已添加问题' + (mode === 'ask-raw' ? '（激进版）' : '') + '：' + question)
+      showNotice('已添加问题' + (mode === 'ask-raw' ? '（激进版）' : '') + '：' + question + descWarning)
     } catch (error) { showNotice(error.message, true) } finally { setConverting('') }
   }
 
@@ -1960,7 +1973,7 @@ function ZhihuQuestionTemplate({ storageKey = 'zq-rows', colWidthsKey = 'zq-col-
       <div className="zq-link-convert">
         <input value={linkInput} onChange={(event) => setLinkInput(event.target.value)} placeholder="粘贴公众号 / 小红书链接，或直接输入标题文本，自动转成问题" />
         <button className="primary" onClick={() => convertLink('ask')} disabled={converting !== '' || !linkInput.trim()}><Icon name="arrow" size={15}/> {converting === 'ask' ? '转换中…' : '一键转提问'}</button>
-        <button className="secondary" onClick={() => convertLink('ask-raw')} disabled={converting !== '' || !linkInput.trim()} title="生成更尖锐、更有话题度的提问"><Icon name="arrow" size={15}/> {converting === 'ask-raw' ? '转换中…' : '一键转提问激进版'}</button>
+        <button className="primary" onClick={() => convertLink('ask-raw')} disabled={converting !== '' || !linkInput.trim()} title="生成更尖锐、更有话题度的提问"><Icon name="arrow" size={15}/> {converting === 'ask-raw' ? '转换中…' : '一键转提问激进版'}</button>
       </div>
       <div className="zq-toolbar">
         <div className="zq-toolbar-left">
@@ -1989,7 +2002,7 @@ function ZhihuQuestionTemplate({ storageKey = 'zq-rows', colWidthsKey = 'zq-col-
           <tbody>
             {rows.length ? rows.map((row, ri) => {
               const titleOver = row.title.trim().length > 50
-              const descOver = row.description.trim().length > 200
+              const descOver = false
               return <tr key={row.id} className={titleOver ? 'zq-over-row' : ''}>
                 <td className="zq-row-head"><div className="zq-row-head-inner"><span>{ri + 1}</span><button className="zq-delete" title="删除该行" onClick={() => removeRow(row.id)}><Icon name="close" size={13}/></button></div></td>
                 {ZHIHU_GRID_COLUMNS.map((col, ci) => {
@@ -1998,7 +2011,7 @@ function ZhihuQuestionTemplate({ storageKey = 'zq-rows', colWidthsKey = 'zq-col-
                     {col.key === 'description'
                       ? <textarea data-zq-cell={ri + '-' + ci} rows={3} value={row.description} placeholder={col.placeholder} className={isOver ? 'over' : ''} onChange={(event) => updateRow(row.id, 'description', event.target.value)} onKeyDown={(event) => handleCellKeyDown(event, ri, ci)} onPaste={(event) => handleCellPaste(event, ri, ci)}/>
                       : <input data-zq-cell={ri + '-' + ci} value={row[col.key]} placeholder={col.placeholder} className={(isOver ? 'over ' : '') + (col.key === 'expectedTopics' ? 'zq-num' : '')} inputMode={col.key === 'expectedTopics' ? 'numeric' : undefined} onChange={(event) => updateRow(row.id, col.key, event.target.value)} onKeyDown={(event) => handleCellKeyDown(event, ri, ci)} onPaste={(event) => handleCellPaste(event, ri, ci)}/>}
-                    {isOver && <span className="zq-over-tip">{col.key === 'title' ? '已超 ' + (row.title.trim().length - 50) + ' 字' : '已超 ' + (row.description.trim().length - 200) + ' 字'}</span>}
+                    {isOver && col.key === 'title' && <span className="zq-over-tip">已超 ' + (row.title.trim().length - 50) + ' 字'</span>}
                   </td>
                 })}
 
