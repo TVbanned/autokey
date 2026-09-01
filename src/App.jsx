@@ -1829,10 +1829,18 @@ function ZhihuQuestionTemplate({ storageKey = 'zq-rows', colWidthsKey = 'zq-col-
     if (!items.length) { showNotice('请先填写问题', true); return }
     setBusy('zhihu-upload'); showNotice('正在连接本地助手…')
     try {
-      const healthRes = await fetch(ZHIHU_HELPER_URL + '/health', { signal: AbortSignal.timeout(5000) })
-      const health = await healthRes.json().catch(() => ({}))
-      if (!healthRes.ok || !health.ok) throw new Error('本地助手未启动，请先运行 zhihu-upload-helper 下的 start-helper.bat')
-      if (!health.loggedIn) throw new Error('知乎未登录，请在弹出的 Chrome 窗口扫码登录')
+      let health
+      try {
+        const healthRes = await fetch(ZHIHU_HELPER_URL + '/health', { signal: AbortSignal.timeout(45000) })
+        if (!healthRes.ok) throw new Error('本地助手无响应（HTTP ' + healthRes.status + '），请先运行 start-helper.bat')
+        health = await healthRes.json()
+      } catch (err) {
+        if (err.name === 'AbortError' || err.name === 'TimeoutError') throw new Error('连接本地助手超时，请确认 start-helper.bat 正在运行')
+        if (err.message && err.message.includes('本地助手无响应')) throw err
+        throw new Error('无法连接本地助手，请先运行 start-helper.bat（' + (err.message || '') + '）')
+      }
+      if (!health.ok) throw new Error(health.error || '本地助手未就绪')
+      if (!health.loggedIn) throw new Error('知乎未登录，请在助手打开的 Chrome 窗口扫码登录')
       const csv = '\uFEFF' + buildZhihuCsv(items)
       setBusy('zhihu-upload'); showNotice('正在上传到知乎…')
       const uploadRes = await fetch(ZHIHU_HELPER_URL + '/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ csv }), signal: AbortSignal.timeout(90000) })
@@ -5965,6 +5973,7 @@ function AdminManagementPage({ adminSession, isSuperAdmin, adminSubTabs, adminTa
 }
 
 export default App
+
 
 
 
