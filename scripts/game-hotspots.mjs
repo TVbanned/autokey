@@ -18,8 +18,10 @@ const searches = [
   ['Google 新闻', '游戏 公布 发售 更新 预告'],
 ]
 const eventTerms = /宣布|官宣|公布|发布|上线|发售|定档|预告|实机|更新|补丁|扩展|DLC|停售|收购|裁员|关闭|重启|测试|试玩|登陆|加入|确认|曝光|泄露|改版|联动|获奖|销量|突破|announces?|reveals?|launches?|releases?|delayed|delay|acquires?|acquisition|layoffs?|shuts? down|closure|update|patch|expansion|trailer|date|confirmed|sales|million|beta|early access/i
-const excludedTerms = /直播带货|明星|演员|电视剧|综艺|电影票房|博彩|赌场|攻略|配装|社区 ::|Steam 社区 ::|抽奖|福利|送游戏|送激活码|免费领取|抢码|review|hands-on|preview|opinion|interview|feature|guide|what are we playing/i
+const excludedTerms = /直播带货|明星|演员|电视剧|综艺|票房|博彩|赌场|攻略|配装|社区 ::|Steam 社区 ::|抽奖|福利|送游戏|送激活码|免费领取|抢码|review|hands-on|preview|opinion|interview|feature|guide|what are we playing|输入法|大模型|AI服务|AI产品|AI助手|智能助手|语音助手|浏览器|操作系统|智能手机|手机发布|新手机|平板电脑|笔记本电脑|网剧|剧集|导演|歌手|演唱会|家电|无人机|加密货币|比特币/i
 const trustedPublishers = /游民星空|3DM|机核|GCORES|游研社|触乐|游戏葡萄|IGN中国|IGN|GameSpot|Polygon|Eurogamer|Kotaku|VGC|Game Informer|PlayStation Blog|Xbox Wire|Nintendo|Epic Games|腾讯游戏|网易游戏|TapTap|篝火营地|新浪游戏|GamesIndustry.biz|PC Gamer|Rock Paper Shotgun/i
+const gameTerms = /游戏|玩家|Steam|PS4|PS5|PlayStation|Xbox|Switch|任天堂|Nintendo|DLC|RPG|电竞|电子竞技|手游|主机|卡普空|Capcom|育碧|Ubisoft|暴雪|Blizzard|索尼|Sony|Square Enix|FromSoftware|GTA|英雄联盟|原神|赛博朋克|黑神话|塞尔达|怪物猎人|宝可梦|Pokémon|Pokemon|米哈游|腾讯游戏|网易游戏|Valve|Riot|Bethesda|Fortnite|Minecraft|科隆游戏展|东京电玩展|gamescom|TGS|ChinaJoy|E3|State of Play|直面会|游戏展|游戏大奖|The Game Awards|TGA|Epic|Playdate|game|gaming|艾尔登法环|Elden Ring|博德之门|Baldur's Gate|暗黑破坏神|Diablo|最终幻想|Final Fantasy|荒野大镖客|Red Dead|巫师|Witcher|生化危机|Resident Evil|刺客信条|Assassin's Creed|使命召唤|Call of Duty|战地|Battlefield|光环|Halo|战神|God of War|马里奥|Mario|动物森友会|Animal Crossing|双人成行|It Takes Two|星露谷物语|Stardew Valley|空洞骑士|Hollow Knight|死亡搁浅|Death Stranding|只狼|Sekiro|上古卷轴|Elder Scrolls|辐射|Fallout|侠盗猎车手|Grand Theft Auto|地铁|Metro|孤岛惊魂|Far Cry|看门狗|Watch Dogs|绝地求生|PUBG|无畏契约|Valorant|守望先锋|Overwatch|炉石传说|Hearthstone|魔兽世界|World of Warcraft|星际争霸|StarCraft|Warframe|命运2|Destiny 2|王者荣耀|和平精英|崩坏|明日方舟|星穹铁道|绝区零|鸣潮|幻塔|蛋仔派对|光遇|第五人格|鹰角|库洛|叠纸|完美世界|西山居|莉莉丝|肉鸽|Roguelike|Roguelite|魂系|Soulslike|开放世界|沙盒|MOBA|FPS|大逃杀|吃鸡|MMO|视觉小说|音游|格斗游戏|RTS|模拟经营|云游戏|新游|Game Pass|PSN/i
+const gameContextTerms = /游戏|玩家|Steam|PS4|PS5|PlayStation|Xbox|Switch|任天堂|Nintendo|DLC|RPG|电竞|手游|主机|试玩|实机|发售|更新|补丁|预告|演示|测试|联动|版本|资料片|重制|移植|跳票|延期|推迟|工作室|开发商|发行商|销量|获奖|上线|登陆|登录|评测|游戏展|直面会|发布会|宣传片|预告片|截图|MOD|联机|多人|单机|独占|平台|试玩版|demo|beta/i
 
 const decode = (text = '') => text.replace(/<!\[CDATA\[|\]\]>/g, '').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&#39;/g, "'").replace(/&amp;/gi, '&').replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code))).replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
 const cleanSummary = text => decode(text).replace(/在\[[^\]]*\]搜索|相关链接|分享到|更多内容|热门推荐|关注我们|阅读原文|阅读全文|查看原文|查看全文/g, ' ').replace(/\s+/g, ' ').trim()
@@ -76,6 +78,8 @@ const score = (item, reportCounts = new Map(), tokenSources = new Map(), hotWord
   return Math.round((eventTerms.test(item.title) ? 30 : 0) + (trustedPublishers.test(item.source) ? 20 : 0) + (isChineseSource(item.source) ? 25 : 0) + Math.min(24, (reportCount - 1) * 12) + Math.min(30, collision * 3) + Math.min(40, hotHit * 15) + Math.max(0, 50 - hoursAgo(item.publishedAt) / 2))
 }
 const valid = (title, summary) => eventTerms.test(title) && !excludedTerms.test(`${title} ${summary}`)
+// 游戏站点也会发布科技/影视等非游戏新闻，站点内搜索命中的条目须与游戏相关才收录
+const isGameRelated = (title, summary) => gameTerms.test(title) || (/《[^》]{2,}》/.test(title) && gameContextTerms.test(`${title} ${summary}`))
 
 async function fetchRss([source, url]) {
   const response = await fetch(url, { headers: { 'user-agent': 'GameJourneyHotspots/1.0' }, signal: AbortSignal.timeout(15000) })
@@ -101,7 +105,7 @@ async function searchNews([source, query]) {
     const title = decode(news.title)
     const itemSource = source === 'Google 新闻' ? (news.source || source) : source
     const summary = cleanSummary(news.snippet || '')
-    return { source: itemSource, publisher: news.source || itemSource, title, url: news.link || '', summary, publishedAt: news.date || '', image: news.imageUrl || '', tags: tagsFor(title, summary) }
+    return { source: itemSource, publisher: news.source || itemSource, title, url: news.link || '', summary, publishedAt: news.date || '', image: news.imageUrl || '', tags: tagsFor(title, summary), fromSearch: true, gameSignal: isGameRelated(title, summary) }
   }).filter(item => item.url.startsWith('http') && item.title.length >= 8 && hoursAgo(item.publishedAt) <= 72 && valid(item.title, item.summary) && (source !== 'Google 新闻' || trustedPublishers.test(item.publisher)))
 }
 
@@ -173,16 +177,52 @@ async function translate(items) {
   return items
 }
 
+async function verifyGameRelevance(items) {
+  const targets = items.filter(item => item.fromSearch && !item.gameSignal)
+  if (!targets.length) return { items, checked: 0, status: 'no-targets' }
+  const apiKey = config.deepseekApiKey
+  if (!apiKey) return { items: items.filter(item => !item.fromSearch || item.gameSignal), checked: 0, status: 'missing-key' }
+  const CHUNK_SIZE = 10
+  const keep = new Set()
+  let checked = 0
+  let failures = 0
+  for (let offset = 0; offset < targets.length; offset += CHUNK_SIZE) {
+    const chunk = targets.slice(offset, offset + CHUNK_SIZE)
+    try {
+      const response = await fetch('https://api.deepseek.com/v1/chat/completions', { method: 'POST', headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' }, body: JSON.stringify({ model: 'deepseek-chat', temperature: 0, max_tokens: 800, messages: [{ role: 'system', content: '你是专业游戏新闻编辑。判断每条新闻是否与电子游戏或游戏行业相关：游戏发售/更新/DLC/评测/电竞/厂商动态/游戏硬件等算相关；输入法、AI产品、手机、影视、汽车、财经等与游戏无关的科技或娱乐新闻不算。只返回 JSON 对象，格式：{"results":[{"index":0,"isGame":true}]}。' }, { role: 'user', content: JSON.stringify(chunk.map((item, index) => ({ index, title: item.title, summary: (item.summary || "").slice(0, 250) }))) }] }), signal: AbortSignal.timeout(30_000) })
+      if (!response.ok) throw new Error(`DeepSeek relevance failed (${response.status})`)
+      const payload = await response.json()
+      const content = String(payload.choices?.[0]?.message?.content || '{}').replace(/^```(?:json)?\s*|\s*```$/g, '')
+      const parsed = JSON.parse(content)
+      const results = Array.isArray(parsed) ? parsed : (parsed.results || [])
+      for (const result of results) {
+        const index = Number(result.index)
+        const item = Number.isInteger(index) ? chunk[index] : undefined
+        if (item && result.isGame === true) keep.add(item.url)
+      }
+      checked += chunk.length
+    } catch (error) {
+      failures += 1
+      console.error(`relevance check failed: ${error.message}`)
+    }
+  }
+  const verified = items.filter(item => !item.fromSearch || item.gameSignal || keep.has(item.url))
+  return { items: verified, checked, status: failures ? 'partial' : 'ok' }
+}
+
 const settled = await Promise.allSettled([...rssFeeds.map(fetchRss), ...searches.map(searchNews)])
 const unavailableSourceCount = settled.filter(result => result.status === 'rejected').length
 const seen = new Set()
 const candidates = settled.flatMap(result => result.status === 'fulfilled' ? result.value : []).filter(item => !seen.has(item.url) && seen.add(item.url))
+// AI 相关性校验：站点搜索来源里关键词未命中的条目，交给模型二次判断是否与游戏相关
+const relevance = await verifyGameRelevance(candidates)
+const gameItems = relevance.items
 // 统计同一事件被多少不同来源报道，作为真实热度近似值
 const reportCounts = new Map()
-for (const item of candidates) reportCounts.set(signatureOf(item.title), (reportCounts.get(signatureOf(item.title)) || 0) + 1)
+for (const item of gameItems) reportCounts.set(signatureOf(item.title), (reportCounts.get(signatureOf(item.title)) || 0) + 1)
 // 关键词碰撞：统计每个显著关键词被多少不同来源提及
 const tokenSources = new Map()
-for (const item of candidates) {
+for (const item of gameItems) {
   for (const token of tokensOf(item.title)) {
     const set = tokenSources.get(token) || new Set()
     set.add(item.publisher || item.source)
@@ -190,7 +230,7 @@ for (const item of candidates) {
   }
 }
 const hotWords = await fetchHotWords()
-const picked = selectTop20(deduplicate(candidates, reportCounts, tokenSources, hotWords)).map((item, index) => ({ ...item, rank: index + 1, heat: score(item, reportCounts, tokenSources, hotWords) }))
+const picked = selectTop20(deduplicate(gameItems, reportCounts, tokenSources, hotWords)).map((item, index) => ({ ...item, rank: index + 1, heat: score(item, reportCounts, tokenSources, hotWords) }))
 const items = await translate(await enrichImages(picked))
 if (!items.length) throw new Error('No high-quality game news')
 const payload = { success: true, updatedAt: new Date().toISOString(), items, sources: [...new Set(items.map(item => item.source))], unavailableSourceCount }
