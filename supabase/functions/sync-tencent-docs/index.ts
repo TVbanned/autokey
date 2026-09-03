@@ -29,7 +29,7 @@ const COLUMNS: Record<string, (r: Record<string, unknown>, e: Record<string, unk
     e.answerer_name ?? "",
     r.article_title ?? "",
     r.article_url ?? "",
-    r.reviewed ? "已审" : "未审",
+    r.processed ? "已审" : "未审",
   ],
   keyflow_deliveries: (r, e) => [
     fmt(r.submitted_at),
@@ -225,7 +225,7 @@ async function resortSubmissionsSheet(
     });
   } else {
     const [sres, ares] = await Promise.all([
-      supabase.from("keyflow_daily_submissions").select("id,answerer_id,submitted_at,article_title,article_url,reviewed"),
+      supabase.from("keyflow_daily_submissions").select("id,answerer_id,submitted_at,article_title,article_url,processed"),
       supabase.from("keyflow_answerers").select("id,zhihu_name"),
     ]);
     if (sres.error) throw new Error(`读取日常投稿记录失败: ${sres.error.message}`);
@@ -238,7 +238,7 @@ async function resortSubmissionsSheet(
         s.answerer_id ? (answererById[s.answerer_id]?.zhihu_name ?? "") : "管理员",
         s.article_title ?? "",
         s.article_url ?? "",
-        s.reviewed ? "已审" : "未审",
+        s.processed ? "已审" : "未审",
       ],
     }));
   }
@@ -341,10 +341,11 @@ serve(async (req) => {
       return json({ ok: true, table, op: "insert", reordered: count });
     }
 
-    // 全部活动投稿 / 答主日常投稿：新增时全量重排，最新提交置顶（表头固定第 1 行）。
-    if ((table === "keyflow_deliveries" || table === "keyflow_daily_submissions") && op === "INSERT") {
+    // 全部活动投稿 / 答主日常投稿：新增或状态更新时全量重排，最新提交置顶（表头固定第 1 行），
+    // 避免单行原位更新与并发重排互相覆盖导致状态漏同步。
+    if ((table === "keyflow_deliveries" || table === "keyflow_daily_submissions") && (op === "INSERT" || op === "UPDATE")) {
       const count = await resortSubmissionsSheet(supabase, sheetKey, sheet, token, cfg);
-      return json({ ok: true, table, op: "insert", reordered: count });
+      return json({ ok: true, table, op: op === "INSERT" ? "insert" : "update", reordered: count });
     }
 
     const e = await enrich(supabase, table, record);
@@ -430,3 +431,4 @@ serve(async (req) => {
     return json({ error: err instanceof Error ? err.message : "同步失败" }, 500);
   }
 });
+

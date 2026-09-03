@@ -95,7 +95,7 @@ if (deliveryList.length) {
 
 // ===== 答主日常投稿（keyflow_daily_submissions）=====
 const [dsubs, answerers] = await Promise.all([
-  sbGet('/rest/v1/keyflow_daily_submissions?select=id,answerer_id,submitted_at,article_title,article_url,reviewed&limit=100000'),
+  sbGet('/rest/v1/keyflow_daily_submissions?select=id,answerer_id,submitted_at,article_title,article_url,processed&limit=100000'),
   sbGet('/rest/v1/keyflow_answerers?select=id,zhihu_name&limit=100000'),
 ]);
 const answererById = Object.fromEntries(answerers.map((a) => [a.id, a]));
@@ -109,7 +109,7 @@ const subList = dsubs
       answererById[s.answerer_id]?.zhihu_name ?? '',
       s.article_title ?? '',
       s.article_url ?? '',
-      s.reviewed ? '已审' : '未审',
+      s.processed ? '已审' : '未审',
     ],
   }))
   .sort(byNewest);
@@ -129,3 +129,4 @@ if (subList.length) {
 }
 
 console.log('DONE');
+

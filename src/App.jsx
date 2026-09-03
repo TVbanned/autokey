@@ -5107,22 +5107,26 @@ function DailySubmissionsPage({ submissions, answerers, toast, setDailySubmissio
   const handleViewSubmission = async (submission) => {
     window.open(cleanZhihuAnswerUrl(submission.article_url), '_blank')
     if (!submission.reviewed) {
+      const { error: viewErr } = await supabase.from('keyflow_daily_submissions').update({ reviewed: true }).eq('id', submission.id)
+      if (viewErr) { toast?.(viewErr.message); return }
       setDailySubmissions(prev => prev.map(s => s.id === submission.id ? { ...s, reviewed: true } : s))
-      supabase.from('keyflow_daily_submissions').update({ reviewed: true }).eq('id', submission.id).then(() => {})
     }
   }
 
   const handleProcess = async (submission) => {
-    const { data: existing } = await supabase.from('keyflow_inbox').select('id').eq('to_id', submission.answerer_id).in('type', ['system', 'private_message']).eq('data->>submission_id', String(submission.id)).maybeSingle()
+    const { data: existing, error: findErr } = await supabase.from('keyflow_inbox').select('id').eq('to_id', submission.answerer_id).in('type', ['system', 'private_message']).eq('data->>submission_id', String(submission.id)).maybeSingle()
+    if (findErr) { toast?.(findErr.message); return }
     if (!existing) {
-      await supabase.from('keyflow_inbox').insert({
+      const { error: inboxErr } = await supabase.from('keyflow_inbox').insert({
         type: 'private_message', title: '投稿已收到', body: `您的投稿《${submission.article_title || '未知标题'}》已收到，已经进行扶持处理。`,
         to_id: submission.answerer_id, status: 'unread', data: { submission_id: submission.id },
       })
+      if (inboxErr) { toast?.(inboxErr.message); return }
       toast?.('已向答主发送投稿确认私信')
     }
+    const { error: procErr } = await supabase.from('keyflow_daily_submissions').update({ processed: true, reviewed: true }).eq('id', submission.id)
+    if (procErr) { toast?.(procErr.message); return }
     setDailySubmissions(prev => prev.map(s => s.id === submission.id ? { ...s, processed: true, reviewed: true } : s))
-    supabase.from('keyflow_daily_submissions').update({ processed: true, reviewed: true }).eq('id', submission.id).then(() => {})
   }
 
   const processIds = async (ids) => {
@@ -5130,16 +5134,19 @@ function DailySubmissionsPage({ submissions, answerers, toast, setDailySubmissio
     for (const id of ids) {
       const s = submissions.find(sub => sub.id === id)
       if (!s || s.processed) continue
-      const { data: existing } = await supabase.from('keyflow_inbox').select('id').eq('to_id', s.answerer_id).in('type', ['system', 'private_message']).eq('data->>submission_id', String(s.id)).maybeSingle()
+      const { data: existing, error: findErr } = await supabase.from('keyflow_inbox').select('id').eq('to_id', s.answerer_id).in('type', ['system', 'private_message']).eq('data->>submission_id', String(s.id)).maybeSingle()
+      if (findErr) { toast?.(findErr.message); continue }
       if (!existing) {
-        await supabase.from('keyflow_inbox').insert({
+        const { error: inboxErr } = await supabase.from('keyflow_inbox').insert({
           type: 'private_message', title: '投稿已收到', body: `您的投稿《${s.article_title || '未知标题'}》已收到，已经进行扶持处理。`,
           to_id: s.answerer_id, status: 'unread', data: { submission_id: s.id },
         })
+        if (inboxErr) { toast?.(inboxErr.message); continue }
         sentCount++
       }
+      const { error: procErr } = await supabase.from('keyflow_daily_submissions').update({ processed: true, reviewed: true }).eq('id', id)
+      if (procErr) { toast?.(procErr.message); continue }
       setDailySubmissions(prev => prev.map(sub => sub.id === id ? { ...sub, processed: true, reviewed: true } : sub))
-      supabase.from('keyflow_daily_submissions').update({ processed: true, reviewed: true }).eq('id', id).then(() => {})
     }
     return sentCount
   }
@@ -5182,7 +5189,10 @@ function DailySubmissionsPage({ submissions, answerers, toast, setDailySubmissio
     const newVal = !submission.featured
     setDailySubmissions(prev => prev.map(s => s.id === submission.id ? { ...s, featured: newVal } : s))
     const { error } = await supabase.from('keyflow_daily_submissions').update({ featured: newVal }).eq('id', submission.id)
-    if (error) toast?.(error.message)
+    if (error) {
+      toast?.(error.message)
+      setDailySubmissions(prev => prev.map(s => s.id === submission.id ? { ...s, featured: !newVal } : s))
+    }
   }
 
   const toggleSelect = (id) => setSelectedIds(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next })
