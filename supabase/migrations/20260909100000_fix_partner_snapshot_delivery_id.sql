@@ -1,4 +1,6 @@
--- 合作方协作页：快照返回活动平台配置与报名者所选平台，用于展示「平台选择」列
+-- 修复：合作方协作页快照的 deliveries 聚合漏掉了 id（及 article_title）。
+-- 前端“通过/不通过”按钮依赖 item.id 作为 keyflow_partner_review_delivery 的 p_delivery_id，
+-- id 缺失时该参数被丢弃，PostgREST 报 PGRST202（找不到 (p_partner_token, p_status) 签名）。
 create or replace function public.keyflow_partner_activity_snapshot(
   p_partner_token uuid,
   p_answerer_id uuid default null
@@ -74,4 +76,3 @@ end;
 $$;
 
 grant execute on function public.keyflow_partner_activity_snapshot(uuid, uuid) to anon, authenticated;
-
