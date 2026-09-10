@@ -423,6 +423,9 @@ span.stage-green { background: #dcfce7; color: #15803d; }
  .answerer-stats-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); flex-wrap: wrap; margin-top: var(--sp-3); position: relative; }
  .answerer-hero-metrics { display: flex; gap: var(--sp-3); flex-shrink: 0; }
  .answerer-metric { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: var(--sp-2) var(--sp-3); border: 1px solid rgba(255,255,255,.22); border-radius: var(--r-sm); background: rgba(0,0,0,.24); backdrop-filter: blur(8px); }
+ .answerer-coin-metric { min-width: 116px; }
+ .answerer-tier-clickable { flex: 1 1 420px; min-width: 380px; }
+ .answerer-tier-clickable .answerer-stats { flex: 1 1 auto; }
  .answerer-metric-value { font-size: 24px; font-weight: 700; color: #fff; line-height: 1; }
  .answerer-metric-label { font-size: 11px; color: #a7f3d0; white-space: nowrap; }
 .answerer-metric-note { font-size: 10px; color: #9ca3af; white-space: nowrap; }
@@ -586,7 +589,10 @@ span.stage-green { background: #dcfce7; color: #15803d; }
 
 /* === Answerer Detail Modals === */
 .answerer-metric-clickable { cursor: pointer; transition: background 0.15s, transform 0.15s; }
+button.answerer-metric-clickable { color: inherit; font: inherit; text-align: center; }
 .answerer-metric-clickable:hover { background: rgba(255,255,255,.18); transform: translateY(-1px); }
+.answerer-metric-clickable:active { transform: translateY(0); background: rgba(255,255,255,.24); }
+.answerer-metric-clickable:focus-visible { outline: 2px solid rgba(167,243,208,.8); outline-offset: 2px; }
 .answerer-detail-modal { width: min(800px, 100%); }
 .answerer-detail-body { padding: 0 var(--sp-5) var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-3); max-height: 500px; overflow-y: auto; }
 .answerer-detail-item { padding: var(--sp-3); border: 1px solid var(--c-border); border-radius: var(--r-md); }
@@ -2219,8 +2225,11 @@ span.stage-green { background: #dcfce7; color: #15803d; }
     align-items: flex-start;
     gap: 8px;
   }
+  .partner-header-brand-wrap { flex: 1 1 auto; min-width: 0; }
   .partner-brand { min-width: 0; flex: 1 1 0; gap: 6px; font-size: 14px; line-height: 32px; }
-  .partner-brand .brand-mark { line-height: 1; text-align: center; }
+  .partner-header > .dashboard-menu-button { display: grid; flex: 0 0 38px; order: -1; width: 38px; height: 38px; align-items: center; justify-content: center; padding: 0; border: 2px solid var(--c-primary); border-radius: 10px; background: var(--c-primary-soft); color: var(--c-primary); box-shadow: 0 4px 12px rgba(15, 118, 110, .18); }
+  .partner-header > .dashboard-menu-button > svg { display: block; width: 20px; height: 20px; }
+  .partner-brand .brand-mark { display: grid; line-height: 1; text-align: center; }
   .partner-brand span:not(.brand-mark), .partner-brand small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .partner-brand small { display: none; }
   .partner-header-right {
@@ -2237,6 +2246,7 @@ span.stage-green { background: #dcfce7; color: #15803d; }
     font-size: 11px;
     white-space: nowrap;
   }
+  .partner-header-right > .reload:not(.outline) { display: none; }
   .partner-header-right > .reload.outline { display: none; }
   .partner-header-right > .reload.outline.dashboard-switch-btn { display: inline-flex; font-size: 10px; padding-inline: 7px; }
   .dashboard-user-area { min-width: 0; margin-left: 2px; }
@@ -2294,8 +2304,8 @@ span.stage-green { background: #dcfce7; color: #15803d; }
   .hero-shared-code-value { font-size: 15px; }
   .answerer-stats { width: 100%; }
   .answerer-stats-left { gap: 8px; }
-  .answerer-hero-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; width: 100%; }
-  .answerer-metric { min-width: 0; padding: 9px 4px; }
+  .answerer-hero-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: 100%; }
+  .answerer-metric { min-width: 0; min-height: 72px; padding: 10px 4px; justify-content: center; }
   .answerer-metric-value { font-size: 21px; }
   .answerer-metric-label, .answerer-metric-note { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
   .answerer-metric-label { font-size: 10px; }
@@ -3016,8 +3026,9 @@ span.stage-green { background: #dcfce7; color: #15803d; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.answerer-dashboard-tabpanel > section.answerer-dashboard-submissions > .table-wrap table th:nth-child(1) { width: 12%; text-align: left; }
-.answerer-dashboard-tabpanel > section.answerer-dashboard-submissions > .table-wrap table th:nth-child(2) { width: 54%; font-size: var(--fs-body); }
+.answerer-dashboard-tabpanel > section.answerer-dashboard-submissions > .table-wrap table th:nth-child(1),
+.answerer-dashboard-tabpanel > section.answerer-dashboard-submissions > .table-wrap table td:nth-child(1) { width: 12%; text-align: center; }
+.answerer-dashboard-tabpanel > section.answerer-dashboard-submissions > .table-wrap table th:nth-child(2) { width: 54%; font-size: var(--fs-meta); }
 .answerer-dashboard-tabpanel > section.answerer-dashboard-submissions > .table-wrap table th:nth-child(3) { width: 34%; }
 .answerer-dashboard-tabpanel > section.answerer-dashboard-submissions > .table-wrap table td:nth-child(3) > a,
 .answerer-dashboard-tabpanel > section.answerer-dashboard-submissions > .table-wrap table td:nth-child(3) > span {
@@ -3027,16 +3038,209 @@ span.stage-green { background: #dcfce7; color: #15803d; }
   white-space: nowrap;
   max-width: 100%;
 }
+
+/* 答主工作台侧边栏 */
+.answerer-dashboard-shell {
+  display: grid;
+  grid-template-columns: 228px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--sp-5);
+}
+.answerer-dashboard-sidebar {
+  position: sticky;
+  top: var(--sp-4);
+  display: flex;
+  min-height: 340px;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, .64);
+  border-radius: 20px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, .82), rgba(238, 250, 246, .66));
+  box-shadow: 0 16px 42px rgba(15, 41, 34, .10), inset 0 1px 0 rgba(255, 255, 255, .86);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+}
+.dashboard-sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 18px 14px;
+  color: var(--c-ink);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+.dashboard-sidebar-head button {
+  display: none;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--c-ink-3);
+}
+.answerer-dashboard-sidebar .answerer-dashboard-tabs {
+  position: static;
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0 10px;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+.answerer-dashboard-sidebar .answerer-dashboard-tab {
+  width: 100%;
+  min-height: 48px;
+  justify-content: flex-start;
+  padding: 0 12px;
+  color: var(--c-ink-3);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+}
+.answerer-dashboard-sidebar .answerer-dashboard-tab > svg:first-child { color: var(--c-success); }
+.answerer-dashboard-sidebar .answerer-dashboard-tab > svg:last-child { margin-left: auto; opacity: .45; }
+.answerer-dashboard-sidebar .answerer-dashboard-tab:hover {
+  color: var(--c-ink);
+  background: rgba(255,255,255,.70);
+  transform: translateX(2px);
+}
+.answerer-dashboard-sidebar .answerer-dashboard-tab.active {
+  color: #075c45;
+  background: linear-gradient(100deg, rgba(209, 250, 229, .94), rgba(236, 253, 245, .58));
+  box-shadow: inset 0 0 0 1px rgba(16, 185, 129, .14), 0 5px 14px rgba(5, 150, 105, .08);
+  transform: none;
+}
+.answerer-dashboard-sidebar .answerer-dashboard-tab.active > svg:last-child { opacity: .9; }
+.dashboard-sidebar-foot {
+  margin: auto 18px 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(15, 41, 34, .09);
+  color: var(--c-ink-4);
+  font-size: 12px;
+}
+.answerer-dashboard-content { min-width: 0; }
+.answerer-dashboard .coins-page-embedded,
+.answerer-dashboard .coins-page-main-embedded {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+.answerer-tier-clickable {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.answerer-tier-clickable:hover { filter: brightness(1.08); }
+.answerer-tier-clickable:focus-visible { outline: 2px solid rgba(167,243,208,.8); outline-offset: 4px; border-radius: var(--r-sm); }
+.answerer-tier-points small { color: rgba(209,250,229,.78); font-size: 10px; }
+.tier-benefits-body { padding: 0 var(--sp-5) var(--sp-5); }
+.tier-benefits-summary { display: flex; align-items: center; gap: 12px; padding: 14px; border: 1px solid var(--c-border); border-radius: var(--r-md); background: var(--c-surface-2); }
+.tier-benefits-summary strong { display: block; color: var(--c-ink); font-size: 18px; }
+.tier-benefits-summary p { margin: 4px 0 0; color: var(--c-ink-4); font-size: var(--fs-meta); }
+.tier-benefits-note { display: block; margin-top: 6px; color: var(--c-primary); font-size: 11px; line-height: 1.5; }
+.tier-benefits-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+.tier-benefits-item { display: flex; flex-direction: column; gap: 5px; padding: 14px; border: 1px solid var(--c-border); border-radius: var(--r-md); background: var(--c-surface); }
+.tier-benefits-item > span { color: var(--c-ink-3); font-size: var(--fs-meta); }
+.tier-benefits-item strong { color: var(--c-primary); font-size: 22px; }
+.tier-benefits-item small { color: var(--c-ink-4); font-size: 11px; line-height: 1.5; }
+.answerer-dashboard-tabpanel .game-hotspots-switch { display: none; }
+.answerer-coin-metric .answerer-coin-help {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(255,255,255,.54);
+  border-radius: 50%;
+  background: rgba(255,255,255,.14);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.answerer-coin-metric .answerer-coin-help { font-size: 9px; }
+.answerer-coin-metric .answerer-coin-help:hover { background: rgba(255,255,255,.28); }
+.coins-page-embedded { min-height: 0; background: transparent; }
+.coins-page-main-embedded { width: 100%; max-width: none; padding: 0; }
+.coins-section-tabs { display: flex; gap: 4px; padding: 4px; border: 1px solid var(--c-border); border-radius: var(--r-md); background: var(--c-surface-2); }
+.coins-section-tabs button { flex: 1; min-height: 40px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--c-ink-3); font: inherit; cursor: pointer; transition: color .18s ease, background .18s ease, box-shadow .18s ease; }
+.coins-section-tabs button.active { background: var(--c-surface); color: var(--c-primary); font-weight: 700; box-shadow: 0 3px 10px rgba(15, 118, 110, .1); }
+.coins-section-tabs button:hover { color: var(--c-primary); }
+.answerer-dashboard .coins-section-tabs { width: 100%; box-sizing: border-box; }
+.answerer-dashboard .coins-shop-section,
+.answerer-dashboard .coins-orders-section { width: 100%; box-sizing: border-box; }
+.dashboard-sidebar-backdrop,
+.dashboard-menu-button { display: none; }
 @keyframes answerer-tab-enter {
   0%   { opacity: 0; transform: translateY(12px) scale(.992); filter: blur(2px); }
   60%  { filter: blur(0); }
   100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
 }
+@media (max-width: 760px) {
+  .answerer-dashboard-shell { display: block; }
+  .dashboard-menu-button {
+    display: grid;
+    width: 38px;
+    height: 38px;
+    place-content: center;
+    gap: 4px;
+    padding: 0;
+    border: 1px solid var(--c-border);
+    border-radius: var(--r-sm);
+    background: rgba(255,255,255,.76);
+    color: var(--c-ink-2);
+    cursor: pointer;
+  }
+  .dashboard-menu-button span { display: block; width: 16px; height: 1.5px; border-radius: 2px; background: currentColor; }
+  .dashboard-sidebar-backdrop {
+    position: fixed;
+    z-index: 80;
+    inset: 0;
+    display: block;
+    border: 0;
+    background: rgba(8, 26, 22, .34);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity .24s ease, visibility .24s ease;
+    backdrop-filter: blur(2px);
+  }
+  .dashboard-sidebar-backdrop.visible { opacity: 1; visibility: visible; }
+  .answerer-dashboard-sidebar {
+    position: fixed;
+    z-index: 81;
+    top: 12px;
+    bottom: 12px;
+    left: 12px;
+    width: min(292px, calc(100vw - 48px));
+    min-height: 0;
+    transform: translateX(calc(-100% - 24px));
+    transition: transform .28s cubic-bezier(.22, 1, .36, 1);
+    box-shadow: 0 24px 60px rgba(5, 35, 25, .24), inset 0 1px 0 rgba(255,255,255,.9);
+  }
+  .answerer-dashboard-sidebar.open { transform: translateX(0); }
+  .dashboard-sidebar-head { padding: 20px 18px 14px; }
+  .dashboard-sidebar-head button { display: grid; }
+  .answerer-dashboard-sidebar .answerer-dashboard-tabs { padding: 0 10px; }
+  .answerer-dashboard-sidebar .answerer-dashboard-tab { min-height: 52px; font-size: 14px; }
+  .dashboard-sidebar-foot { margin-bottom: max(16px, env(safe-area-inset-bottom)); }
+}
+@media (min-width: 761px) {
+  .dashboard-menu-button { display: none !important; }
+}
 @media (max-width: 560px) {
-  .answerer-dashboard-tabs { margin-bottom: var(--sp-4); }
-  .answerer-dashboard-tabs-inner { padding: 5px; }
-  .answerer-dashboard-tab { padding: 12px 6px; font-size: 12px; gap: 5px; letter-spacing: 0; }
-  .answerer-dashboard-tab svg { width: 12px; height: 12px; }
+  .answerer-dashboard-tab { letter-spacing: 0; }
 }
 
 @media (max-width: 700px) {
@@ -3304,3 +3508,960 @@ body.zq-resizing { cursor: col-resize; user-select: none; }
 .zq-delete { display: grid; place-items: center; width: 26px; height: 26px; border: 1px solid var(--c-border); border-radius: 6px; background: var(--c-surface); color: var(--c-ink-4); cursor: pointer; }
 .zq-delete:hover { color: var(--c-danger); border-color: var(--c-danger); }
 .zq-num { width: 100% !important; }
+
+
+/* ===== v1 金币商城页 ===== */
+.coins-page {
+  min-height: 100vh;
+  background: var(--c-bg);
+}
+.coins-page-top {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 20px 16px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.coins-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--c-ink);
+  font-weight: 700;
+  font-size: 16px;
+  text-decoration: none;
+}
+.coins-brand small {
+  color: var(--c-ink-3);
+  font-size: 12px;
+  font-weight: 500;
+  margin-left: 2px;
+  border-left: 1px solid var(--c-border-strong);
+  padding-left: 8px;
+}
+.coins-page-main {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 16px;
+  display: grid;
+  gap: 16px;
+}
+.notice-box {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-left: 3px solid var(--c-warning);
+  border-radius: var(--r-md);
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--c-ink-2);
+}
+.coins-overview {
+  display: flex;
+  align-items: stretch;
+  gap: 24px;
+  padding: 18px 20px;
+  background: linear-gradient(135deg, #ffffff 0%, #f2fdf8 100%);
+}
+.coins-overview-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.coins-ov-label {
+  font-size: var(--fs-meta);
+  letter-spacing: 1px;
+  color: var(--c-ink-3);
+  text-transform: uppercase;
+}
+.coins-lv-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-width: 72px;
+  height: 44px;
+  padding: 0 14px;
+  border-radius: var(--r-lg);
+  background: var(--c-primary-soft);
+  color: #059669;
+  font-weight: 800;
+  font-size: 24px;
+}
+.coins-balance-value {
+  font-size: 32px;
+  font-weight: 800;
+  color: var(--c-ink);
+  letter-spacing: 0.5px;
+}
+.coins-ov-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  font-size: 12px;
+  color: var(--c-ink-3);
+}
+.coins-overview-divider {
+  width: 1px;
+  background: var(--c-border);
+}
+.coins-shop-section,
+.coins-orders-section {
+  padding: 24px;
+}
+.coins-section-head {
+  padding: 0 0 16px;
+  border-bottom: 1px solid var(--c-border);
+  margin-bottom: 18px;
+}
+.coins-section-head h3 {
+  margin: 0;
+  font-size: var(--fs-section-title);
+  color: var(--c-ink);
+}
+.coins-section-head p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--c-ink-3);
+}
+.coins-shop-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 16px;
+}
+.coins-product {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-lg);
+  padding: 14px;
+  background: var(--c-surface);
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+.coins-product:hover {
+  box-shadow: 0 8px 20px rgba(17, 24, 39, 0.06);
+  transform: translateY(-1px);
+}
+.coins-product-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.coins-product-top strong {
+  color: var(--c-ink);
+  font-size: 14px;
+  line-height: 1.4;
+}
+.coins-product-type {
+  font-size: 11px;
+}
+.coins-product-desc {
+  margin: 0;
+  font-size: 12px;
+  color: var(--c-ink-3);
+  min-height: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.coins-product-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.coins-price {
+  color: #059669;
+  font-size: 18px;
+  font-weight: 800;
+}
+.coins-price small {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--c-ink-3);
+}
+.coins-stock {
+  font-size: 11px;
+  color: var(--c-ink-4);
+}
+
+/* 答主看板最终布局覆盖 */
+@media (min-width: 761px) {
+  .answerer-dashboard .answerer-stats-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; gap: var(--sp-4); flex-wrap: nowrap; }
+  .answerer-dashboard .answerer-stats-row > .level-coins-wrap.answerer-tier-clickable { width: auto; min-width: 0; flex: 1 1 auto; }
+  .answerer-dashboard .answerer-stats-row > .level-coins-wrap.answerer-tier-clickable .answerer-stats { flex: 1 1 auto; min-width: 0; }
+  .answerer-dashboard .answerer-hero-metrics { display: grid; grid-template-columns: 150px repeat(3, auto); gap: var(--sp-3); }
+  .answerer-dashboard .answerer-hero-metrics > .answerer-coin-metric { width: 150px; min-width: 150px; }
+  .partner-page { height: 100dvh; overflow-y: auto; scrollbar-width: none; }
+  .partner-page::-webkit-scrollbar { display: none; }
+}
+@media (max-width: 760px) {
+  .partner-header { align-items: center; }
+  .partner-header > .dashboard-menu-button { width: 38px; height: 38px; flex-basis: 38px; display: grid; place-items: center; margin: 0; padding: 0; }
+  .partner-header > .dashboard-menu-button > svg { display: block; width: 20px; height: 20px; margin: 0; }
+  .partner-brand { align-items: center; }
+  .partner-brand .brand-mark { display: grid; }
+}
+.coins-buy-btn {
+  width: 100%;
+}
+.coins-empty {
+  grid-column: 1 / -1;
+  display: grid;
+  place-items: center;
+  min-height: 132px;
+  text-align: center;
+  color: var(--c-ink-3);
+  padding: 28px;
+  border: 1px dashed var(--c-border-strong);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--c-primary-soft) 24%, var(--c-surface));
+  font-size: 13px;
+}
+.coins-orders-section .table-wrap {
+  margin: 0 -24px -24px;
+  border-radius: 0 0 var(--r-md) var(--r-md);
+}
+.coins-orders-section table th:first-child,
+.coins-orders-section table td:first-child {
+  padding-left: 24px;
+}
+.coins-orders-section table th:last-child,
+.coins-orders-section table td:last-child {
+  padding-right: 24px;
+}
+@media (max-width: 640px) {
+  .coins-shop-section,
+  .coins-orders-section {
+    padding: 18px;
+  }
+  .coins-overview {
+    flex-direction: column;
+    gap: 14px;
+  }
+  .coins-overview-divider {
+    width: 100%;
+    height: 1px;
+  }
+  .coins-orders-section .table-wrap {
+    margin: 0 -18px -18px;
+  }
+  .coins-orders-section table th:first-child,
+  .coins-orders-section table td:first-child {
+    padding-left: 18px;
+  }
+
+  /* mobile-header-alignment */
+  .coins-orders-section table th:last-child,
+  .coins-orders-section table td:last-child {
+    padding-right: 18px;
+  }
+}
+
+/* ===== 答主看板金币与等级交互 ===== */
+@media (max-width: 760px) {
+  .partner-header > .dashboard-menu-button {
+    width: 38px;
+    height: 38px;
+    flex-basis: 38px;
+    display: grid;
+    place-items: center;
+    border-radius: 10px;
+  }
+  .partner-header > .dashboard-menu-button > svg { width: 20px; height: 20px; }
+  .tier-benefits-grid { grid-template-columns: 1fr; }
+  .level-coins-wrap.answerer-tier-clickable { min-width: 0; }
+  .answerer-coin-metric { min-width: 0; }
+}
+
+/* 答主看板：本轮视觉调整最终覆盖，置于后方避免被旧规则覆盖 */
+@media (min-width: 761px) {
+  .answerer-stats-row > .level-coins-wrap.answerer-tier-clickable { flex: 1 1 420px; min-width: 380px; }
+  .answerer-hero-metrics > .answerer-coin-metric { min-width: 116px; }
+}
+@media (max-width: 560px) {
+  .partner-header { align-items: center; }
+  .partner-header-brand-wrap { display: flex; align-items: center; min-width: 0; flex: 1 1 auto; }
+  .partner-header .dashboard-menu-button { display: inline-flex; width: 32px; height: 32px; flex: 0 0 32px; align-items: center; justify-content: center; gap: 5px; padding: 0; border: 1px solid var(--c-primary); border-radius: 9px; background: var(--c-primary-soft); color: var(--c-primary); }
+  .partner-header .dashboard-menu-button .brand-mark { display: grid; width: 22px; height: 22px; place-items: center; font-size: 13px; line-height: 1; }
+  .partner-header .dashboard-menu-button > svg { width: 15px; height: 15px; }
+  .partner-brand .brand-mark { display: none; }
+}
+.answerer-coin-metric .answerer-coin-help { width: 15px; height: 15px; font-size: 9px; }
+.answerer-dashboard .coins-page-main-embedded,
+.answerer-dashboard .coins-page-main-embedded > .notice-box,
+.answerer-dashboard .coins-page-main-embedded > .coins-section-tabs,
+.answerer-dashboard .coins-page-main-embedded > .coins-shop-section,
+.answerer-dashboard .coins-page-main-embedded > .coins-orders-section {
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+}
+.answerer-dashboard .coins-page-main-embedded { margin: 0; padding: 0; }
+
+@media (max-width: 560px) {
+  .partner-header { align-items: center; }
+  .partner-header > .dashboard-menu-button { width: 38px; height: 38px; flex: 0 0 38px; display: grid; place-items: center; margin: 0; padding: 0; }
+  .partner-header > .dashboard-menu-button > svg { display: block; width: 20px; height: 20px; margin: 0; }
+  .partner-brand { align-items: center; }
+  .partner-brand .brand-mark { display: grid; }
+}
+.answerer-coin-metric .answerer-coin-help { width: 15px; height: 15px; font-size: 9px; }
+
+/* ===== v1 等级金币答疑弹窗 ===== */
+.faq-help-body {
+  display: grid;
+  gap: 10px;
+  max-height: 66vh;
+  overflow-y: auto;
+  padding: 2px;
+}
+.faq-intro {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--r-lg);
+  background: linear-gradient(135deg, var(--c-primary-soft), #ffffff);
+  border: 1px solid #b9f0d7;
+}
+/* 答主看板最终覆盖规则 */
+@media (min-width: 761px) {
+  .answerer-dashboard .answerer-stats-row { display: grid; grid-template-columns: minmax(420px, 1fr) auto; align-items: stretch; gap: var(--sp-4); flex-wrap: nowrap; }
+  .answerer-dashboard .answerer-stats-row > .level-coins-wrap.answerer-tier-clickable { width: auto; min-width: 0; flex: 1 1 auto; }
+  .answerer-dashboard .answerer-stats-row > .level-coins-wrap.answerer-tier-clickable .answerer-stats { flex: 1 1 auto; min-width: 0; }
+  .answerer-dashboard .answerer-hero-metrics { display: grid; grid-template-columns: repeat(4, minmax(86px, auto)); gap: var(--sp-3); }
+  .answerer-dashboard .answerer-hero-metrics > .answerer-coin-metric { width: 150px; min-width: 150px; }
+  .partner-page { height: 100dvh; overflow-y: auto; scrollbar-width: none; }
+  .partner-page::-webkit-scrollbar { display: none; }
+}
+@media (max-width: 760px) {
+  .partner-header > .dashboard-menu-button { display: grid; width: 38px; height: 38px; flex: 0 0 38px; place-items: center; margin: 0; padding: 0; }
+  .partner-header > .dashboard-menu-button > svg { display: block; width: 20px; height: 20px; margin: 0; }
+  .partner-brand { align-items: center; }
+  .partner-brand .brand-mark { display: grid; }
+}
+.answerer-dashboard .answerer-coin-metric .answerer-coin-help { width: 15px; height: 15px; font-size: 9px; }
+
+/* 答主看板布局最终覆盖：防止旧规则缩窄等级与金币卡 */
+@media (min-width: 761px) {
+  .answerer-dashboard .answerer-stats-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: stretch;
+    gap: var(--sp-4);
+    flex-wrap: nowrap;
+  }
+  .answerer-dashboard .answerer-stats-row > .level-coins-wrap.answerer-tier-clickable {
+    width: auto;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  .answerer-dashboard .answerer-stats-row > .level-coins-wrap.answerer-tier-clickable .answerer-stats {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .answerer-dashboard .answerer-hero-metrics {
+    display: grid;
+    grid-template-columns: 150px repeat(3, auto);
+    gap: var(--sp-3);
+  }
+  .answerer-dashboard .answerer-hero-metrics > .answerer-coin-metric {
+    width: 150px;
+    min-width: 150px;
+  }
+}
+@media (max-width: 760px) {
+  .partner-header {
+    align-items: center;
+  }
+  .partner-header > .dashboard-menu-button,
+  .partner-header > .dashboard-menu-button > svg {
+    display: grid;
+    place-items: center;
+  }
+  .partner-header > .dashboard-menu-button {
+    width: 38px;
+    height: 38px;
+    flex-basis: 38px;
+  }
+  .partner-header > .dashboard-menu-button > svg {
+    width: 20px;
+    height: 20px;
+  }
+  .partner-brand {
+    align-items: center;
+  }
+}
+
+.faq-intro-mark {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--c-primary);
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.faq-intro strong {
+  color: var(--c-ink);
+  font-size: 14px;
+}
+.faq-intro p {
+  margin: 2px 0 0;
+  color: var(--c-ink-3);
+  font-size: 12px;
+}
+.faq-item {
+  background: var(--c-surface-2);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  padding: 10px 14px;
+}
+.faq-item h4 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: var(--c-ink);
+}
+.faq-item p,
+.faq-item ul {
+  margin: 0;
+  padding-left: 0;
+  color: var(--c-ink-2);
+  font-size: 13px;
+  line-height: 1.65;
+}
+.faq-item ul {
+  list-style: none;
+  padding-left: 0;
+}
+.faq-item li {
+  position: relative;
+  padding-left: 16px;
+  margin: 2px 0;
+}
+.faq-item li::before {
+  content: '·';
+  position: absolute;
+  left: 4px;
+  color: var(--c-primary);
+  font-weight: 800;
+}
+.faq-item b {
+  color: #059669;
+  font-weight: 800;
+}
+.faq-highlight {
+  background: var(--c-primary-soft);
+  border-color: #b9f0d7;
+}
+
+/* 答主看板：等级与金币说明 */
+.faq-modal {
+  width: min(660px, 100%);
+}
+.faq-modal header {
+  padding: 20px 24px 14px;
+  border-bottom: 1px solid var(--c-border);
+  background: linear-gradient(135deg, #f7fffb, #ffffff 62%);
+}
+.faq-modal header h2 {
+  font-size: 18px;
+  letter-spacing: .02em;
+}
+.faq-modal .faq-help-body {
+  max-height: min(620px, calc(100vh - 170px));
+  gap: 12px;
+  padding: 20px 24px 24px;
+  background: linear-gradient(180deg, #ffffff, #fbfdfc);
+}
+.faq-modal .faq-intro {
+  gap: 14px;
+  padding: 16px;
+  border-color: #b9f0d7;
+  box-shadow: 0 6px 18px rgba(5, 150, 105, .07);
+}
+.faq-modal .faq-intro-mark {
+  width: 36px;
+  height: 36px;
+  font-size: 18px;
+  box-shadow: 0 4px 10px rgba(5, 150, 105, .22);
+}
+.faq-modal .faq-intro strong {
+  font-size: 15px;
+}
+.faq-modal .faq-intro p {
+  margin-top: 4px;
+  line-height: 1.55;
+}
+.faq-modal .faq-item {
+  position: relative;
+  padding: 14px 16px 14px 18px;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(17, 24, 39, .025);
+  transition: transform .18s ease, border-color .18s ease, background .18s ease, box-shadow .18s ease;
+}
+.faq-modal .faq-item::before {
+  content: '';
+  position: absolute;
+  top: 15px;
+  bottom: 15px;
+  left: 0;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: #d1fae5;
+  transition: background .18s ease, top .18s ease, bottom .18s ease;
+}
+.faq-modal .faq-item h4 {
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+.faq-modal .faq-item p,
+.faq-modal .faq-item ul {
+  color: var(--c-ink-3);
+  line-height: 1.7;
+}
+/* 所有说明项默认保持同一中性样式，重点仅在交互时呈现。 */
+.faq-modal .faq-highlight {
+  border-color: var(--c-border);
+  background: #fff;
+}
+.faq-modal .faq-highlight::before {
+  background: #d1fae5;
+}
+@media (hover: hover) {
+  .faq-modal .faq-item:hover {
+    transform: translateY(-2px);
+    border-color: #9ee7c8;
+    background: linear-gradient(135deg, #ecfdf5, #f8fffc);
+    box-shadow: 0 8px 20px rgba(5, 150, 105, .09);
+  }
+  .faq-modal .faq-item:hover::before {
+    top: 12px;
+    bottom: 12px;
+    background: var(--c-primary);
+  }
+}
+/* 触屏设备在按住卡片时提供与悬浮一致的反馈。 */
+.faq-modal .faq-item:active {
+  transform: scale(.985);
+  border-color: #9ee7c8;
+  background: linear-gradient(135deg, #ecfdf5, #f8fffc);
+  box-shadow: 0 6px 16px rgba(5, 150, 105, .08);
+}
+.faq-modal .faq-item:active::before {
+  top: 12px;
+  bottom: 12px;
+  background: var(--c-primary);
+}
+.faq-modal .faq-item b {
+  color: #047857;
+}
+@media (max-width: 640px) {
+  .faq-modal header { padding: 18px 18px 12px; }
+  .faq-modal .faq-help-body { padding: 16px 18px 18px; }
+  .faq-modal .faq-item { padding: 13px 14px 13px 16px; }
+}
+/* v1 等级+金币并排组合，消除中间空白；统计模块作为独立整体 */
+.level-coins-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.level-coins-wrap .answerer-stats {
+  flex: 0 1 300px;
+  min-width: 0;
+}
+.coins-module {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  padding: 10px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+.coins-module-label {
+  font-size: 12px;
+  opacity: 0.8;
+}
+.coins-module-value {
+  font-size: 21px;
+  letter-spacing: 0.4px;
+}
+.coins-module-link {
+  font-size: 12px;
+  color: #fff;
+  text-decoration: none;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.5);
+  padding-bottom: 1px;
+}
+.coins-module-help {
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-weight: 700;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+/* 手机端：等级与金币保持左右并排，不换行；统计模块允许另起一行 */
+@media (max-width: 760px) {
+  .level-coins-wrap {
+    flex-wrap: nowrap;
+    width: 100%;
+  }
+  .level-coins-wrap .answerer-stats {
+    flex: 1 1 58%;
+  }
+  .coins-module {
+    flex: 0 1 auto;
+    gap: 6px;
+    padding: 8px 10px;
+  }
+  .coins-module-value {
+    font-size: 17px;
+  }
+  .coins-module-link {
+    font-size: 11px;
+  }
+}
+/* ===== v1 金币商城页 ===== */
+.coins-page {
+  min-height: 100vh;
+  background: var(--c-bg);
+}
+.coins-page-top {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 20px 16px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.coins-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--c-ink);
+  font-weight: 700;
+  font-size: 16px;
+  text-decoration: none;
+}
+.coins-brand small {
+  color: var(--c-ink-3);
+  font-size: 12px;
+  font-weight: 500;
+  margin-left: 2px;
+  border-left: 1px solid var(--c-border-strong);
+  padding-left: 8px;
+}
+.coins-page-main {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 16px;
+  display: grid;
+  gap: 16px;
+}
+.notice-box {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-left: 3px solid var(--c-warning);
+  border-radius: var(--r-md);
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--c-ink-2);
+}
+.coins-overview {
+  display: flex;
+  align-items: stretch;
+  gap: 24px;
+  padding: 18px 20px;
+  background: linear-gradient(135deg, #ffffff 0%, #f2fdf8 100%);
+}
+.coins-overview-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.coins-ov-label {
+  font-size: var(--fs-meta);
+  letter-spacing: 1px;
+  color: var(--c-ink-3);
+  text-transform: uppercase;
+}
+.coins-lv-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-width: 72px;
+  height: 44px;
+  padding: 0 14px;
+  border-radius: var(--r-lg);
+  background: var(--c-primary-soft);
+  color: #059669;
+  font-weight: 800;
+  font-size: 24px;
+}
+.coins-balance-value {
+  font-size: 32px;
+  font-weight: 800;
+  color: var(--c-ink);
+  letter-spacing: 0.5px;
+}
+.coins-ov-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  font-size: 12px;
+  color: var(--c-ink-3);
+}
+.coins-overview-divider {
+  width: 1px;
+  background: var(--c-border);
+}
+.coins-shop-section,
+.coins-orders-section {
+  padding: 24px;
+}
+.coins-section-head {
+  padding: 0 0 16px;
+  border-bottom: 1px solid var(--c-border);
+  margin-bottom: 18px;
+}
+.coins-section-head h3 {
+  margin: 0;
+  font-size: var(--fs-section-title);
+  color: var(--c-ink);
+}
+.coins-section-head p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--c-ink-3);
+}
+.coins-shop-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 16px;
+}
+.coins-product {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-lg);
+  padding: 14px;
+  background: var(--c-surface);
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+.coins-product:hover {
+  box-shadow: 0 8px 20px rgba(17, 24, 39, 0.06);
+  transform: translateY(-1px);
+}
+.coins-product-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.coins-product-top strong {
+  color: var(--c-ink);
+  font-size: 14px;
+  line-height: 1.4;
+}
+.coins-product-type {
+  font-size: 11px;
+}
+.coins-product-desc {
+  margin: 0;
+  font-size: 12px;
+  color: var(--c-ink-3);
+  min-height: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.coins-product-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.coins-price {
+  color: #059669;
+  font-size: 18px;
+  font-weight: 800;
+}
+.coins-price small {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--c-ink-3);
+}
+.coins-stock {
+  font-size: 11px;
+  color: var(--c-ink-4);
+}
+.coins-buy-btn {
+  width: 100%;
+}
+.coins-empty {
+  grid-column: 1 / -1;
+  display: grid;
+  place-items: center;
+  min-height: 132px;
+  text-align: center;
+  color: var(--c-ink-3);
+  padding: 28px;
+  border: 1px dashed var(--c-border-strong);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--c-primary-soft) 24%, var(--c-surface));
+  font-size: 13px;
+}
+.coins-orders-section .table-wrap {
+  margin: 0 -24px -24px;
+  border-radius: 0 0 var(--r-md) var(--r-md);
+}
+.coins-orders-section table th:first-child,
+.coins-orders-section table td:first-child {
+  padding-left: 24px;
+}
+.coins-orders-section table th:last-child,
+.coins-orders-section table td:last-child {
+  padding-right: 24px;
+}
+@media (max-width: 640px) {
+  .coins-shop-section,
+  .coins-orders-section {
+    padding: 18px;
+  }
+  .coins-overview {
+    flex-direction: column;
+    gap: 14px;
+  }
+  .coins-overview-divider {
+    width: 100%;
+    height: 1px;
+  }
+  .coins-orders-section .table-wrap {
+    margin: 0 -18px -18px;
+  }
+  .coins-orders-section table th:first-child,
+  .coins-orders-section table td:first-child {
+    padding-left: 18px;
+  }
+  .coins-orders-section table th:last-child,
+  .coins-orders-section table td:last-child {
+    padding-right: 18px;
+  }
+}
+
+/* ===== v1 等级金币答疑弹窗 ===== */
+.faq-help-body {
+  display: grid;
+  gap: 10px;
+  max-height: 66vh;
+  overflow-y: auto;
+  padding: 2px;
+}
+.faq-intro {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--r-lg);
+  background: linear-gradient(135deg, var(--c-primary-soft), #ffffff);
+  border: 1px solid #b9f0d7;
+}
+.faq-intro-mark {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--c-primary);
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.faq-intro strong {
+  color: var(--c-ink);
+  font-size: 14px;
+}
+.faq-intro p {
+  margin: 2px 0 0;
+  color: var(--c-ink-3);
+  font-size: 12px;
+}
+.faq-item {
+  background: var(--c-surface-2);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  padding: 10px 14px;
+}
+.faq-item h4 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: var(--c-ink);
+}
+.faq-item p,
+.faq-item ul {
+  margin: 0;
+  padding-left: 0;
+  color: var(--c-ink-2);
+  font-size: 13px;
+  line-height: 1.65;
+}
+.faq-item ul {
+  list-style: none;
+  padding-left: 0;
+}
+.faq-item li {
+  position: relative;
+  padding-left: 16px;
+  margin: 2px 0;
+}
+.faq-item li::before {
+  content: '·';
+  position: absolute;
+  left: 4px;
+  color: var(--c-primary);
+  font-weight: 800;
+}
+.faq-item b {
+  color: #059669;
+  font-weight: 800;
+}
+.faq-highlight {
+  background: var(--c-primary-soft);
+  border-color: #b9f0d7;
+}

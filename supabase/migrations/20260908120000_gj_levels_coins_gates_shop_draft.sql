@@ -135,12 +135,12 @@ select g.level,
          else 865000 + (g.level-80) * 20000 end,
        case when g.level <= 2 then 1 when g.level <= 5 then 2 when g.level <= 8 then 3 else 4 end,
        case
-         when g.level <= 10 then round((2500 * g.level) / 30.0)::int
-         when g.level <= 20 then round((25000 + 2000*(g.level-10)) / 30.0)::int
-         when g.level <= 30 then round((45000 + 1250*(g.level-20)) / 30.0)::int
-         when g.level <= 40 then round((57500 + 750*(g.level-30)) / 30.0)::int
-         when g.level <= 50 then round((65000 + 500*(g.level-40)) / 30.0)::int
-         else 2333 end
+         when g.level <= 10 then round((2000 * g.level) / 30.0)::int
+         when g.level <= 20 then round((20000 + 1600*(g.level-10)) / 30.0)::int
+         when g.level <= 30 then round((36000 + 1000*(g.level-20)) / 30.0)::int
+         when g.level <= 40 then round((46000 + 600*(g.level-30)) / 30.0)::int
+         when g.level <= 50 then round((52000 + 400*(g.level-40)) / 30.0)::int
+         else round(56000 / 30.0)::int end
 from generate_series(1, 100) g.level
 on conflict (level) do update set
   min_exp = excluded.min_exp,
@@ -149,7 +149,7 @@ on conflict (level) do update set
 
 insert into public.keyflow_economy_config (key, value) values
   ('coin_unit_rmb', '0.01'::jsonb),
-  ('coin_scale_s', '1.0'::jsonb),
+  ('coin_scale_s', '0.8'::jsonb),
   ('decay_days_per_level', '10'::jsonb),
   ('recovery_days_per_level', '3'::jsonb),
   ('daily_post_xp', '40'::jsonb),
