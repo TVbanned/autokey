@@ -71,3 +71,9 @@ export function publicZhihuQuestionUrl(url) {
   if (!cleanUrl) return cleanUrl
   return cleanUrl.replace(/\/api\/v4\/questions\/(\d+)\/?$/, '/question/$1')
 }
+
+export function getZhihuQuestionId(url) {
+  const cleanUrl = cleanZhihuAnswerUrl(url)
+  const matched = cleanUrl?.match(/https?:\/\/(?:www\.)?zhihu\.com\/(?:question|api\/v4\/questions)\/(\d+)(?:\/|$)/i)
+  return matched?.[1] || null
+}

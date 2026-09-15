@@ -38,8 +38,22 @@ async function deepseekChat(messages: Array<{ role: string; content: string }>, 
     }),
     signal: AbortSignal.timeout(45_000),
   });
-  if (!response.ok) throw new Error(`AI 服务请求失败（HTTP ${response.status}）`);
-  const payload = await response.json();
+  const responseText = await response.text();
+  let upstreamMessage = responseText;
+  try {
+    const errorPayload = JSON.parse(responseText);
+    upstreamMessage = String(errorPayload?.error?.message || errorPayload?.message || errorPayload?.error || responseText);
+  } catch {
+    // 使用上游返回的纯文本错误信息
+  }
+  upstreamMessage = upstreamMessage.replace(/\s+/g, " ").trim().slice(0, 500);
+  if (!response.ok) {
+    const message = response.status === 402
+      ? "AI 服务余额/额度不足，请联系管理员充值或更换可用模型。"
+      : `AI 服务请求失败（HTTP ${response.status}）`;
+    throw new Error(`${message}${upstreamMessage ? ` 上游信息：${upstreamMessage}` : ""}`);
+  }
+  const payload = JSON.parse(responseText);
   return String(payload.choices?.[0]?.message?.content || "");
 }
 

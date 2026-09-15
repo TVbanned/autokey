@@ -120,6 +120,60 @@ async function refreshAccessToken(cfg: Record<string, unknown>) {
   return data;
 }
 
+async function syncAnswerersSheet(
+  supabase: ReturnType<typeof createClient>,
+  sheet: { book: string; sheet: string },
+  token: string,
+  cfg: { client_id: string; open_id: string },
+): Promise<number> {
+  const { data, error } = await supabase
+    .from("keyflow_answerers")
+    .select("id,serial_number,zhihu_name,remark,account_address,wechat_id,avatar_url,created_at,updated_at")
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(`读取答主信息失败: ${error.message}`);
+
+  const values = [
+    ["答主 ID", "注册编号", "知乎用户名", "备注", "知乎主页地址", "微信号", "头像地址", "注册时间", "更新时间"],
+    ...(data ?? []).map((answerer) => [
+      answerer.id ?? "",
+      answerer.serial_number == null ? "" : String(answerer.serial_number).padStart(3, "0"),
+      answerer.zhihu_name ?? "",
+      answerer.remark ?? "",
+      answerer.account_address ?? "",
+      answerer.wechat_id ?? "",
+      answerer.avatar_url ?? "",
+      fmt(answerer.created_at),
+      fmt(answerer.updated_at),
+    ]),
+  ];
+  const resp = await fetch(`${SPREADSHEET_API}/files/${encodeURIComponent(sheet.book)}/batchUpdate`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Access-Token": token,
+      "Client-Id": cfg.client_id,
+      "Open-Id": cfg.open_id,
+    },
+    body: JSON.stringify({
+      requests: [{
+        updateRangeRequest: {
+          sheetId: sheet.sheet,
+          gridData: {
+            startRow: 0,
+            startColumn: 0,
+            rows: values.map((row) => ({ values: row.map((cell) => ({ cellValue: { string: String(cell) } })) })),
+          },
+        },
+      }],
+    }),
+  });
+  const body = await resp.json();
+  if (!resp.ok || (body.code != null && body.code !== 0) || (body.ret != null && body.ret !== 0)) {
+    throw new Error(`腾讯文档写入失败: ${body.message ?? body.msg ?? resp.status}`);
+  }
+  return data?.length ?? 0;
+}
+
 // 日常问题&回答：新增后全量重排，最新发布固定在表头下一行（第 2 行）。
 // 因为 AFTER INSERT 触发器在整条 INSERT 语句提交后才发出 webhook，
 // 所以同一批多行的所有 webhook 都会读到相同的已提交状态，重排结果幂等。
@@ -297,10 +351,6 @@ serve(async (req) => {
       return json({ ok: true, skipped: true });
     }
 
-    // 回答已分流至答主日常投稿（keyflow_daily_submissions），日常问题&回答表不再写入回答，
-    // 无需再按 content_type 路由子表，直接以表名作为 sheetKey。
-    const sheetKey = table;
-
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
@@ -318,6 +368,7 @@ serve(async (req) => {
       return json({ error: "配置缺少 client_id 或 open_id" }, 500);
     }
 
+    const sheetKey = isAnswererSync ? "keyflow_answerers" : table;
     const sheet = cfg.sheets?.[sheetKey];
     if (!sheet?.book || !sheet?.sheet) {
       return json({ error: `表 ${sheetKey} 未配置腾讯文档 book/sheet` }, 500);
@@ -333,6 +384,13 @@ serve(async (req) => {
         open_id: fresh.user_id || cfg.open_id,
         token_expires_at: new Date(Date.now() + (fresh.expires_in || 259200) * 1000).toISOString(),
       }).eq("id", 1);
+    }
+
+    if (isAnswererSync) {
+      const { data: isAdmin, error: adminError } = await supabase.rpc("keyflow_is_admin", { p_token: String(payload.adminToken ?? "") });
+      if (adminError || !isAdmin) return json({ error: "无权操作" }, 401);
+      const count = await syncAnswerersSheet(supabase, sheet, token, cfg);
+      return json({ ok: true, count });
     }
 
     // 日常问题&回答：新增时全量重排，最新发布置顶（表头固定第 1 行）。
