@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // 综合活动问题库：从腾讯文档表格拉取问题清单。
-// 工作表 1：第 1 列 = 问题文本，第 2 列 = 问题 URL，第 3 列 = 权重（0-100）。
+// 工作表 1：第 1 列 = 问题文本，第 2 列 = 问题 URL，第 3 列 = 权重（0-100），第 4 列 = 额外金币（回答该题额外发放的金币，0 或空表示没有）。
 // 工作表 2：第 1 列 = 精华回答文本，第 2 列 = 回答 URL，第 3 列 = 答主名。
 const TOKEN_URL = "https://docs.qq.com/oauth/v2/token";
 const SHEET_API = "https://docs.qq.com/openapi/spreadsheet/v3";
@@ -102,7 +102,7 @@ serve(async (req) => {
       return json({ error: `获取工作表信息失败: HTTP ${sresp.status} code=${v3Code ?? sbody.ret} msg=${sbody.message ?? sbody.msg ?? ""}` }, 500);
     }
 
-    const vresp = await fetch(`${SHEET_API}/files/${encodeURIComponent(book)}/${encodeURIComponent(sheetId)}/A1:C1000`, { headers });
+    const vresp = await fetch(`${SHEET_API}/files/${encodeURIComponent(book)}/${encodeURIComponent(sheetId)}/A1:D1000`, { headers });
     const vbody = await vresp.json().catch(() => ({}));
     if (!vresp.ok || (vbody.code != null && vbody.code !== 0) || (vbody.ret != null && vbody.ret !== 0)) {
       return json({ error: `读取表格数据失败: HTTP ${vresp.status} code=${vbody.code ?? vbody.ret} msg=${vbody.message ?? vbody.msg ?? ""}` }, 500);
@@ -133,14 +133,17 @@ serve(async (req) => {
       const first = cellText(cells[0] ?? null);
       const second = cellText(cells[1] ?? null);
       const third = cellText(cells[2] ?? null);
+      const fourth = cellText(cells[3] ?? null);
       const text = first.text;
       const url2 = second.url || second.text || first.url;
       const rawWeight = Number(third.text);
       const weight = Number.isFinite(rawWeight) && third.text !== "" ? Math.max(0, Math.min(100, rawWeight)) : 50;
+      const rawReward = Number(fourth.text);
+      const rewardCoins = Number.isFinite(rawReward) && fourth.text !== "" ? Math.max(0, Math.floor(rawReward)) : 0;
       // 支持标准表头；如果表格没有表头（第 1 行就是数据），也能正常读取。
       if (idx === 0 && /问题/.test(text) && /(URL|链接|url)/i.test(url2 || second.text)) return;
       if (!text && !url2) return;
-      questions.push({ activity_id, question_text: text || `问题 ${idx + 1}`, question_url: url2, question_id: extractQuestionId(url2), weight, position: idx });
+      questions.push({ activity_id, question_text: text || `问题 ${idx + 1}`, question_url: url2, question_id: extractQuestionId(url2), weight, reward_coins: rewardCoins, position: idx });
     });
 
     const featuredAnswers: Record<string, unknown>[] = [];

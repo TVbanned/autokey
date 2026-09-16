@@ -92,6 +92,9 @@ serve(async (req) => {
 
     const rd = game.release_date
     const releaseDate = rd?.date ? parseSteamReleaseDate(rd.date) : null
+    // 中国区价格（cc=cn）：final 是折后价，单位「分」
+    const priceOverview = chineseGame?.price_overview || game.price_overview || null
+    const isFree = !!(chineseGame?.is_free ?? game.is_free)
 
     return new Response(
       JSON.stringify({
@@ -102,6 +105,11 @@ serve(async (req) => {
           desc: chineseGame?.short_description || game.short_description || "",
           cover: chineseGame?.header_image || game.header_image || "",
           release_date: releaseDate,
+          is_free: isFree,
+          price_cny: priceOverview ? Math.round(Number(priceOverview.final) || 0) / 100 : null,
+          price_initial_cny: priceOverview ? Math.round(Number(priceOverview.initial) || 0) / 100 : null,
+          price_discount_percent: priceOverview ? Number(priceOverview.discount_percent) || 0 : 0,
+          price_formatted: priceOverview?.final_formatted || null,
           screenshots: (game.screenshots || []).slice(0, 4).map(s =>
             (s.path_full || s.path_thumbnail || "").replace(/\.1920x1080\.jpg/, ".600x338.jpg")
           ).filter(Boolean),

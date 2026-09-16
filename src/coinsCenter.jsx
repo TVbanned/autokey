@@ -11,6 +11,11 @@ const reimbursementStatusLabel = { pending: '待处理', processing: '处理中'
 const typeLabel = { game: '游戏/卡密', physical: '实体', other: '其它' }
 const categoryLabel = { game: '游戏', physical: '实体好礼', other: '周边权益', reimbursement: '游戏报销' }
 const fmtMoney = (n) => Number(n || 0).toLocaleString()
+// 复制卡密：成功后把「已复制」状态交给调用方的 setter 显示
+const copyKeyText = async (value, setCopied) => {
+  try { await navigator.clipboard.writeText(value); setCopied(value) }
+  catch { setCopied('') }
+}
 
 export default function CoinsCenter({ embedded = false, onBalanceChange }) {
   const session = readSession()
@@ -23,19 +28,23 @@ export default function CoinsCenter({ embedded = false, onBalanceChange }) {
   const [busy, setBusy] = useState(false)
   const [section, setSection] = useState('shop')
   const [redeemProduct, setRedeemProduct] = useState(null)
-  const [redeemAddress, setRedeemAddress] = useState('')
+  const [redeemContact, setRedeemContact] = useState({ name: '', phone: '', address: '' })
   const [redeemSuccess, setRedeemSuccess] = useState(false)
+  const [redeemResult, setRedeemResult] = useState(null)
+  const [catalogPools, setCatalogPools] = useState({})
+  const [copiedKey, setCopiedKey] = useState('')
   const [reimbursementProduct, setReimbursementProduct] = useState(null)
   const [reimbursementSuccess, setReimbursementSuccess] = useState(false)
   const [reimbursement, setReimbursement] = useState({ article_url: '', game_name: '', game_price: '' })
 
   const load = async () => {
     if (!answererId) return
-    const [ecoRes, catRes, ordRes, reimbRes] = await Promise.all([
+    const [ecoRes, catRes, ordRes, reimbRes, poolRes] = await Promise.all([
       supabase.rpc('keyflow_answerer_economy_state', { p_answerer_id: answererId }),
       supabase.from('keyflow_reward_catalog').select('*').eq('status', 'on').order('sort_order', { ascending: true }),
-      supabase.from('keyflow_redeem_orders').select('*').eq('answerer_id', answererId).order('created_at', { ascending: false }),
+      supabase.rpc('keyflow_answerer_redeem_orders', { p_answerer_id: answererId }),
       supabase.rpc('keyflow_answerer_game_reimbursement_orders', { p_answerer_id: answererId }),
+      supabase.rpc('keyflow_shop_catalog_pools'),
     ])
     // 商品展示不应被兑换记录权限问题阻塞；记录暂不可用时保留空列表。
     const criticalErrors = [ecoRes.error, catRes.error].filter(Boolean)
@@ -43,6 +52,8 @@ export default function CoinsCenter({ embedded = false, onBalanceChange }) {
     setState(ecoRes.error ? null : ecoRes.data)
     if (!ecoRes.error) onBalanceChange?.(ecoRes.data?.coins_balance ?? null)
     setCatalog(catRes.error ? [] : (catRes.data || []))
+    // 绑定了产品 Key 池的商品：缺货口径以池子为准
+    setCatalogPools(Object.fromEntries((poolRes.error ? [] : (poolRes.data || [])).map((row) => [row.catalog_id, row])))
     if (ordRes.error) console.warn('兑换记录暂不可用：', ordRes.error.message)
     if (reimbRes.error) console.warn('报销记录暂不可用：', reimbRes.error.message)
     const redeemedOrders = ordRes.error ? [] : (ordRes.data || []).map((order) => ({ ...order, order_type: 'redeem' }))
@@ -61,22 +72,27 @@ export default function CoinsCenter({ embedded = false, onBalanceChange }) {
     if (backendError) { setMsg('兑换功能需数据库升级后启用'); return }
     setMsg('')
     setRedeemSuccess(false)
-    setRedeemAddress('')
+    setRedeemResult(null)
+    clearRedeemContact()
     setRedeemProduct(item)
   }
 
+  const clearRedeemContact = () => setRedeemContact({ name: '', phone: '', address: '' })
+
   const submitRedeem = async () => {
     if (!redeemProduct) return
-    if (redeemProduct.fulfillment_type === 'physical' && !redeemAddress.trim()) { setMsg('请填写收货信息'); return }
+    const contact = { name: redeemContact.name.trim(), phone: redeemContact.phone.trim(), address: redeemContact.address.trim() }
+    if (redeemProduct.fulfillment_type === 'physical' && (!contact.name || !contact.phone || !contact.address)) { setMsg('请完整填写姓名、电话和收货地址'); return }
     setBusy(true)
-    const { error } = await supabase.rpc('keyflow_redeem_product', {
+    const { data, error } = await supabase.rpc('keyflow_redeem_product', {
       p_answerer_id: answererId,
       p_catalog_id: redeemProduct.id,
       p_qty: 1,
-      p_address: redeemProduct.fulfillment_type === 'physical' ? { text: redeemAddress.trim() } : null,
+      p_address: redeemProduct.fulfillment_type === 'physical' ? { ...contact, text: `${contact.name} ${contact.phone} ${contact.address}` } : null,
     })
     setBusy(false)
     if (error) { setMsg(error.message); return }
+    setRedeemResult(data || null)
     setRedeemSuccess(true)
     load()
   }
@@ -161,6 +177,7 @@ export default function CoinsCenter({ embedded = false, onBalanceChange }) {
               <ProductTiltFlashCard
                 key={c.id}
                 product={c}
+                pool={catalogPools[c.id] || null}
                 busy={busy || !!backendError}
                 onRedeem={c.category === 'reimbursement' ? (product) => { setMsg(''); setReimbursementSuccess(false); setReimbursementProduct(product) } : openRedeem}
               />
@@ -185,13 +202,13 @@ export default function CoinsCenter({ embedded = false, onBalanceChange }) {
           </section>
         </div>}
 
-        {redeemProduct && <div className="coin-product-modal-backdrop" role="presentation" onMouseDown={() => { setRedeemProduct(null); setRedeemSuccess(false); setRedeemAddress('') }}>
-          <section className="coin-product-modal redeem-modal" role="dialog" aria-modal="true" aria-labelledby="redeem-title" onMouseDown={(event) => event.stopPropagation()}>
-            {redeemSuccess ? <RedeemSuccess product={redeemProduct} onClose={() => { setRedeemProduct(null); setRedeemSuccess(false); setRedeemAddress('') }} /> : <>
+        {redeemProduct && <div className="coin-product-modal-backdrop" role="presentation" onMouseDown={() => { setRedeemProduct(null); setRedeemSuccess(false); clearRedeemContact() }}>
+          <section className={`coin-product-modal redeem-modal${redeemProduct.fulfillment_type === 'physical' ? ' redeem-modal-wine' : ''}`} role="dialog" aria-modal="true" aria-labelledby="redeem-title" onMouseDown={(event) => event.stopPropagation()}>
+            {redeemSuccess ? <RedeemSuccess product={redeemProduct} keys={Array.isArray(redeemResult?.keys) ? redeemResult.keys : []} onClose={() => { setRedeemProduct(null); setRedeemSuccess(false); setRedeemResult(null); clearRedeemContact() }} /> : <>
               <div className="panel-head"><div><h3 id="redeem-title">确认兑换</h3><p>确认后将扣除 {fmtMoney(redeemProduct.cost_coins)} 金币。{redeemProduct.fulfillment_type === 'physical' ? '请填写收货信息，运营将据此发货。' : '虚拟商品发货后不支持退金币。'}</p></div><button className="outline-button compact" type="button" onClick={() => setRedeemProduct(null)}>关闭</button></div>
               <div className="coin-product-form redeem-form">
                 <div className="redeem-product-summary"><b>{redeemProduct.title}</b><span>本次消耗 <strong>{fmtMoney(redeemProduct.cost_coins)}</strong> 金币</span></div>
-                {redeemProduct.fulfillment_type === 'physical' && <label className="field"><span>收货信息</span><textarea value={redeemAddress} onChange={(event) => setRedeemAddress(event.target.value)} placeholder="姓名 / 电话 / 地址" required /></label>}
+                {redeemProduct.fulfillment_type === 'physical' && <div className="redeem-contact-fields"><label className="field"><span>姓名</span><input value={redeemContact.name} onChange={(event) => setRedeemContact({ ...redeemContact, name: event.target.value })} placeholder="收件人名" required /></label><label className="field"><span>电话</span><input inputMode="tel" value={redeemContact.phone} onChange={(event) => setRedeemContact({ ...redeemContact, phone: event.target.value })} placeholder="您的手机号" required /></label><label className="field"><span>地址</span><input value={redeemContact.address} onChange={(event) => setRedeemContact({ ...redeemContact, address: event.target.value })} placeholder="地区/城市/街道/具体地址" required /></label></div>}
                 {msg && <div className="notice-box reimbursement-error">{msg}</div>}
                 <div className="redeem-form-actions"><button className="outline-button" type="button" onClick={() => setRedeemProduct(null)} disabled={busy}>取消</button><button className="primary" type="button" onClick={submitRedeem} disabled={busy}>{busy ? '兑换中…' : '确认兑换'}</button></div>
               </div>
@@ -203,10 +220,19 @@ export default function CoinsCenter({ embedded = false, onBalanceChange }) {
           <div className="coins-section-head"><div><h3>我的兑换记录</h3></div></div>
           <div className="table-wrap">
             <table>
-              <thead><tr><th>商品</th><th>消耗金币</th><th>状态</th><th>时间</th></tr></thead>
+              <thead><tr><th>商品</th><th>消耗金币</th><th>卡密 / Key</th><th>状态</th><th>时间</th></tr></thead>
               <tbody>
-                {(orders || []).map((o) => <tr key={`${o.order_type}-${o.id}`}><td>{o.order_type === 'reimbursement' ? `游戏报销：${o.game_name}` : o.catalog_id}</td><td>{o.points_spent}</td><td><span className={`pill ${o.status === 'fulfilled' || o.status === 'reimbursed' || o.status === 'completed' ? 'success' : o.status === 'canceled' || o.status === 'refunded' || o.status === 'rejected' ? 'muted' : 'warning'}`}>{o.order_type === 'reimbursement' ? reimbursementStatusLabel[o.status] || o.status : statusLabel[o.status] || o.status}</span></td><td>{fmtTime(o.created_at)}</td></tr>)}
-                {(!orders || orders.length === 0) && <tr><td colSpan="4" className="table-empty">{orders === null ? '加载中…' : '暂无兑换记录'}</td></tr>}
+                {(orders || []).map((o) => {
+                  const issuedKeys = Array.isArray(o.fulfillment_data?.keys) ? o.fulfillment_data.keys : []
+                  return <tr key={`${o.order_type}-${o.id}`}>
+                    <td>{o.order_type === 'reimbursement' ? `游戏报销：${o.game_name}` : (o.catalog_title || '—')}</td>
+                    <td>{o.points_spent}</td>
+                    <td>{issuedKeys.length ? <span className="redeem-key-list inline">{issuedKeys.map((k) => <span className="redeem-key-item" key={k.key_value}><code>{k.key_value}</code><button className="outline-button compact" type="button" onClick={() => copyKeyText(k.key_value, setCopiedKey)}>{copiedKey === k.key_value ? '已复制' : '复制'}</button></span>)}</span> : <span className="muted">—</span>}</td>
+                    <td><span className={`pill ${o.status === 'fulfilled' || o.status === 'reimbursed' || o.status === 'completed' ? 'success' : o.status === 'canceled' || o.status === 'refunded' || o.status === 'rejected' ? 'muted' : 'warning'}`}>{o.order_type === 'reimbursement' ? reimbursementStatusLabel[o.status] || o.status : statusLabel[o.status] || o.status}</span></td>
+                    <td>{fmtTime(o.created_at)}</td>
+                  </tr>
+                })}
+                {(!orders || orders.length === 0) && <tr><td colSpan="5" className="table-empty">{orders === null ? '加载中…' : '暂无兑换记录'}</td></tr>}
               </tbody>
             </table>
           </div>
@@ -220,18 +246,33 @@ function ReimbursementSuccess({ onClose }) {
   return <div className="reimbursement-success"><div className="reimbursement-confetti" aria-hidden="true">{Array.from({ length: 18 }, (_, index) => <i key={index} style={{ '--i': index }} />)}</div><div className="reimbursement-success-mark">✓</div><h3>提交成功</h3><p>已扣除对应金币，运营将通过知乎系统处理报销。</p><button className="primary" type="button" onClick={onClose}>完成</button></div>
 }
 
-function RedeemSuccess({ product, onClose }) {
-  return <div className="reimbursement-success redeem-success"><div className="reimbursement-confetti" aria-hidden="true">{Array.from({ length: 18 }, (_, index) => <i key={index} style={{ '--i': index }} />)}</div><div className="reimbursement-success-mark">✓</div><h3>兑换成功</h3><p>已扣除金币，{product.fulfillment_type === 'physical' ? '运营将按收货信息安排发货。' : '运营将通过站内信发货。'}</p><button className="primary" type="button" onClick={onClose}>完成</button></div>
+function RedeemSuccess({ product, keys = [], onClose }) {
+  const [copiedKey, setCopiedKey] = useState('')
+  return <div className="reimbursement-success redeem-success">
+    <div className="reimbursement-confetti" aria-hidden="true">{Array.from({ length: 18 }, (_, index) => <i key={index} style={{ '--i': index }} />)}</div>
+    <div className="reimbursement-success-mark">✓</div>
+    <h3>兑换成功</h3>
+    {keys.length
+      ? <>
+        <p>已扣除金币并实时发放卡密，请及时保存（「我的兑换记录」里可以长期查看）。</p>
+        <div className="redeem-key-list">{keys.map((item) => <div className="redeem-key-item" key={item.key_value}><code>{item.key_value}</code><button className="outline-button compact" type="button" onClick={() => copyKeyText(item.key_value, setCopiedKey)}>{copiedKey === item.key_value ? '已复制' : '复制'}</button></div>)}</div>
+      </>
+      : <p>已扣除金币，{product.fulfillment_type === 'physical' ? '运营将按收货信息安排发货。' : '运营将通过站内信发货。'}</p>}
+    <button className="primary" type="button" onClick={onClose}>完成</button>
+  </div>
 }
 
-function ProductTiltFlashCard({ product, busy = false, onRedeem }) {
+function ProductTiltFlashCard({ product, pool = null, busy = false, onRedeem }) {
   const [imageFailed, setImageFailed] = useState(false)
   const [tilt, setTilt] = useState({ rotateX: 0, rotateY: 0, reflectShift: 0, reflectAngle: 112, reflectStrength: 0, active: false })
   const frameRef = useRef(null)
   const item = product || {}
   const isReimbursement = item.category === 'reimbursement'
-  const soldOut = !isReimbursement && Number(item.stock_left || 0) < 1
-  const tone = isReimbursement || item.category === 'physical' ? 'gold' : item.category === 'other' ? 'violet' : 'blue'
+  // 绑定了产品 Key 池的商品以池子余量为准：池子空了 = 缺货
+  const poolLeft = pool ? Number(pool.pool_left || 0) : null
+  const stockLeft = poolLeft === null ? Number(item.stock_left || 0) : poolLeft
+  const soldOut = !isReimbursement && stockLeft < 1
+  const tone = isReimbursement ? 'gold' : item.category === 'physical' ? 'wine' : item.category === 'other' ? 'violet' : 'blue'
   const cardTags = String(item.card_tags || '').split(/[,，]/).map((tag) => tag.trim()).filter(Boolean).slice(0, 2)
 
   const moveTilt = (event) => {
@@ -296,7 +337,7 @@ function ProductTiltFlashCard({ product, busy = false, onRedeem }) {
             <small>{isReimbursement ? '扣除金币' : '金币'}</small>
           </div>
           <span className={`coins-flash-stock${soldOut ? ' empty' : ''}`}>
-            {isReimbursement ? '不限量' : soldOut ? '已兑完' : `限量 ${item.stock_left} 份`}
+            {isReimbursement ? '不限量' : soldOut ? (pool ? '缺货' : '已兑完') : `限量 ${stockLeft} 份`}
           </span>
         </div>
         <button
@@ -304,7 +345,7 @@ function ProductTiltFlashCard({ product, busy = false, onRedeem }) {
           disabled={busy || soldOut}
           onClick={() => onRedeem?.(item)}
         >
-          {soldOut ? '已兑完' : isReimbursement ? `${item.reimbursement_discount}折立即兑换` : '立即兑换'}
+          {soldOut ? (pool ? '暂时缺货' : '已兑完') : isReimbursement ? `${item.reimbursement_discount}折立即兑换` : '立即兑换'}
         </button>
       </div>
     </article>
