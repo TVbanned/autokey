@@ -2108,6 +2108,17 @@ function ZhihuQuestionTemplate({ storageKey = 'zq-rows', colWidthsKey = 'zq-col-
       }
       if (!health.ok) throw new Error(health.error || '本地助手未就绪')
       if (!health.loggedIn) throw new Error('知乎未登录，请在助手打开的 Chrome 窗口扫码登录')
+      // 上传前先拦一次：标题末尾没有问号的，知乎一定发布失败（结果里是没有 ID 的空链接）
+      const noMark = items.filter((item) => !/[？?]$/.test(String(item.title || '').trim()))
+      if (noMark.length) {
+        const preview = noMark.slice(0, 8).map((item) => '· ' + item.title.trim()).join('\n')
+        const more = noMark.length > 8 ? `\n…另有 ${noMark.length - 8} 条` : ''
+        if (!window.confirm(`有 ${noMark.length} 条标题末尾没有问号，知乎会发布失败、拿不到问题链接：\n\n${preview}${more}\n\n仍然继续上传吗？（建议先点工具栏「补问号」）`)) {
+          setBusy('')
+          showNotice(`已取消上传：${noMark.length} 条标题缺问号，请先补问号再发布`, true)
+          return
+        }
+      }
       const csv = '\uFEFF' + buildZhihuCsv(items)
       setBusy('zhihu-upload'); showNotice('正在上传到知乎…')
       const uploadRes = await fetch(ZHIHU_HELPER_URL + '/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ csv }), signal: AbortSignal.timeout(90000) })
@@ -2124,7 +2135,13 @@ function ZhihuQuestionTemplate({ storageKey = 'zq-rows', colWidthsKey = 'zq-col-
       if (!resRes.ok || !result.ok) throw new Error(result.error || '下载结果失败')
       const adminToken = getAdminToken()
       if (!adminToken) throw new Error('未获取到管理员凭证，请刷新后台重新登录')
-      const entries = (result.rows || []).map((r) => ({ title: r.title, zhihu_url: cleanZhihuAnswerUrl(r.url), content_type: 'question' }))
+      // 知乎发布失败的行，下载结果里的 URL 是 https://www.zhihu.com/question/（没有 ID），
+      // 这类既不能回填也要明确提示，避免「日常问题运营」里出现空链接。
+      const isUsableQuestionUrl = (url) => /zhihu\.com\/question\/\d+/.test(String(url || ''))
+      const allResultRows = result.rows || []
+      const goodRows = allResultRows.filter((r) => isUsableQuestionUrl(r.url))
+      const badRows = allResultRows.filter((r) => !isUsableQuestionUrl(r.url))
+      const entries = goodRows.map((r) => ({ title: r.title, zhihu_url: cleanZhihuAnswerUrl(r.url), content_type: 'question' }))
       let saved = 0
       if (entries.length) {
         const { data, error } = await supabase.rpc('keyflow_admin_create_daily_questions', { p_token: adminToken, p_questions: entries })
@@ -2133,14 +2150,30 @@ function ZhihuQuestionTemplate({ storageKey = 'zq-rows', colWidthsKey = 'zq-col-
         if (saved) window.dispatchEvent(new CustomEvent('keyflow:daily-questions-created', { detail: data }))
       }
       setBusy('')
-      const linkText = (result.rows || []).map((r) => r.title + ' ' + r.url).join('；')
-      showNotice('完成：发布 ' + (pub.published ?? entries.length) + ' 条，回填日常问题运营 ' + saved + ' 条' + (linkText ? '；' + linkText : ''))
+      const linkText = goodRows.map((r) => r.title + ' ' + r.url).join('；')
+      const badText = badRows.length
+        ? `；⚠️ ${badRows.length} 条知乎未发布成功，已跳过回填：` + badRows.map((r) => r.title).join('、') + '（常见原因：标题末尾没有问号、标题过长、与已有问题重复；可到知乎「查看结果」页看具体原因，必要时点「一键废弃重复问题」）'
+        : ''
+      showNotice('完成：发布 ' + (pub.published ?? goodRows.length) + ' 条，回填日常问题运营 ' + saved + ' 条' + (linkText ? '；' + linkText : '') + badText, badRows.length > 0)
     } catch (error) {
       setBusy('')
       showNotice(error.message || '流程执行失败', true)
     }
   }
   const overCount = rows.filter((row) => row.title.trim().length > 50).length
+  // 知乎要求问题标题以问号结尾：缺问号的会被判 fail，下载结果里的 URL 是
+  // https://www.zhihu.com/question/（没有问题 ID），这种链接不能回填。
+  const missingMarkRows = rows.filter((row) => {
+    const t = row.title.trim()
+    return t && !/[？?]$/.test(t)
+  })
+  const missingMarkCount = missingMarkRows.length
+  const fixQuestionMarks = () => {
+    if (!missingMarkCount) { showNotice('所有标题都以问号结尾，无需补问号'); return }
+    const ids = new Set(missingMarkRows.map((row) => row.id))
+    setRows((prev) => prev.map((row) => (ids.has(row.id) ? { ...row, title: row.title.trim() + '？' } : row)))
+    showNotice('已为 ' + missingMarkCount + ' 个标题补上问号')
+  }
 
   const [colWidths, setColWidths] = useState(() => {
     try {
@@ -2233,6 +2266,7 @@ function ZhihuQuestionTemplate({ storageKey = 'zq-rows', colWidthsKey = 'zq-col-
       <div className="zq-toolbar">
         <div className="zq-toolbar-left">
           <button className="secondary" onClick={shortenAll} disabled={!overCount || busy !== ''} title={overCount ? '有 ' + overCount + ' 个问题超过 50 字' : '当前没有超过 50 字的问题'}><Icon name="edit" size={15}/> {busy === 'shorten' ? '缩题中…' : '一键缩短'}{overCount > 0 && <span className="zq-badge">{overCount}</span>}</button>
+          <button className="secondary" onClick={fixQuestionMarks} disabled={!missingMarkCount} title={missingMarkCount ? '有 ' + missingMarkCount + ' 个标题末尾没有问号（知乎会发布失败）' : '所有标题都以问号结尾'}><Icon name="edit" size={15}/> 补问号{missingMarkCount > 0 && <span className="zq-badge">{missingMarkCount}</span>}</button>
           <button className="secondary" onClick={() => describeAll('describe')} disabled={!rows.length || busy !== ''} title="为尚未填写描述的问题生成 AI 描述（普通版）"><Icon name="edit" size={15}/> {busy === 'describe' ? '生成中…' : 'AI 生成描述普通版'}</button>
           <button className="secondary" onClick={() => describeAll('describe-raw')} disabled={!rows.length || busy !== ''} title="为尚未填写描述的问题生成更随意的 AI 描述（激进版）"><Icon name="edit" size={15}/> {busy === 'describe-raw' ? '生成中…' : 'AI 生成描述激进版'}</button>
         </div>
