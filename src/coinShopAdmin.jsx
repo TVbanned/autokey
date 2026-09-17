@@ -805,11 +805,10 @@ export default function CoinShopAdmin() {
 
   return (
     <div className="coin-shop-admin" style={{ display: 'grid', gap: 16 }}>
-      <div className="panel-head" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-        <div><h3>积分商城后台</h3><p>商品上架 / 兑换订单发货 / 金币调整；1 金币 = ¥0.01，报销产品按后台设定折扣扣除金币。</p></div>
+      <div className="panel-head coin-shop-tabs-head" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <div className="analytics-tabs" role="tablist">
           {[['catalog', '商品'], ['orders', '兑换订单'], ['reimbursements', '报销订单'], ['adjust', '手动调币'], ['scale', '系数设置'], ['coins', '金币概览']].map(([k, label]) => (
-            <button key={k} className={tab === k ? 'active' : ''} onClick={() => setTab(k)}>{label}<b>{k === 'catalog' ? (catalog || []).length : k === 'orders' ? (orders || []).length : k === 'reimbursements' ? (reimbursementOrders || []).length : ''}</b></button>
+            <button key={k} className={tab === k ? 'active' : ''} onClick={() => setTab(k)}>{label}{k === 'catalog' ? <b>{(catalog || []).length}</b> : k === 'orders' ? <b>{(orders || []).length}</b> : k === 'reimbursements' ? <b>{(reimbursementOrders || []).length}</b> : null}</button>
           ))}
         </div>
       </div>

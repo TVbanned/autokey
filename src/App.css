@@ -5770,6 +5770,193 @@ body.zq-resizing { cursor: col-resize; user-select: none; }
 .product-picker-meta { flex: 0 0 auto; color: var(--c-ink-4); font-size: var(--fs-meta); }
 .product-picker-empty { padding: var(--sp-3); color: var(--c-ink-4); font-size: var(--fs-meta); line-height: 1.6; }
 
+/* === 积分商城后台：统一运营台视觉 === */
+.coin-shop-admin {
+  gap: 20px !important;
+  padding: 16px 0 44px !important;
+}
+.coin-shop-admin > .panel-head {
+  position: relative;
+  align-items: flex-start !important;
+  padding: 22px 24px 20px;
+  margin: 0 !important;
+  border: 1px solid rgba(15, 41, 34, .09);
+  border-radius: 12px;
+  background: linear-gradient(120deg, #f0fdf8 0%, #f6fcfb 50%, #f0f9ff 100%);
+  box-shadow: 0 8px 24px rgba(15, 41, 34, .045);
+}
+.coin-shop-admin > .panel-head::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 24px;
+  width: 42px;
+  height: 3px;
+  border-radius: 0 0 3px 3px;
+  background: var(--c-success);
+}
+.coin-shop-admin > .panel-head.coin-shop-tabs-head {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.coin-shop-admin > .panel-head.coin-shop-tabs-head::before { display: none; }
+.coin-shop-admin > .panel-head.coin-shop-tabs-head .analytics-tabs {
+  width: 100%;
+  justify-content: flex-start;
+}
+.coin-shop-admin > .panel-head > div:first-child { min-width: 0; }
+.coin-shop-admin > .panel-head h3 {
+  margin: 0 0 6px;
+  color: var(--c-ink);
+  font-size: 22px !important;
+  font-weight: 750;
+}
+.coin-shop-admin > .panel-head p { margin: 0; color: var(--c-ink-3); font-size: 13px; }
+.coin-shop-admin .analytics-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 3px;
+  max-width: 100%;
+  padding: 4px !important;
+  border-color: rgba(15, 41, 34, .10) !important;
+  border-radius: 8px !important;
+  background: rgba(255, 255, 255, .78) !important;
+  box-shadow: none !important;
+}
+.coin-shop-admin .analytics-tabs button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--c-ink-3);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.coin-shop-admin .analytics-tabs button:hover { background: rgba(16, 185, 129, .09); color: var(--c-success); }
+.coin-shop-admin .analytics-tabs button.active { background: var(--c-success); color: #fff; box-shadow: 0 3px 8px rgba(5, 150, 105, .20); }
+.coin-shop-admin .analytics-tabs b {
+  display: inline-grid;
+  min-width: 16px;
+  height: 16px;
+  place-items: center;
+  border-radius: var(--r-full);
+  background: rgba(15, 41, 34, .08);
+  color: inherit;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.coin-shop-admin .analytics-tabs button.active b { background: rgba(255, 255, 255, .24); }
+.coin-shop-admin .panel {
+  border-color: rgba(15, 41, 34, .09) !important;
+  border-radius: 10px !important;
+  background: var(--c-surface) !important;
+  box-shadow: 0 7px 20px rgba(15, 41, 34, .035) !important;
+}
+.coin-shop-admin .panel > .panel-head {
+  min-height: 72px;
+  padding: 18px 22px;
+  border-bottom: 1px solid rgba(15, 41, 34, .07);
+  background: rgba(248, 252, 251, .72);
+}
+.coin-shop-admin .panel > .panel-head h3 { margin: 0 0 4px; color: var(--c-ink); font-size: 16px !important; font-weight: 720; }
+.coin-shop-admin .panel > .panel-head p { margin: 0; color: var(--c-ink-3); font-size: 12px; line-height: 1.65; }
+.coin-shop-admin .form-grid { padding: 22px; gap: 18px 20px; }
+.coin-shop-admin .field > span { color: var(--c-ink-2); font-size: 12px; font-weight: 650; }
+.coin-shop-admin .field input,
+.coin-shop-admin .field select,
+.coin-shop-admin .field textarea,
+.coin-shop-admin .product-picker-input {
+  border-color: rgba(15, 41, 34, .14);
+  border-radius: 6px;
+  background: #fff;
+}
+.coin-shop-admin .field input:focus,
+.coin-shop-admin .field select:focus,
+.coin-shop-admin .field textarea:focus { border-color: var(--c-success); box-shadow: 0 0 0 3px rgba(16, 185, 129, .13); }
+.coin-shop-admin .product-picker-input:focus-within { border-color: var(--c-success); box-shadow: 0 0 0 3px rgba(16, 185, 129, .13); }
+.coin-shop-admin .form-submit { min-height: 38px; border-radius: 6px; }
+.coin-shop-admin .panel > .table-wrap {
+  margin: 16px 22px 22px !important;
+  width: calc(100% - 44px) !important;
+  border: 1px solid rgba(15, 41, 34, .10) !important;
+  border-radius: 8px !important;
+  box-shadow: none;
+}
+.coin-shop-admin .table-wrap table { font-size: 12px; }
+.coin-shop-admin .table-wrap thead th { padding: 11px 12px; background: #f4f8f7; color: var(--c-ink-3); font-size: 11px; font-weight: 700; letter-spacing: 0; white-space: nowrap; }
+.coin-shop-admin .table-wrap tbody td { padding: 12px; border-color: rgba(15, 41, 34, .065); vertical-align: middle; }
+.coin-shop-admin .table-wrap tbody tr { transition: background .14s ease; }
+.coin-shop-admin .table-wrap tbody tr:hover { background: #f7fcfa; }
+.coin-shop-admin .pill { border: 1px solid rgba(15, 41, 34, .10); background: #f4f8f7; color: var(--c-ink-2); font-size: 11px; font-weight: 650; }
+.coin-shop-admin .pill.success { border-color: rgba(5, 150, 105, .18); background: rgba(16, 185, 129, .10); color: #047857; }
+.coin-shop-admin .review-actions { gap: 6px; }
+.coin-shop-admin .outline-button.compact,
+.coin-shop-admin .compact.success,
+.coin-shop-admin .compact.danger { min-height: 28px; border-radius: 5px; font-size: 11px; }
+.coin-shop-admin .catalog-row { cursor: grab; }
+.coin-shop-admin .catalog-row.dragging { background: rgba(16, 185, 129, .10); }
+.coin-shop-admin .catalog-drag-handle { color: var(--c-success); }
+.coin-shop-admin .catalog-order-btn { border-radius: 4px; }
+.coin-shop-admin .coins-overview-cards { gap: 12px; padding: 20px 22px; }
+.coin-shop-admin .coins-overview-card { min-height: 106px; border: 1px solid rgba(15, 41, 34, .08); border-radius: 8px; background: #fbfdfc; box-shadow: none; }
+.coin-shop-admin .coins-overview-card.highlight { border-color: rgba(16, 185, 129, .25); background: #effbf5; }
+.coin-shop-admin .coins-overview-card b { color: var(--c-ink); font-variant-numeric: tabular-nums; }
+.coin-shop-admin .coins-overview-card.highlight b { color: #047857; }
+.coin-shop-admin .coins-overview-note { margin: 0 22px 20px; border-radius: 6px; }
+.coin-shop-admin .coin-scale-form { padding: 22px !important; margin-top: 0 !important; border-top: 0 !important; }
+.coin-shop-admin .coin-scale-summary,
+.coin-shop-admin .coin-scale-chart { padding: 0 22px !important; }
+.coin-shop-admin .coin-scale-summary > div,
+.coin-shop-admin .coin-scale-row { border-radius: 8px !important; }
+.coin-shop-admin .coin-scale-row { border-color: rgba(15, 41, 34, .08) !important; box-shadow: none !important; }
+.coin-shop-admin .coin-product-modal { border-color: rgba(15, 41, 34, .12); border-radius: 10px; box-shadow: 0 24px 64px rgba(15, 41, 34, .22); }
+.coin-shop-admin .coin-product-modal > .panel-head { padding: 19px 22px 16px; background: #f5faf8; }
+.coin-shop-admin .coin-product-modal > .coin-product-form,
+.coin-shop-admin .fulfill-body,
+.coin-shop-admin .binding-required-body { padding: 20px 22px 22px; }
+.coin-shop-admin .fulfill-recipient,
+.coin-shop-admin .binding-required-note { border-color: rgba(15, 41, 34, .10); border-radius: 6px; background: #f7faf9; }
+@media (max-width: 1100px) {
+  .coin-shop-admin > .panel-head { align-items: flex-start !important; }
+  .coin-shop-admin .analytics-tabs { justify-content: flex-start; }
+}
+@media (max-width: 640px) {
+  .coin-shop-admin { gap: 14px !important; padding: 8px 12px 28px !important; }
+  .coin-shop-admin > .panel-head { padding: 18px 16px 16px; border-radius: 8px; }
+  .coin-shop-admin > .panel-head::before { left: 16px; }
+  .coin-shop-admin > .panel-head h3 { font-size: 19px !important; }
+  .coin-shop-admin .analytics-tabs { width: 100%; overflow-x: auto; flex-wrap: nowrap; justify-content: flex-start; scrollbar-width: none; }
+  .coin-shop-admin .analytics-tabs::-webkit-scrollbar { display: none; }
+  .coin-shop-admin .analytics-tabs button { flex: 0 0 auto; }
+  .coin-shop-admin .panel > .panel-head { align-items: flex-start; padding: 16px; }
+  .coin-shop-admin .panel > .panel-head > div { min-width: 0; }
+  .coin-shop-admin .form-grid { padding: 16px; gap: 14px; }
+  .coin-shop-admin .panel > .table-wrap { margin: 12px 16px 16px !important; width: calc(100% - 32px) !important; }
+  .coin-shop-admin .table-wrap table { min-width: 760px !important; }
+  .coin-shop-admin .coins-overview-cards { grid-template-columns: 1fr 1fr; padding: 16px; gap: 8px; }
+  .coin-shop-admin .coins-overview-card { min-height: 96px; padding: 13px; }
+  .coin-shop-admin .coins-overview-note { margin: 0 16px 16px; }
+  .coin-shop-admin .coin-scale-summary,
+  .coin-shop-admin .coin-scale-chart { padding: 0 16px !important; }
+  .coin-shop-admin .coin-scale-form { padding: 16px !important; }
+  .coin-shop-admin .coin-product-modal > .panel-head,
+  .coin-shop-admin .coin-product-modal > .coin-product-form,
+  .coin-shop-admin .fulfill-body,
+  .coin-shop-admin .binding-required-body { padding-left: 16px; padding-right: 16px; }
+}
+
 /* === 兑换订单：发货弹窗 / 人工发货备注 === */
 .fulfill-modal { max-width: 560px; }
 .fulfill-body { display: grid; gap: var(--sp-3); padding: var(--sp-4); }
