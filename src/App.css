@@ -2191,6 +2191,16 @@ button.answerer-metric-clickable { color: inherit; font: inherit; text-align: ce
 .gate-paid small { color: var(--c-ink-3); font-size: 10px; font-weight: 600; }
 .gate-paid.refunded { background: rgba(148, 163, 184, .16); color: var(--c-ink-3); }
 
+/* 后台「积分商城 → 金币概览」 */
+.coins-overview-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 4px; }
+.coins-overview-card { display: grid; gap: 4px; padding: 14px 16px; border: 1px solid var(--c-border); border-radius: var(--r-md); background: linear-gradient(120deg, rgba(240, 249, 255, .8), rgba(236, 253, 245, .6)); }
+.coins-overview-card span { color: var(--c-ink-3); font-size: var(--fs-meta); font-weight: 600; }
+.coins-overview-card b { color: var(--c-ink); font-size: 24px; font-weight: 800; letter-spacing: -.5px; }
+.coins-overview-card small { color: var(--c-ink-4); font-size: 11px; line-height: 1.5; }
+.coins-overview-card.highlight { border-color: rgba(16, 185, 129, .34); background: linear-gradient(120deg, rgba(236, 253, 245, .95), rgba(240, 249, 255, .8)); }
+.coins-overview-card.highlight b { color: #047857; }
+.coins-overview-note { margin: 12px 0 8px; padding: 9px 12px; border: 1px dashed rgba(234, 179, 8, .45); border-radius: var(--r-sm); background: rgba(254, 249, 195, .5); color: #92400e; font-size: 12px; line-height: 1.7; }
+
 /* ===== Gamejourney 2.0 首次进入欢迎弹窗 ===== */
 .v2-welcome-backdrop { position: fixed; inset: 0; z-index: 240; display: grid; place-items: center; padding: 24px; background: radial-gradient(58% 58% at 50% 42%, rgba(14, 165, 233, .3), rgba(2, 6, 23, .64)); backdrop-filter: blur(6px); animation: v2-fade-in .22s ease-out; }
 .v2-welcome-card { position: relative; width: min(520px, 100%); max-height: min(88vh, 760px); overflow-y: auto; border-radius: 22px; background: #fff; box-shadow: 0 30px 70px rgba(2, 6, 23, .38); animation: v2-card-in .34s cubic-bezier(.2, .9, .3, 1.32); }

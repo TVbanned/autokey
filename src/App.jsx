@@ -3184,6 +3184,8 @@ function AnswererDashboard() {
   const [comprehensiveFeatured, setComprehensiveFeatured] = useState([])
   const [featuredAnswerIndex, setFeaturedAnswerIndex] = useState(0)
   const [comprehensiveSubmissions, setComprehensiveSubmissions] = useState([])
+  // 服务端口径的综合活动命中数（日常投稿 + 测评投稿 + 活动投稿，命中题库就算）
+  const [comprehensiveHits, setComprehensiveHits] = useState(null)
   const [cqWorkText, setCqWorkText] = useState('')
   const [cqWorkMsg, setCqWorkMsg] = useState('')
   const [cqWorkError, setCqWorkError] = useState(false)
@@ -3278,6 +3280,7 @@ function AnswererDashboard() {
         setComprehensiveQuestions(questions)
         setComprehensiveAppliedIds(new Set((appRes.data || []).map((item) => item.activity_id)))
         setComprehensiveSubmissions(workRes.data || [])
+        refreshComprehensiveHits(items[0].id)
         setCqIndex(questions.length ? Math.floor(Math.random() * questions.length) : 0)
         setCqOrder(questions.map((_, idx) => idx))
         let featured = sheetFeatured.map((item) => ({ id: item.id, article_title: item.answer_text, article_url: item.answer_url, author: item.answerer_name || '答主' }))
@@ -3305,6 +3308,12 @@ function AnswererDashboard() {
       }
     }
     setComprehensiveLoading(false)
+  }
+
+  const refreshComprehensiveHits = async (activityId = currentComprehensive?.id) => {
+    if (!answerer?.id || !activityId) return
+    const { data, error } = await supabase.rpc('keyflow_answerer_activity_hits', { p_answerer_id: answerer.id, p_activity_id: activityId })
+    if (!error && typeof data === 'number') setComprehensiveHits(data)
   }
 
   const loadDashboard = async () => {
@@ -3609,7 +3618,7 @@ function AnswererDashboard() {
         }
         answerSkipped = Math.max(0, answerEntries.length - answerSaved)
       }
-      if (answerSaved) setDashboard(current => current ? { ...current, daily_submission_count: (current.daily_submission_count || 0) + answerSaved } : current)
+      if (answerSaved) { setDashboard(current => current ? { ...current, daily_submission_count: (current.daily_submission_count || 0) + answerSaved } : current); refreshComprehensiveHits() }
     }
     let questionSaved = 0, questionError = ''
     if (questionEntries.length) {
@@ -3791,7 +3800,9 @@ function AnswererDashboard() {
   const comprehensiveQuestionIdSet = new Set(comprehensiveQuestions.map((item) => getZhihuQuestionId(item.question_url)).filter(Boolean))
   const comprehensiveMinCount = Math.max(1, Number(currentComprehensive?.min_submission_count) || 1)
   // 完成奖励文案改由 banner 的 .completion-reward-callout 统一展示，按钮只显示进度
-  const comprehensiveDoneCount = comprehensiveSubmissions.filter((item) => comprehensiveQuestionIdSet.has(getZhihuQuestionId(item.article_url))).length
+  const comprehensiveDoneCountLocal = comprehensiveSubmissions.filter((item) => comprehensiveQuestionIdSet.has(getZhihuQuestionId(item.article_url))).length
+  // 以服务端口径为准：命中题库的日常投稿/测评投稿/活动投稿都算，服务端没返回时回退本地统计
+  const comprehensiveDoneCount = comprehensiveHits == null ? comprehensiveDoneCountLocal : comprehensiveHits
   const comprehensiveCompleted = comprehensiveDoneCount >= comprehensiveMinCount
   const submitComprehensiveWork = async (event) => {
     event.preventDefault()
@@ -3819,6 +3830,7 @@ function AnswererDashboard() {
       const { error: insertError } = await supabase.from('keyflow_comprehensive_submissions').insert(toInsert)
       if (insertError) { setCqWorkError(true); setCqWorkMsg(insertError.message); return }
       setComprehensiveSubmissions((prev) => [...prev, ...toInsert.map((item) => ({ article_url: item.article_url }))])
+      refreshComprehensiveHits()
       refreshAnswererEconomy()
       setCqWorkText('')
       const hitCount = toInsert.filter((item) => comprehensiveQuestionIdSet.has(getZhihuQuestionId(item.article_url))).length

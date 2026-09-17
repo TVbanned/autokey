@@ -206,10 +206,12 @@ export default function CoinShopAdmin() {
   const [priceHint, setPriceHint] = useState('')
   // 答主 → 知乎 member_id（腾讯文档工作表1 的 K 列），报销订单列表与补发 csv 共用
   const [memberIds, setMemberIds] = useState({ byId: {}, byName: {}, loadedAt: 0 })
+  // 金币概览（汇总 / 消耗明细 / 每人余额），管理员 RPC 返回
+  const [coinOverview, setCoinOverview] = useState(null)
   const adminToken = getAdminToken()
 
   const refresh = async () => {
-    const [catRes, ordRes, reimbRes, projRes, cfgRes, lvlRes, poolRes, bindRes, ansRes] = await Promise.all([
+    const [catRes, ordRes, reimbRes, projRes, cfgRes, lvlRes, poolRes, bindRes, ansRes, ovRes] = await Promise.all([
       supabase.from('keyflow_reward_catalog').select('*').order('sort_order', { ascending: true }),
       supabase.rpc('keyflow_admin_redeem_orders', { p_token: adminToken }),
       supabase.rpc('keyflow_admin_game_reimbursement_orders', { p_token: adminToken }),
@@ -219,6 +221,7 @@ export default function CoinShopAdmin() {
       supabase.rpc('keyflow_admin_product_pools', { p_token: adminToken }),
       supabase.rpc('keyflow_shop_catalog_pools'),
       supabase.rpc('keyflow_admin_answerer_summaries', { p_token: adminToken }),
+      supabase.rpc('keyflow_admin_coins_overview', { p_token: adminToken }),
     ])
 
     // 商品、真实等级分布、系数和等级配置是关键数据；订单/答主列表权限失败不应阻塞系数设置。
@@ -231,6 +234,8 @@ export default function CoinShopAdmin() {
     setAnswerers(ansRes.error ? [] : (ansRes.data || []))
     if (ordRes.error) console.warn('兑换订单暂不可用：', ordRes.error.message)
     if (reimbRes.error) console.warn('报销订单暂不可用：', reimbRes.error.message)
+    if (ovRes.error) console.warn('金币概览暂不可用：', ovRes.error.message)
+    setCoinOverview(ovRes.error ? null : (ovRes.data || null))
     setOrders(ordRes.error ? [] : (ordRes.data || []))
     setReimbursementOrders(reimbRes.error ? [] : (reimbRes.data || []))
 
@@ -803,7 +808,7 @@ export default function CoinShopAdmin() {
       <div className="panel-head" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <div><h3>积分商城后台</h3><p>商品上架 / 兑换订单发货 / 金币调整；1 金币 = ¥0.01，报销产品按后台设定折扣扣除金币。</p></div>
         <div className="analytics-tabs" role="tablist">
-          {[['catalog', '商品'], ['orders', '兑换订单'], ['reimbursements', '报销订单'], ['adjust', '手动调币'], ['scale', '系数设置']].map(([k, label]) => (
+          {[['catalog', '商品'], ['orders', '兑换订单'], ['reimbursements', '报销订单'], ['adjust', '手动调币'], ['scale', '系数设置'], ['coins', '金币概览']].map(([k, label]) => (
             <button key={k} className={tab === k ? 'active' : ''} onClick={() => setTab(k)}>{label}<b>{k === 'catalog' ? (catalog || []).length : k === 'orders' ? (orders || []).length : k === 'reimbursements' ? (reimbursementOrders || []).length : ''}</b></button>
           ))}
         </div>
@@ -1031,6 +1036,64 @@ export default function CoinShopAdmin() {
           </section>
         </div>
       )}
+
+      {tab === 'coins' && (() => {
+        const s = coinOverview?.summary || null
+        const spends = coinOverview?.spends || []
+        const users = coinOverview?.users || []
+        const fmt = (n) => Number(n || 0).toLocaleString()
+        const fmtTime = (v) => v ? new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(v)) : '—'
+        const kindLabel = { redeem: '商品兑换', reimbursement: '游戏报销', gate: '门槛补足' }
+        const statusLabel = { fulfilled: '已发货', pending: '待处理', completed: '已完成', canceled: '已取消', refunded: '已退回', processing: '处理中', reimbursed: '已报销', rejected: '已拒绝' }
+        return (
+        <div style={{ display: 'grid', gap: 16 }}>
+          <section className="panel">
+            <div className="panel-head"><div><h3>金币概览</h3><p>全站金币的发出、消耗与每人持有量；1 金币 = ¥0.01。「发出」= 活跃日金币 + 运营调整，其余为零星补发。</p></div><button className="outline-button compact" onClick={refresh} disabled={busy}>{busy ? '刷新中…' : '刷新数据'}</button></div>
+            {!s ? <div className="table-empty">正在加载金币数据…</div> : (
+              <div className="coins-overview-cards">
+                <div className="coins-overview-card"><span>累计发出</span><b>{fmt(s.granted)}</b><small>活跃日 {fmt(s.granted_daily_active)} · 运营调整 {fmt(s.granted_admin)}</small></div>
+                <div className="coins-overview-card"><span>累计消耗</span><b>{fmt(Math.abs(s.spent))}</b><small>商品兑换 / 报销 / 门槛补足</small></div>
+                <div className="coins-overview-card highlight"><span>未消耗余额（发行在外）</span><b>{fmt(s.outstanding)}</b><small>≈ ¥{fmt((Number(s.outstanding) * 0.01).toFixed(0))}（按 1 金币 = ¥0.01）</small></div>
+                <div className="coins-overview-card"><span>用户数</span><b>{fmt(s.users)}</b><small>有余额 {fmt(s.users_with_balance)} 人 · 负余额 {fmt(s.negative_users)} 人</small></div>
+              </div>
+            )}
+            {coinOverview?.excluded?.names?.length ? <div className="coins-overview-note">已排除内部账号：{coinOverview.excluded.names.join('、')}（这两个账号的进账、出账与余额都不计入本看板）。</div> : null}
+          </section>
+
+          <section className="panel">
+            <div className="panel-head"><div><h3>消耗明细（{spends.length}）</h3><p>谁、在什么时候、把金币花在了什么上面。</p></div></div>
+            <div className="table-wrap"><table><thead><tr><th>类型</th><th>答主</th><th>内容</th><th>金币</th><th>状态</th><th>时间</th></tr></thead><tbody>
+              {spends.length ? spends.map((row, idx) => (
+                <tr key={`spend-${idx}`}>
+                  <td><span className="pill">{kindLabel[row.kind] || row.kind}</span></td>
+                  <td>{row.who || '—'}</td>
+                  <td>{row.what || '—'}</td>
+                  <td><b>{fmt(Math.abs(row.coins))}</b></td>
+                  <td><span className="pill muted">{statusLabel[row.status] || row.status || '—'}</span></td>
+                  <td>{fmtTime(row.time)}</td>
+                </tr>
+              )) : <tr><td colSpan="6" className="table-empty">还没有任何金币消耗。</td></tr>}
+            </tbody></table></div>
+          </section>
+
+          <section className="panel">
+            <div className="panel-head"><div><h3>每人余额（{users.length}）</h3><p>按剩余金币从多到少；「累计获得」含活跃日金币与运营调整。</p></div></div>
+            <div className="table-wrap"><table><thead><tr><th>答主</th><th>等级</th><th>累计获得</th><th>累计消耗</th><th>剩余金币</th><th>最近活跃</th></tr></thead><tbody>
+              {users.length ? users.map((row) => (
+                <tr key={row.id}>
+                  <td>{row.name || '—'}</td>
+                  <td><span className="level-badge">Lv{row.level}</span></td>
+                  <td>{fmt(row.granted)}</td>
+                  <td>{row.spent ? fmt(Math.abs(row.spent)) : '—'}</td>
+                  <td><b style={Number(row.balance) < 0 ? { color: '#e53e3e' } : undefined}>{fmt(row.balance)}</b></td>
+                  <td>{row.last_active_date || '—'}</td>
+                </tr>
+              )) : <tr><td colSpan="6" className="table-empty">暂无数据。</td></tr>}
+            </tbody></table></div>
+          </section>
+        </div>
+        )
+      })()}
 
     </div>
   )
