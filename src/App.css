@@ -1715,9 +1715,10 @@ button.answerer-metric-clickable { color: inherit; font: inherit; text-align: ce
 .home-brand { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 700; letter-spacing: -.3px; }
 .home-brand-mark { background: linear-gradient(135deg,#0084ff,#005eb8); box-shadow: 0 4px 16px rgba(0,132,255,.4); width: 30px; height: 30px; font-size: 15px; }
 .home-admin-link {
-  display: inline-flex; align-items: center; min-height: 32px;
-  font-size: 13px; color: rgba(232,236,244,.5);
-  padding: 0 16px; border: 1px solid rgba(255,255,255,.1); border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 6px; min-height: 32px;
+  font-size: 13px; font-weight: 600; color: rgba(232,236,244,.82);
+  padding: 0 16px; border: 1px solid rgba(255,255,255,.2); border-radius: 999px;
+  background: rgba(255,255,255,.05);
   transition: all .2s; text-decoration: none;
 }
 .home-admin-link:hover { color: #e8ecf4; border-color: rgba(255,255,255,.25); background: rgba(255,255,255,.05); }
@@ -5718,7 +5719,12 @@ body.zq-resizing { cursor: col-resize; user-select: none; }
   .cq-stage-actions .primary,
   .cq-stage-actions .outline-button { transition: none; }
 }
-.cq-toolbar { display: flex; flex-wrap: wrap; gap: 8px; }
+.cq-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+/* 「全部问题」工具栏：搜索框在左（按标题筛选，支持拼音首字母），右侧是随机换一批与筛选 */
+.cq-search { display: flex; align-items: center; gap: 8px; flex: 0 1 180px; min-width: 140px; height: 30px; padding: 0 10px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: #fff; color: var(--c-ink-4); }
+.cq-search input { flex: 1; min-width: 0; height: 100%; border: 0; background: transparent; color: var(--c-ink); font-size: 13px; outline: none; }
+.cq-search button { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; color: var(--c-ink-4); }
+.cq-grid-empty { grid-column: 1 / -1; }
 .cq-toolbar .outline-button.cq-filter-active { border-color: var(--c-success); background: var(--c-primary-soft); color: var(--c-success); font-weight: 700; }
 .cq-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
 .comprehensive-activity-body > .cq-stage + section { margin-top: 28px; }
@@ -5751,9 +5757,11 @@ body.zq-resizing { cursor: col-resize; user-select: none; }
   .cq-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .cq-card { min-height: 138px; padding: 14px; }
   .cq-card p { font-size: 13px; line-height: 1.6; }
-  .dashboard-section-head:has(.cq-toolbar) { align-items: flex-end; }
-  .dashboard-section-head:has(.cq-toolbar) > div:first-child { max-width: calc(50% - 5px); }
-  .cq-toolbar { width: calc(50% - 5px); justify-content: flex-end; }
+  /* 窄屏下工具栏含搜索框：标题独占一行，工具栏整行放下搜索框与两个按钮 */
+  .dashboard-section-head:has(.cq-toolbar) { flex-wrap: wrap; align-items: flex-end; }
+  .dashboard-section-head:has(.cq-toolbar) > div:first-child { max-width: 100%; }
+  .cq-toolbar { width: 100%; justify-content: flex-start; }
+  .cq-search { flex: 1 1 160px; min-width: 0; }
   .cq-toolbar .outline-button { padding: 0 8px; font-size: 12px; }
 }
 

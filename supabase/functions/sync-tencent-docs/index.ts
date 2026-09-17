@@ -30,6 +30,16 @@ const COLUMNS: Record<string, (r: Record<string, unknown>, e: Record<string, unk
     r.article_title ?? "",
     r.article_url ?? "",
     r.processed ? "已审" : "未审",
+    "日常投稿",
+  ],
+  // 综合活动命中投稿与日常投稿共用「答主日常投稿」那张表，来源列区分
+  keyflow_comprehensive_submissions: (r, e) => [
+    fmt(r.submitted_at),
+    e.answerer_name ?? "",
+    r.article_title ?? "",
+    r.article_url ?? "",
+    r.processed ? "已审" : "未审",
+    e.activity_title ? `综合活动 · ${e.activity_title}` : "综合活动",
   ],
   keyflow_deliveries: (r, e) => [
     fmt(r.submitted_at),
@@ -89,6 +99,15 @@ async function enrich(
       return { answerer_name: data?.zhihu_name ?? "" };
     }
     return { answerer_name: "管理员" };
+  }
+  if (table === "keyflow_comprehensive_submissions") {
+    const answererName = record.answerer_id
+      ? (await supabase.from("keyflow_answerers").select("zhihu_name").eq("id", record.answerer_id).maybeSingle()).data?.zhihu_name ?? ""
+      : "管理员";
+    const act = record.activity_id
+      ? (await supabase.from("keyflow_activities").select("title, game_name").eq("id", record.activity_id).maybeSingle()).data
+      : null;
+    return { answerer_name: answererName, activity_title: act?.title || act?.game_name || "" };
   }
   if (table === "keyflow_deliveries" && record.application_id) {
     const { data } = await supabase
@@ -224,23 +243,49 @@ async function resortSubmissionsSheet(
       };
     });
   } else {
-    const [sres, ares] = await Promise.all([
+    // 「答主日常投稿」表 = 日常投稿 + 综合活动命中投稿，合并后按提交时间整体重排，第 6 列「来源」区分
+    const [sres, ares, cres, tres] = await Promise.all([
       supabase.from("keyflow_daily_submissions").select("id,answerer_id,submitted_at,article_title,article_url,processed"),
       supabase.from("keyflow_answerers").select("id,zhihu_name"),
+      supabase.from("keyflow_comprehensive_submissions").select("id,answerer_id,activity_id,submitted_at,article_title,article_url,processed"),
+      supabase.from("keyflow_activities").select("id,title,game_name"),
     ]);
     if (sres.error) throw new Error(`读取日常投稿记录失败: ${sres.error.message}`);
+    if (cres.error) throw new Error(`读取综合活动投稿记录失败: ${cres.error.message}`);
     const answererById: Record<string, any> = Object.fromEntries((ares.data ?? []).map((a) => [a.id, a]));
-    list = (sres.data ?? []).map((s) => ({
-      id: String(s.id),
-      submitted_at: s.submitted_at,
-      cells: [
-        fmt(s.submitted_at),
-        s.answerer_id ? (answererById[s.answerer_id]?.zhihu_name ?? "") : "管理员",
-        s.article_title ?? "",
-        s.article_url ?? "",
-        s.processed ? "已审" : "未审",
-      ],
-    }));
+    const activityById: Record<string, any> = Object.fromEntries((tres.data ?? []).map((a) => [a.id, a]));
+    const nameOf = (answererId: unknown) =>
+      answererId ? (answererById[String(answererId)]?.zhihu_name ?? "") : "管理员";
+    list = [
+      ...(sres.data ?? []).map((s) => ({
+        id: String(s.id),
+        submitted_at: s.submitted_at,
+        cells: [
+          fmt(s.submitted_at),
+          nameOf(s.answerer_id),
+          s.article_title ?? "",
+          s.article_url ?? "",
+          s.processed ? "已审" : "未审",
+          "日常投稿",
+        ],
+      })),
+      ...(cres.data ?? []).map((s) => {
+        const act = activityById[String(s.activity_id)] ?? {};
+        const actTitle = act.title || act.game_name || "";
+        return {
+          id: String(s.id),
+          submitted_at: s.submitted_at,
+          cells: [
+            fmt(s.submitted_at),
+            nameOf(s.answerer_id),
+            s.article_title ?? "",
+            s.article_url ?? "",
+            s.processed ? "已审" : "未审",
+            actTitle ? `综合活动 · ${actTitle}` : "综合活动",
+          ],
+        };
+      }),
+    ];
   }
 
   list.sort((a, b) =>
@@ -250,6 +295,20 @@ async function resortSubmissionsSheet(
   if (!list.length) return 0;
 
   const colCount = list[0].cells.length;
+  // 「答主日常投稿」表头（首行固定）：数据区从第 2 行开始，这里补上第 6 列「来源」。
+  // 注意：单写 F1 会被腾讯文档判为参数校验失败（ret 10002），必须整行写；内容幂等。
+  if (sheetKey === "keyflow_daily_submissions" && colCount >= 6) {
+    await fetch(`${SHEET_API}/${sheet.book}/values/${sheet.sheet}!A1:F1`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Token": token,
+        "Client-Id": cfg.client_id,
+        "Open-Id": cfg.open_id,
+      },
+      body: JSON.stringify({ values: [["提交时间", "答主", "文章标题", "文章链接", "状态", "来源"]] }),
+    });
+  }
   const range = `${sheet.sheet}!A2:${colLetter(colCount)}${1 + list.length}`;
   const resp = await fetch(`${SHEET_API}/${sheet.book}/values/${range}`, {
     method: "PUT",
@@ -315,7 +374,8 @@ serve(async (req) => {
     }
 
     // 答主信息表由独立函数 sync-answerers-tencent-docs 负责，这里只按表名路由。
-    const sheetKey = table;
+    // 综合活动命中投稿和日常投稿共用「答主日常投稿」那张表（第 6 列来源区分），所以统一映射成 keyflow_daily_submissions。
+    const sheetKey = table === "keyflow_comprehensive_submissions" ? "keyflow_daily_submissions" : table;
     const sheet = cfg.sheets?.[sheetKey];
     if (!sheet?.book || !sheet?.sheet) {
       return json({ error: `表 ${sheetKey} 未配置腾讯文档 book/sheet` }, 500);
@@ -341,7 +401,7 @@ serve(async (req) => {
 
     // 全部活动投稿 / 答主日常投稿：新增或状态更新时全量重排，最新提交置顶（表头固定第 1 行），
     // 避免单行原位更新与并发重排互相覆盖导致状态漏同步。
-    if ((table === "keyflow_deliveries" || table === "keyflow_daily_submissions") && (op === "INSERT" || op === "UPDATE")) {
+    if ((sheetKey === "keyflow_deliveries" || sheetKey === "keyflow_daily_submissions") && (op === "INSERT" || op === "UPDATE")) {
       const count = await resortSubmissionsSheet(supabase, sheetKey, sheet, token, cfg);
       return json({ ok: true, table, op: op === "INSERT" ? "insert" : "update", reordered: count });
     }
