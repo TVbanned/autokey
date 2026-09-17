@@ -803,6 +803,8 @@ button.answerer-metric-clickable { color: inherit; font: inherit; text-align: ce
 .answerer-table .person { min-width: 0; }.answerer-table .person > div { min-width: 0; }.answerer-table .person strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.answerer-table .remark-text { display: block; overflow: hidden; text-overflow: ellipsis; }.answerer-table td:nth-child(5) { overflow: hidden; text-overflow: ellipsis; }
 .wechat-copy-cell { cursor: pointer; user-select: all; transition: background var(--t-fast); }
 .wechat-copy-cell:hover { background: var(--c-bg-hover); }
+/* 「只看答主」筛选按钮的开启态，沿用后台筛选按钮的绿色选中样式。 */
+.outline-button.compact.active { border-color: var(--c-success); background: var(--c-primary-soft); color: var(--c-success); font-weight: 700; }
 
 /* === 移动端底部折叠导航（≤850px，侧边栏隐藏时启用） === */
 .mobile-nav {
@@ -4610,6 +4612,63 @@ body.zq-resizing { cursor: col-resize; user-select: none; }
 .question-reward-input span { color: var(--c-success); font-size: 11px; }
 .question-reward-save { flex: none; height: 24px; padding: 0 10px; border-radius: 6px; background: var(--c-success); color: #fff; font-size: 11px; font-weight: 700; }
 .question-reward-save:hover { filter: brightness(1.06); }
+
+/* 综合活动概览：阶段推进保持独立，仅统一活动信息与问题区的安全边距。 */
+.comprehensive-overview-picker {
+  min-height: 64px;
+  margin-bottom: 16px;
+  padding: 12px 20px;
+  border-color: rgba(15, 41, 34, .09);
+  border-radius: 10px;
+  box-shadow: 0 5px 16px rgba(15, 41, 34, .025);
+}
+.comprehensive-overview-picker .current-activity { min-width: 0; }
+.comprehensive-overview-picker .activity-picker-right { gap: 8px; }
+.comprehensive-overview-hero {
+  padding: 22px;
+  border-color: rgba(15, 41, 34, .09);
+  border-radius: 10px;
+  box-shadow: 0 7px 20px rgba(15, 41, 34, .035);
+}
+.questions-overview-panel {
+  margin-top: 0;
+  border-color: rgba(15, 41, 34, .09);
+  border-radius: 10px;
+  box-shadow: 0 7px 20px rgba(15, 41, 34, .035);
+}
+.questions-overview-panel > .questions-overview-tools,
+.questions-overview-panel > .questions-overview-list,
+.questions-overview-panel > .questions-overview-empty {
+  margin-right: 20px;
+  margin-left: 20px;
+}
+.questions-overview-panel > .questions-overview-tools {
+  margin-top: 16px;
+  margin-bottom: 14px;
+}
+.questions-overview-panel > .questions-overview-list {
+  margin-bottom: 20px;
+  overflow: hidden;
+  border: 1px solid rgba(15, 41, 34, .08);
+  border-radius: 8px;
+  background: #fff;
+}
+.questions-overview-panel .questions-overview-select-all {
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(15, 41, 34, .07);
+  background: #f8fbfa;
+}
+.questions-overview-panel .questions-overview-row { padding: 12px 14px; }
+.questions-overview-panel > .questions-overview-empty { padding: 32px 20px; }
+@media (max-width: 760px) {
+  .comprehensive-overview-picker { padding: 12px 16px; }
+  .comprehensive-overview-hero { padding: 18px 16px; }
+  .questions-overview-panel > .questions-overview-tools,
+  .questions-overview-panel > .questions-overview-list,
+  .questions-overview-panel > .questions-overview-empty { margin-right: 16px; margin-left: 16px; }
+  .questions-overview-panel > .questions-overview-tools { margin-top: 12px; }
+  .questions-overview-panel > .questions-overview-list { margin-bottom: 16px; }
+}
 @media (max-width: 760px) {
   .questions-overview-row { flex-wrap: wrap; }
   .questions-overview-text { flex: 1 1 100%; white-space: normal; }
@@ -4621,6 +4680,12 @@ body.zq-resizing { cursor: col-resize; user-select: none; }
 .participation-config-row { align-items: flex-start; }
 .participation-content { min-width: 0; flex: 1; }
 .participation-content p { margin: 0; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+.comprehensive-overview-hero .participation-content .min-submission-text {
+  margin-top: 5px;
+  color: var(--c-ink-3);
+  font-size: var(--fs-body);
+  line-height: 1.6;
+}
 .participation-content .min-submission-text { margin-top: 5px; color: var(--c-ink-3); font-size: var(--fs-meta); }
 .min-submission-edit { display: inline-flex; align-items: center; gap: 8px; margin-top: 8px; color: var(--c-ink-3); font-size: var(--fs-meta); }
 .min-submission-edit input { width: 90px; padding: 6px 8px; border: 1px solid #ddd; border-radius: 8px; }

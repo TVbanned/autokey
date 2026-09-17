@@ -166,12 +166,16 @@ serve(async (req) => {
       });
     }
 
-    await supabase.from("keyflow_activity_questions").delete().eq("activity_id", activity_id);
+    // 先清空旧题目再写新数据：删除失败必须显式报错，
+    // 否则会继续 insert 并报成难懂的 question_id 唯一键冲突（历史上踩过）。
+    const { error: clearErr } = await supabase.from("keyflow_activity_questions").delete().eq("activity_id", activity_id);
+    if (clearErr) return json({ error: `清空旧问题失败: ${clearErr.message}` }, 500);
     if (questions.length) {
       const { error: insErr } = await supabase.from("keyflow_activity_questions").insert(questions);
       if (insErr) return json({ error: `保存问题失败: ${insErr.message}` }, 500);
     }
-    await supabase.from("keyflow_activity_featured_answers").delete().eq("activity_id", activity_id);
+    const { error: clearFeaturedErr } = await supabase.from("keyflow_activity_featured_answers").delete().eq("activity_id", activity_id);
+    if (clearFeaturedErr) return json({ error: `清空旧精华回答失败: ${clearFeaturedErr.message}` }, 500);
     if (featuredAnswers.length) {
       const { error: featuredErr } = await supabase.from("keyflow_activity_featured_answers").insert(featuredAnswers);
       if (featuredErr) return json({ error: `保存精华回答失败: ${featuredErr.message}` }, 500);
