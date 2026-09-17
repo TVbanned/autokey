@@ -5,6 +5,7 @@ import { matchesSearch } from './pinyin.js'
 import { trackAnswererDashboardView, trackPageView } from './analytics.js'
 import { buildZhihuCsv, parseClipboardGrid, parsePastedTitles } from './zhihuQuestionCsv.js'
 import { cleanZhihuAnswerUrl, getZhihuQuestionId, normalizeZhihuUrl, publicZhihuQuestionUrl } from './zhihuUrl.js'
+import { resolveZhihuAnswerUrls, resolveZhihuEntries } from './zhihuResolve.js'
 import CoinShopAdmin from './coinShopAdmin.jsx'
 import CoinsCenter from './coinsCenter.jsx'
 import './App.css'
@@ -3544,15 +3545,9 @@ function AnswererDashboard() {
   // 识别出「问题」格式的条目进入日常问题运营（keyflow_daily_questions）。
   const submitQuestion = async (e) => {
     e.preventDefault()
-    const entries = qMode === 'paste'
+    let entries = qMode === 'paste'
       ? parseQuestions(qPaste, true)
       : parseQuestions(`${qTitle.trim()}\n${qUrl.trim()}`, true)
-    const invalidAnswerEntry = entries.find((item) => item.content_type === 'answer' && !getZhihuQuestionId(item.zhihu_url))
-    if (invalidAnswerEntry) {
-      setQMsg('回答链接必须是 https://www.zhihu.com/question/问题ID/answer/回答ID 格式，才能核验指定问题并发放活动金币')
-      setQErrorOpen(true)
-      return
-    }
     if (!entries.length) {
       setQMsg(qMode === 'paste' ? '未检测到有效内容：请同时包含标题与知乎链接' : '请填写链接和问题（作品标题）文本')
       setQErrorOpen(true)
@@ -3560,6 +3555,11 @@ function AnswererDashboard() {
     }
     setQSubmitting(true)
     setQMsg('')
+    // 短链接（zhihu.com/answer/回答ID）先自动补全成带题目 ID 的完整链接，再判定是否命中活动题库；
+    // 补全失败不拦截投稿，仍照常入库、发经验、算活跃。
+    const resolved = await resolveZhihuEntries(entries)
+    entries = resolved.entries
+    const unresolvedShortLinks = resolved.failedAnswerIds.length
     const answerEntries = entries.filter((item) => item.content_type === 'answer' || item.content_type === 'article')
     const questionEntries = entries.filter((item) => item.content_type !== 'answer' && item.content_type !== 'article')
     let answerSaved = 0, answerSkipped = 0, answerNote = ''
@@ -3617,6 +3617,9 @@ function AnswererDashboard() {
           }
         }
         answerSkipped = Math.max(0, answerEntries.length - answerSaved)
+        if (unresolvedShortLinks) {
+          answerNote = [answerNote, `${unresolvedShortLinks} 条短链接未识别到题目，未计入活动进度（不影响经验与活跃）`].filter(Boolean).join('；')
+        }
       }
       if (answerSaved) { setDashboard(current => current ? { ...current, daily_submission_count: (current.daily_submission_count || 0) + answerSaved } : current); refreshComprehensiveHits() }
     }
@@ -3806,7 +3809,8 @@ function AnswererDashboard() {
   const comprehensiveCompleted = comprehensiveDoneCount >= comprehensiveMinCount
   const submitComprehensiveWork = async (event) => {
     event.preventDefault()
-    const entries = parseQuestions(cqWorkText, true).filter((item) => item.content_type === 'answer' || item.content_type === 'article')
+    const parsed = parseQuestions(cqWorkText, true).filter((item) => item.content_type === 'answer' || item.content_type === 'article')
+    const entries = (await resolveZhihuEntries(parsed)).entries
     if (!entries.length) { setCqWorkError(true); setCqWorkMsg('请同时提供内容标题和回答链接（参考知乎分享格式：标题 + 链接）'); return }
     setCqWorkSubmitting(true)
     setCqWorkError(false)
@@ -4243,8 +4247,11 @@ function ClaimPage({ activityId, authCode }) {
     if (!articleUrl.trim()) { setError('请填写知乎回答或专栏文章地址'); return }
     if (!articleTitle.trim()) { setError('请填写作品标题'); return }
     setSubmitting(true); setError('')
+    // 短链接先补全题目 ID，命中判定（含活动进度与单题金币）才能生效
+    const normalized = await resolveZhihuAnswerUrls([articleUrl])
+    const finalUrl = normalized.urls[0] || cleanZhihuAnswerUrl(articleUrl)
     const { data, error: requestError } = await supabase.from('keyflow_deliveries')
-      .insert({ application_id: application.id, article_url: cleanZhihuAnswerUrl(articleUrl), article_title: articleTitle.trim() }).select('id, status, article_url, article_title').single()
+      .insert({ application_id: application.id, article_url: finalUrl, article_title: articleTitle.trim() }).select('id, status, article_url, article_title').single()
     if (requestError) { setError(requestError.message) }
     else {
       const currentDeliveries = application.keyflow_deliveries || []
@@ -5717,7 +5724,7 @@ function DailyQuestionOperationsPage({ questions, setQuestions, adminToken, toas
   // 粘贴区仍支持问题与回答：识别为「回答」的条目写入答主日常投稿（keyflow_daily_submissions），
   // 「问题」条目写入本页（keyflow_daily_questions）。
   const savePasted = async () => {
-    const entries = parseQuestions(paste, true)
+    const entries = (await resolveZhihuEntries(parseQuestions(paste, true))).entries
     if (!entries.length) { toast?.('请按“标题 + 知乎问题/回答/专栏文章 URL”粘贴内容'); return }
     setSaving(true)
     const answerEntries = entries.filter((item) => item.content_type === 'answer' || item.content_type === 'article')

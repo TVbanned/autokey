@@ -5,6 +5,24 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// 知乎对机房 IP 一律返回 403（need_login / unhuman 挑战），必须带登录 Cookie；
+// 与 resolve-zhihu-answer、zhihu-following-questions 共用同一组密钥。
+function zhihuHeaders(): Record<string, string> {
+  const dC0 = Deno.env.get("ZHIHU_D_C0");
+  const zC0 = Deno.env.get("ZHIHU_Z_C0");
+  const zap = Deno.env.get("ZHIHU_ZAP");
+  const cookie = [`d_c0=${dC0}`, `z_c0=${zC0}`, zap ? `_zap=${zap}` : ""]
+    .filter((item) => !item.endsWith("=undefined"))
+    .join("; ");
+  return {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "zh-CN,zh;q=0.9",
+    "Referer": "https://www.zhihu.com/",
+    ...(cookie ? { Cookie: cookie } : {}),
+  };
+}
+
 function json(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -125,10 +143,7 @@ serve(async (req) => {
     try {
       if (answerId) {
         const zhihuRes = await fetch(`https://www.zhihu.com/api/v4/answers/${answerId}?include=content`, {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (compatible; Keyflow/1.0)",
-            "Accept": "application/json, text/plain, */*",
-          },
+          headers: zhihuHeaders(),
           signal: controller.signal,
         });
         if (!zhihuRes.ok) {
@@ -144,10 +159,7 @@ serve(async (req) => {
       } else if (articleId) {
         // 1) 先走专栏文章接口
         const apiRes = await fetch(`https://www.zhihu.com/api/v4/articles/${articleId}?include=content`, {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (compatible; Keyflow/1.0)",
-            "Accept": "application/json, text/plain, */*",
-          },
+          headers: zhihuHeaders(),
           signal: controller.signal,
         });
         if (apiRes.ok) {
@@ -165,10 +177,7 @@ serve(async (req) => {
         // 2) 接口拿不到正文时退回页面内嵌数据
         if (!content) {
           const pageRes = await fetch(`https://zhuanlan.zhihu.com/p/${articleId}`, {
-            headers: {
-              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-              "Accept": "text/html,application/xhtml+xml",
-            },
+            headers: { ...zhihuHeaders(), Accept: "text/html,application/xhtml+xml" },
             signal: controller.signal,
           });
           if (pageRes.ok) {

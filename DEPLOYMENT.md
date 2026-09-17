@@ -30,8 +30,11 @@
 
    ```bash
    scp -i ../OpenClaw.pem -r dist root@39.96.61.144:/www/wwwroot/39.96.61.144/AutokeyProject/_app_new
-   ssh -i ../OpenClaw.pem root@39.96.61.144 "rm -rf /www/wwwroot/39.96.61.144/AutokeyProject/app && mv /www/wwwroot/39.96.61.144/AutokeyProject/_app_new /www/wwwroot/39.96.61.144/AutokeyProject/app"
+   ssh -i ../OpenClaw.pem root@39.96.61.144 "cd /www/wwwroot/39.96.61.144/AutokeyProject && mv app _app_backup_$(date +%Y%m%d%H%M) && mv _app_new app && chmod -R o+rX app"
    ```
+
+   > `chmod -R o+rX app` 不能省：scp 新建的目录默认 `drwx------`，nginx（www 用户）读不到会整站 403。
+   > 替换前先把旧 `app` 改名成 `_app_backup_<时间>` 而不是直接 `rm -rf`，出问题可以秒回滚。
 
 3. 同步推到 Git 存档（当前分支）：
 
