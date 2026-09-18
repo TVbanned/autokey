@@ -3303,7 +3303,14 @@ function AnswererDashboard() {
   const [showBadges, setShowBadges] = useState(false)
   const [defaultBanner, setDefaultBanner] = useState('')
   const [selectedBadge, setSelectedBadge] = useState(null)
-  const [activeTab, setActiveTab] = useState('create') // 'create' | 'activities' | 'submissions' | 'coins' | 'hotspots' | 'comprehensive'
+  // 页卡支持从 URL 指定（?dashboard&tab=comprehensive）：申领页报名成功后把答主直接送到「综合活动」页
+  const [activeTab, setActiveTab] = useState(() => {
+    const allowed = ['create', 'hotspots', 'activities', 'comprehensive', 'submissions', 'coins', 'invite']
+    try {
+      const tab = new URLSearchParams(window.location.search).get('tab')
+      return tab && allowed.includes(tab) ? tab : 'create'
+    } catch { return 'create' }
+  }) // 'create' | 'hotspots' | 'activities' | 'comprehensive' | 'submissions' | 'coins' | 'invite'
   const [dashboardSidebarOpen, setDashboardSidebarOpen] = useState(false)
   const [dashboardContentMode, setDashboardContentMode] = useState('favorites')
   const [comprehensiveActivities, setComprehensiveActivities] = useState([])
@@ -4539,6 +4546,9 @@ function ClaimPage({ activityId, authCode }) {
   const submitDelivery = async (event) => {
     event.preventDefault()
     if (!application) return
+    // 2026-09-18：综合活动的投稿入口统一到答主看板「综合活动」页，申领页不再收稿。
+    // 这段兜底是给「报名时打开、很久没关」的旧页面用的，防着绕过界面直接提交。
+    if (isComprehensive) { setError('综合活动的投稿请到答主看板 →「综合活动」页提交'); return }
     if (!articleUrl.trim()) { setError('请填写知乎回答或专栏文章地址'); return }
     if (!articleTitle.trim()) { setError('请填写作品标题'); return }
     setSubmitting(true); setError('')
@@ -4600,17 +4610,18 @@ function ClaimPage({ activityId, authCode }) {
   const hasKey = !!claimedKey
   const deliveries = Array.isArray(application?.keyflow_deliveries) ? application.keyflow_deliveries : []
   const hasDelivery = deliveries.length > 0
-  const showDelivery = hasKey || (isExempted && hasApp) || (isComprehensive && hasApp && isSelected)
+  // 2026-09-18：综合活动不再在申领页收稿（入口统一到看板「综合活动」页），所以这里整体排除综合活动。
+  const showDelivery = !isComprehensive && (hasKey || (isExempted && hasApp))
 
   const stepStates = isComprehensive ? [
     hasApp ? 'done' : 'active',
-    deliveries.length >= minSubmissionCount ? 'done' : (showDelivery ? 'active' : (hasApp ? (isRejected ? 'locked' : 'waiting') : 'locked')),
+    !hasApp ? 'locked' : (deliveries.length >= minSubmissionCount ? 'done' : 'active'),
   ] : [
     hasApp ? 'done' : 'active',
     isExempted ? (hasApp ? 'done' : 'locked') : (hasKey ? 'done' : (hasApp && isSelected ? 'active' : (hasApp && !isSelected && !isRejected ? 'waiting' : 'locked'))),
     hasDelivery ? 'done' : (showDelivery ? 'active' : 'locked'),
   ]
-  const stepLabels = isComprehensive ? ['报名参与', '提交作品'] : ['报名参与', '领取 Key', '提交作品']
+  const stepLabels = isComprehensive ? ['报名参与', '到「综合活动」页投稿'] : ['报名参与', '领取 Key', '提交作品']
 
   return <div className="public-page">{duplicateNotice && <Modal title="这条链接已经提交过" onClose={() => setDuplicateNotice(null)}><div className="daily-success-modal"><div className="step-message-icon waiting"><Icon name="alert" size={24}/></div><p>这条稿件此前已经提交过</p><span>{duplicateNotice.title ? `《${duplicateNotice.title}》` : '这条链接'}已在「{duplicateNotice.source}」提交过{duplicateNotice.at ? `（${new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(duplicateNotice.at))}）` : ''}，无需重复提交；如需修改请先联系运营删除原记录。</span><button className="primary" onClick={() => setDuplicateNotice(null)}>知道了</button></div></Modal>}<main className="public-card">
     {screenshots.length > 0 && <div className="public-screenshots"><img className="ss-main" src={screenshots[activeShot] || screenshots[0]} alt="游戏截图"/>{screenshots.length > 1 && <div className="ss-strip">{screenshots.map((url, i) => i !== activeShot ? <img key={i} src={url} alt={`截图 ${i+1}`} onClick={() => setActiveShot(i)}/> : null)}</div>}</div>}
@@ -4667,7 +4678,7 @@ function ClaimPage({ activityId, authCode }) {
           {!hasApp && answerer && (
             <form className="public-form" onSubmit={submitApplication}>
               <h2>报名参与</h2>
-              <p className="invite-hint">{isComprehensive ? '确认信息后提交报名，报名成功后即可提交作品。' : '确认信息后提交报名，运营方筛选通过后即可领取 Key。'}</p>
+              <p className="invite-hint">{isComprehensive ? '确认信息后提交报名（综合活动自动入选），报名后到答主看板的「综合活动」页提交投稿。' : '确认信息后提交报名，运营方筛选通过后即可领取 Key。'}</p>
               <label className="field"><span>GameJourney用户名</span><input value={answerer.zhihu_name} disabled /></label>
               {(() => { const platforms = Array.isArray(activity.platforms) && activity.platforms.length ? activity.platforms : ['steam']; const selected = activityPlatforms.find((platform) => platform.value === form.selected_platform); return platforms.length > 1 ? <label className="field platform-select-field"><span>版本选择</span><div className="platform-select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{selected?.icon}</svg><select value={form.selected_platform} onChange={(event) => setForm({ ...form, selected_platform: event.target.value })}>{platforms.map((platform) => <option key={platform} value={platform}>{platformLabel[platform] || platform}</option>)}</select><Icon name="arrow" size={16}/></div></label> : platforms[0] !== 'steam' ? <label className="field platform-select-field"><span>版本选择</span><div className="platform-select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{selected?.icon}</svg><span className="platform-readonly">{platformLabel[platforms[0]] || platforms[0]}</span></div></label> : null })()}
               {!isComprehensive && <><Field label="预计完成字数" type="number" required value={form.expected_word_count} onChange={(value) => setForm({ ...form, expected_word_count: value })} onBlur={(event) => { const numberValue = Number(event.target.value) || 800; if (numberValue < 800) setForm({ ...form, expected_word_count: 800 }) }}/>
@@ -4682,7 +4693,13 @@ function ClaimPage({ activityId, authCode }) {
             </form>
           )}
 
-          {hasApp && !showDelivery && (isRejected ? <div className="step-message"><div className="step-message-icon rejected"><Icon name="close" size={24}/></div><p>本次未入选</p><span>抱歉，您未能取得本游戏的体验资格，请关注其它活动，感谢您的理解！</span></div> : !isSelected ? <div className="step-message"><div className="step-message-icon waiting"><Icon name="clock" size={24}/></div><p>报名已提交，等待筛选</p><span>运营方会根据{isComprehensive ? '参与活动要求' : '测评要求'}筛选答主，入选后可在此页面{isComprehensive ? '提交作品' : '领取 Key'}。</span></div> : (() => { const selPlatform = application?.selected_platform || form.selected_platform || 'steam'; const stockInfo = platformStock[selPlatform]; const outOfStock = stockInfo && stockInfo.available === 0; if (outOfStock) { return <div className="step-message"><div className="step-message-icon waiting"><Icon name="alert" size={24}/></div><p>该平台 Key 库存不足，请联系管理员</p><span>{platformLabel[selPlatform] || selPlatform} 版本 Key 已全部发放，如需协助请联系运营方补充库存。</span></div> } return <div className="step-claim"><h2>领取游戏 Key</h2><p>恭喜入选！点击下方按钮领取你的专属 Key。</p><button className="primary claim-btn" onClick={claimKey} disabled={claiming}>{claiming ? '领取中…' : '领取 Key'}</button>{error && <p className="public-error">{error}</p>}</div> })())}
+          {isComprehensive && hasApp && isSelected && <div className="step-delivery">
+            <div className="step-message"><div className="step-message-icon done"><Icon name="check" size={24}/></div><p>报名成功</p><span>综合活动的投稿统一在答主看板「综合活动」页提交：每篇 +40 经验，命中活动题库的问题才计入活动完成度（当前 {deliveries.length}/{minSubmissionCount}）。</span></div>
+            {hasDelivery && <div className="delivery-list">{deliveries.map((d, i) => <a key={d.id || i} className="delivery-list-item" href={cleanZhihuAnswerUrl(d.article_url)} target="_blank" rel="noreferrer"><span className="delivery-list-status">{d.status === 'approved' ? '已通过' : d.status === 'revision_required' ? '需修改' : d.status === 'rejected' ? '未通过' : '待审核'}</span><span className="delivery-list-title">{d.article_title || d.article_url}</span></a>)}</div>}
+            <div className="delivery-submit-row"><a className="primary public-submit" href="?dashboard&tab=comprehensive">去「综合活动」页提交投稿</a><a className="outline-button dashboard-enter-btn" href="?dashboard">进入我的看板</a></div>
+          </div>}
+
+          {hasApp && !showDelivery && (isComprehensive ? <div className="step-message"><div className="step-message-icon waiting"><Icon name="clock" size={24}/></div><p>报名已提交</p><span>综合活动为自动入选，刷新后即可到答主看板「综合活动」页投稿。</span></div> : isRejected ? <div className="step-message"><div className="step-message-icon rejected"><Icon name="close" size={24}/></div><p>本次未入选</p><span>抱歉，您未能取得本游戏的体验资格，请关注其它活动，感谢您的理解！</span></div> : !isSelected ? <div className="step-message"><div className="step-message-icon waiting"><Icon name="clock" size={24}/></div><p>报名已提交，等待筛选</p><span>运营方会根据测评要求筛选答主，入选后可在此页面领取 Key。</span></div> : (() => { const selPlatform = application?.selected_platform || form.selected_platform || 'steam'; const stockInfo = platformStock[selPlatform]; const outOfStock = stockInfo && stockInfo.available === 0; if (outOfStock) { return <div className="step-message"><div className="step-message-icon waiting"><Icon name="alert" size={24}/></div><p>该平台 Key 库存不足，请联系管理员</p><span>{platformLabel[selPlatform] || selPlatform} 版本 Key 已全部发放，如需协助请联系运营方补充库存。</span></div> } return <div className="step-claim"><h2>领取游戏 Key</h2><p>恭喜入选！点击下方按钮领取你的专属 Key。</p><button className="primary claim-btn" onClick={claimKey} disabled={claiming}>{claiming ? '领取中…' : '领取 Key'}</button>{error && <p className="public-error">{error}</p>}</div> })())}
 
           {showDelivery && (() => { const daysLeft = activity.delivery_deadline ? Math.ceil((new Date(activity.delivery_deadline) - new Date()) / (1000 * 60 * 60 * 24)) : null; return <div className="step-delivery">{hasDelivery && <div className="delivery-submitted-section"><div className="step-message"><div className="step-message-icon done"><Icon name="check" size={24}/></div><p>作品已提交</p><span>可继续提交更多作品</span></div><div className="delivery-list">{deliveries.map((d, i) => <a key={d.id || i} className="delivery-list-item" href={cleanZhihuAnswerUrl(d.article_url)} target="_blank" rel="noreferrer"><span className="delivery-list-status">{d.status === 'approved' ? '已通过' : d.status === 'revision_required' ? '需修改' : d.status === 'rejected' ? '未通过' : '待审核'}</span><span className="delivery-list-title">{d.article_title || d.article_url}</span></a>)}</div></div>}{!isComprehensive && !isExempted && <div className="key-display"><div className="key-label">你的游戏 Key</div><div className="key-value">{claimedKey.key_value}</div><button className="outline-button" onClick={() => { navigator.clipboard.writeText(claimedKey.key_value); toast('Key 已复制') }}>复制 Key</button></div>}<form className="delivery-form" onSubmit={submitDelivery}><h2>提交作品链接{isComprehensive ? <span className={`delivery-progress ${deliveries.length >= minSubmissionCount ? 'complete' : ''}`}>累计完成 <strong>{deliveries.length}</strong>/{minSubmissionCount}</span> : hasDelivery ? <span className="delivery-congrats">恭喜您完成本次活动！</span> : <>{daysLeft !== null && daysLeft > 0 && <span className="deadline-badge">{daysLeft <= 3 ? <span className="deadline-pulse"/> : null}还剩 <strong>{daysLeft}</strong> 天</span>}{daysLeft !== null && daysLeft <= 0 && <span className="deadline-badge expired">已截止</span>}</>}</h2><Field label="知乎回答或专栏文章地址" type="url" required value={articleUrl} placeholder="https://www.zhihu.com/question/.../answer/... 或 https://zhuanlan.zhihu.com/p/..." onChange={(value) => setArticleUrl(value)}/><Field label="作品标题" type="text" required value={articleTitle} placeholder="填写对应的知乎问题或文章标题" onChange={(value) => setArticleTitle(value)}/>{error && <p className="public-error">{error}</p>}<div className="delivery-submit-row"><button className="primary public-submit" disabled={submitting}>{submitting ? '提交中…' : '提交作品'}</button><a className="outline-button dashboard-enter-btn" href="?dashboard">进入我的看板</a></div></form></div> })()}
         </>
