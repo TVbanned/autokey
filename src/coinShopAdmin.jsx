@@ -314,12 +314,17 @@ export default function CoinShopAdmin() {
       people: Number(item.people) || 0,
       todayActiveCount: Number(item.today_active_count) || 0,
       monthActiveCount: Number(item.month_active_count) || 0,
+      // 实际发放：该等级今天/本自然月真实发出去的活跃日金币（来自金币账本，RPC 直接返回）
+      todayActiveCoins: Number(item.today_active_coins) || 0,
+      monthActiveCoins: Number(item.month_active_coins) || 0,
     }]))
     return Array.from({ length: 10 }, (_, index) => {
       const level = index + 1
       const count = countByLevel.get(level)?.people || 0
       const todayActiveCount = countByLevel.get(level)?.todayActiveCount || 0
       const monthActiveCount = countByLevel.get(level)?.monthActiveCount || 0
+      const todayActiveCoins = countByLevel.get(level)?.todayActiveCoins || 0
+      const monthActiveCoins = countByLevel.get(level)?.monthActiveCoins || 0
       const baseDaily = levelDailyBase[level] ?? fallbackDailyCoins(level)
       const currentDailyPerPerson = Math.round(baseDaily * savedCoinScale)
       const previewDailyPerPerson = Math.round(baseDaily * previewCoinScale)
@@ -332,6 +337,8 @@ export default function CoinShopAdmin() {
         count,
         todayActiveCount,
         monthActiveCount,
+        todayActiveCoins,
+        monthActiveCoins,
         baseDaily,
         currentDailyPerPerson,
         previewDailyPerPerson,
@@ -351,7 +358,10 @@ export default function CoinShopAdmin() {
     previewMonthly: acc.previewMonthly + row.previewMonthly,
     todayActiveCount: acc.todayActiveCount + row.todayActiveCount,
     monthActiveCount: acc.monthActiveCount + row.monthActiveCount,
-  }), { currentDaily: 0, currentMonthly: 0, previewDaily: 0, previewMonthly: 0, todayActiveCount: 0, monthActiveCount: 0 })
+    todayActiveCoins: acc.todayActiveCoins + row.todayActiveCoins,
+    monthActiveCoins: acc.monthActiveCoins + row.monthActiveCoins,
+    people: acc.people + row.count,
+  }), { currentDaily: 0, currentMonthly: 0, previewDaily: 0, previewMonthly: 0, todayActiveCount: 0, monthActiveCount: 0, todayActiveCoins: 0, monthActiveCoins: 0, people: 0 })
 
   const maxProjectionMonthly = Math.max(1, ...coinProjection.map(row => row.previewMonthly))
 
@@ -969,7 +979,7 @@ export default function CoinShopAdmin() {
       )}
 
       {tab === 'scale' && (
-        <div style={{ display: 'grid', gap: 16 }}>
+        <div style={{ display: 'grid', gap: 20 }}>
           <section className="panel">
             <div className="panel-head"><div><h3>金币 S 系数</h3><p>S 系数会乘到每日活跃金币公式：每日金币 = 基础日产出 × S。当前数据库保存值为 <b>{savedCoinScale}</b>。表格中「基础日产出/人」是 S=1 基准值；「S后日产出/人」才是实际发放口径。</p></div></div>
             <form className="coin-scale-form" onSubmit={updateCoinScale}>
@@ -979,33 +989,29 @@ export default function CoinShopAdmin() {
             </form>
           </section>
 
-          <section className="panel">
-            <div className="panel-head"><div><h3>产出预估图表</h3><p>按当前全部答主的积分等级统计。有效活跃动作包含日常投稿、测评交付、领取 Key、自助报名和兑换下单；次数按每笔有效动作累计。</p></div><small style={{ color: 'var(--c-ink-4)' }}>配置更新：{coinScaleConfig?.updated_at ? fmtTime(coinScaleConfig.updated_at) : '—'}</small></div>
+          <section className="panel coin-scale-panel">
+            <div className="panel-head"><div><h3>产出预估图表</h3><p>按当前全部答主的积分等级统计。有效活跃动作包含日常投稿、测评交付、领取 Key、自助报名和兑换下单；次数按每笔有效动作累计。下方表格里「日产出（理论值）/ 月产出（理论值）」是不管活跃、视为每人每天都活跃的上限；「今日/本月活跃发放金币」是真实发出去的金币（每人每天只发一次）。</p></div><small style={{ color: 'var(--c-ink-4)' }}>配置更新：{coinScaleConfig?.updated_at ? fmtTime(coinScaleConfig.updated_at) : '—'}</small></div>
             <div className="coin-scale-summary">
               <div><small>已保存系数</small><b>{savedCoinScale}</b></div>
               <div><small>预览系数</small><b>{previewCoinScale}</b></div>
-              <div><small>新系数每日总产出</small><b>{projectionTotals.previewDaily.toLocaleString()}</b></div>
-              <div><small>新系数每月总产出</small><b>{projectionTotals.previewMonthly.toLocaleString()}</b></div>
+              <div><small>今日活跃发放金币</small><b>{projectionTotals.todayActiveCoins.toLocaleString()}</b><small>理论上限 {projectionTotals.previewDaily.toLocaleString()}</small></div>
+              <div><small>本月活跃发放金币</small><b>{projectionTotals.monthActiveCoins.toLocaleString()}</b><small>理论上限 {projectionTotals.previewMonthly.toLocaleString()}</small></div>
               <div><small>今日活跃总次数</small><b>{projectionTotals.todayActiveCount.toLocaleString()}</b><small>本月 {projectionTotals.monthActiveCount.toLocaleString()} 次</small></div>
             </div>
 
             <div className="coin-scale-chart">
               {coinProjection.length ? coinProjection.map((row) => {
                 const width = Math.max(2, Math.round((row.previewMonthly / maxProjectionMonthly) * 100))
-                const deltaClass = row.monthlyDelta > 0 ? 'up' : row.monthlyDelta < 0 ? 'down' : ''
+                // 数值口径统一收在下表：这里只保留「等级 + 人数 + 进度条」，数值走 title 悬停提示，
+                // 避免同一批数据在图表行里再列一遍。
+                const rowSummary = `Lv${row.level} · ${row.count} 人 · 今日活跃 ${row.todayActiveCount.toLocaleString()} 次 / 实发 ${row.todayActiveCoins.toLocaleString()} 金币 · 本月活跃 ${row.monthActiveCount.toLocaleString()} 次 / 实发 ${row.monthActiveCoins.toLocaleString()} 金币 · 理论上限：日 ${row.previewDaily.toLocaleString()} / 月 ${row.previewMonthly.toLocaleString()}`
                 return (
-                  <div className="coin-scale-row" key={row.level}>
+                  <div className="coin-scale-row" key={row.level} title={rowSummary}>
                     <div className="coin-scale-row-head">
                       <strong>Lv{row.level}</strong>
                       <span>{row.count} 人</span>
                     </div>
                     <div className="coin-scale-track"><div className="coin-scale-fill" style={{ width: `${width}%` }} /></div>
-                    <div className="coin-scale-values">
-                      <span>今日 {row.todayActiveCount.toLocaleString()} 次</span>
-                      <span>本月 {row.monthActiveCount.toLocaleString()} 次</span>
-                      <span>日产出 {row.previewDaily.toLocaleString()}</span>
-                      <span>月产出 {row.previewMonthly.toLocaleString()}</span>
-                    </div>
                   </div>
                 )
               }) : <div className="table-empty">暂无答主数据，无法计算产出预估。</div>}
@@ -1013,7 +1019,18 @@ export default function CoinShopAdmin() {
 
             <div className="table-wrap">
               <table>
-                <thead><tr><th>等级</th><th>人数</th><th>基础日产出 / 人</th><th>S后日产出 / 人</th><th>当前系数日总和</th><th>新系数日总和</th><th>新系数月总和（30天理论值）</th><th>今日活跃次数</th><th>本月有效活跃次数</th></tr></thead>
+                <thead><tr>
+                  <th>等级</th>
+                  <th>人数</th>
+                  <th>基础日产出 / 人</th>
+                  <th>S后日产出 / 人</th>
+                  <th title="理论值：视为该等级每个人每天都活跃 = 人数 × S后日产出/人">日产出（理论值）</th>
+                  <th title="理论值：日产出（理论值）× 30 天">月产出（理论值）</th>
+                  <th title="该等级所有人今天的活跃次数之和">今日活跃次数</th>
+                  <th title="该等级所有人本自然月的活跃次数之和">本月活跃次数</th>
+                  <th title="该等级今天实际发出的活跃日金币（每人每天只发一次，所以通常远小于理论值）">今日活跃发放金币</th>
+                  <th title="该等级本自然月实际发出的活跃日金币">本月活跃发放金币</th>
+                </tr></thead>
                 <tbody>
                   {coinProjection.map((row) => (
                     <tr key={row.level}>
@@ -1021,15 +1038,32 @@ export default function CoinShopAdmin() {
                       <td>{row.count}</td>
                       <td>{row.baseDaily.toLocaleString()}</td>
                       <td>{row.previewDailyPerPerson.toLocaleString()}</td>
-                      <td>{row.currentDaily.toLocaleString()}</td>
                       <td><b>{row.previewDaily.toLocaleString()}</b></td>
                       <td>{row.previewMonthly.toLocaleString()}</td>
                       <td>{row.todayActiveCount.toLocaleString()}</td>
                       <td>{row.monthActiveCount.toLocaleString()}</td>
+                      <td><b>{row.todayActiveCoins.toLocaleString()}</b></td>
+                      <td><b>{row.monthActiveCoins.toLocaleString()}</b></td>
                     </tr>
                   ))}
-                  {!coinProjection.length && <tr><td colSpan="9" className="table-empty">暂无数据</td></tr>}
+                  {!coinProjection.length && <tr><td colSpan="10" className="table-empty">暂无数据</td></tr>}
                 </tbody>
+                {coinProjection.length > 0 && (
+                  <tfoot>
+                    <tr>
+                      <td>合计</td>
+                      <td>{projectionTotals.people.toLocaleString()}</td>
+                      <td>—</td>
+                      <td>—</td>
+                      <td>{projectionTotals.previewDaily.toLocaleString()}</td>
+                      <td>{projectionTotals.previewMonthly.toLocaleString()}</td>
+                      <td>{projectionTotals.todayActiveCount.toLocaleString()}</td>
+                      <td>{projectionTotals.monthActiveCount.toLocaleString()}</td>
+                      <td>{projectionTotals.todayActiveCoins.toLocaleString()}</td>
+                      <td>{projectionTotals.monthActiveCoins.toLocaleString()}</td>
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </div>
           </section>
