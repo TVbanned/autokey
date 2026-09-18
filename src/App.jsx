@@ -7240,14 +7240,23 @@ function SubmissionMetricsPage({ answerers = [], toast }) {
     setLoading(true)
     const startIso = new Date(`${from}T00:00:00+08:00`).toISOString()
     const endIso = new Date(new Date(`${to}T00:00:00+08:00`).getTime() + 86400000).toISOString()
-    const [dailyRes, compRes, deliveryRes, metricsRes] = await Promise.all([
+    const [dailyRes, compRes, deliveryRes, metricsRes, bankRes] = await Promise.all([
       supabase.from('keyflow_daily_submissions').select('id, answerer_id, article_url, article_title, created_at').gte('created_at', startIso).lt('created_at', endIso).order('created_at', { ascending: false }).limit(2000),
       supabase.from('keyflow_comprehensive_submissions').select('id, answerer_id, article_url, article_title, created_at').gte('created_at', startIso).lt('created_at', endIso).order('created_at', { ascending: false }).limit(2000),
-      supabase.from('keyflow_deliveries').select('id, article_url, article_title, submitted_at, keyflow_applications(answerer_id)').gte('submitted_at', startIso).lt('submitted_at', endIso).order('submitted_at', { ascending: false }).limit(2000),
+      supabase.from('keyflow_deliveries').select('id, article_url, article_title, submitted_at, keyflow_applications(answerer_id, activity_id, keyflow_activities(title, activity_type))').gte('submitted_at', startIso).lt('submitted_at', endIso).order('submitted_at', { ascending: false }).limit(2000),
       supabase.from('keyflow_submission_metrics').select('*').limit(5000),
+      // 综合活动题库：判断「综合活动申领页交的稿」是否命中题目（命中→黄=综合活动，未命中→绿=日常）
+      supabase.from('keyflow_activity_questions').select('activity_id, question_id').not('question_id', 'is', null).limit(5000),
     ])
     const failure = dailyRes.error || compRes.error || deliveryRes.error || metricsRes.error
     if (failure) { setRows([]); setLoading(false); toast?.(failure.message); return }
+    const bankByActivity = new Map()
+    ;(bankRes.data || []).forEach((item) => {
+      const key = String(item.activity_id)
+      const set = bankByActivity.get(key) || new Set()
+      set.add(String(item.question_id))
+      bankByActivity.set(key, set)
+    })
     const metrics = metricsRes.data || []
     const byToken = new Map(metrics.map((item) => [String(item.content_token), item]))
     const submissions = [
@@ -7255,7 +7264,17 @@ function SubmissionMetricsPage({ answerers = [], toast }) {
       ...(compRes.data || []).map((item) => ({ ...item, source: 'comprehensive' })),
       ...(deliveryRes.data || []).map((item) => {
         const app = Array.isArray(item.keyflow_applications) ? item.keyflow_applications[0] : item.keyflow_applications
-        return { ...item, created_at: item.submitted_at, answerer_id: app?.answerer_id, source: 'delivery' }
+        const act = Array.isArray(app?.keyflow_activities) ? app.keyflow_activities[0] : app?.keyflow_activities
+        const fromComprehensive = act?.activity_type === 'comprehensive'
+        const bank = fromComprehensive ? bankByActivity.get(String(app?.activity_id)) : null
+        const hit = bank ? bank.has(String(getZhihuQuestionId(item.article_url) || '')) : false
+        return {
+          ...item,
+          created_at: item.submitted_at,
+          answerer_id: app?.answerer_id,
+          source: fromComprehensive ? (hit ? 'comprehensive' : 'daily') : 'delivery',
+          sourceNote: fromComprehensive ? `综合活动申领页交付（${hit ? '命中活动题库' : '未命中活动题库'}）` : '测评活动申领页交付',
+        }
       }),
     ]
     const list = submissions.map((item) => {
@@ -7273,7 +7292,7 @@ function SubmissionMetricsPage({ answerers = [], toast }) {
         source: sourceLabel,
         sourceKeys: [item.source],
         sources: [sourceLabel],
-        entries: [{ sourceKey: item.source, source: sourceLabel, at: item.created_at }],
+        entries: [{ sourceKey: item.source, source: sourceLabel, at: item.created_at, note: item.sourceNote || '' }],
         title: item.article_title || '',
         url: item.article_url || '',
         token,
@@ -7356,7 +7375,9 @@ function SubmissionMetricsPage({ answerers = [], toast }) {
   // 列表里只显示 月/日，完整时间放 title 里（省列宽）
   const fmtDay = (value) => (value ? new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit' }).format(new Date(value)) : '—')
   // 来源用彩色圆点：日常=绿、综合活动=黄、活动投稿(交付)=红，鼠标浮上看完整文案
-  const SOURCE_LABEL = { daily: '日常投稿', comprehensive: '综合活动投稿', delivery: '活动投稿' }
+  // 三分类（2026-09-18 产品确认）：绿=日常投稿、黄=综合活动投稿、红=测评交付。
+  // 综合活动申领页交的稿按「是否命中活动题库」归到前两类（未命中=日常、命中=综合活动），具体见 load()。
+  const SOURCE_LABEL = { daily: '日常投稿', comprehensive: '综合活动投稿', delivery: '测评交付' }
   const SOURCE_DOT = { daily: 'source-dot daily', comprehensive: 'source-dot comprehensive', delivery: 'source-dot delivery' }
 
   const header = (label, key, extra) => (
@@ -7429,7 +7450,7 @@ function SubmissionMetricsPage({ answerers = [], toast }) {
       <thead><tr>
         {header('投稿时间', 'created_at', { width: 84 })}
         <th style={{ width: 110 }}>答主</th>
-        <th style={{ width: 46 }} title="绿=日常投稿 · 黄=综合活动投稿 · 红=活动投稿（交付）">来源</th>
+        <th style={{ width: 46 }} title="绿=日常投稿 · 黄=综合活动投稿 · 红=测评交付">来源</th>
         <th>作品标题</th>
         {header('字数', 'word', { width: 80 })}
         {header('曝光', 'exposure', { width: 90 })}
@@ -7444,7 +7465,7 @@ function SubmissionMetricsPage({ answerers = [], toast }) {
         {(filtered || []).map((row) => <tr key={row.key}>
           <td title={(row.entries || []).map((item) => `${item.source}：${fmtTime(item.at)}`).join('\n')}>{fmtDay(row.created_at)}{row.duplicateCount > 1 ? <small className="metrics-dup-flag">×{row.duplicateCount}</small> : null}</td>
           <td>{row.answerer}</td>
-          <td>{(row.sourceKeys || [row.sourceKey]).map((key) => <span key={key} className={SOURCE_DOT[key] || 'source-dot'} title={`${SOURCE_LABEL[key] || key}${(row.entries || []).filter((item) => item.sourceKey === key).map((item) => `：${fmtTime(item.at)}`).join('')}`} aria-label={SOURCE_LABEL[key] || key} />)}</td>
+          <td>{(row.sourceKeys || [row.sourceKey]).map((key) => <span key={key} className={SOURCE_DOT[key] || 'source-dot'} title={`${SOURCE_LABEL[key] || key}${(row.entries || []).filter((item) => item.sourceKey === key).map((item) => `${item.note ? `（${item.note}）` : ''}：${fmtTime(item.at)}`).join('')}`} aria-label={SOURCE_LABEL[key] || key} />)}</td>
           <td>{row.url ? <a className="profile-link metrics-title-link" href={cleanZhihuAnswerUrl(row.url)} target="_blank" rel="noreferrer" title={`打开：${row.title || row.url}`}>{row.title || row.url}</a> : (row.title || '—')}</td>
           <td>{fmtNum(row.word)}</td>
           <td>{fmtNum(row.exposure)}</td>
