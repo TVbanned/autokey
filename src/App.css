@@ -389,6 +389,7 @@ span.stage-green { background: #dcfce7; color: #15803d; }
 .answerer-dashboard .partner-table tbody td:nth-child(2) { font-size: 11px; }
 .submission-type.activity { color: #1d4ed8; background: #dbeafe; border: 1px solid #bfdbfe; }
 .submission-type.daily { color: #047857; background: #d1fae5; border: 1px solid #a7f3d0; }
+.submission-type.comprehensive { color: #b45309; background: #fef3c7; border: 1px solid #fde68a; }
 .dashboard-activity-body h3 { margin: 2px 0 var(--sp-3); color: var(--c-ink); font-size: var(--fs-body); }
 .dashboard-activity-body > div { display: flex; align-items: center; gap: var(--sp-2); }
 .dashboard-deadline { color: var(--c-danger); font-size: var(--fs-meta); font-weight: 600; }
@@ -689,6 +690,7 @@ button.answerer-metric-clickable { color: inherit; font: inherit; text-align: ce
 .step-message-icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: var(--r-full); margin-bottom: var(--sp-1); }
 .step-message-icon.waiting { background: var(--c-warning-soft); color: var(--c-warning); }
 .step-message-icon.done { background: var(--c-primary-soft); color: var(--c-success); }
+.step-message-icon.success { background: var(--c-success-soft); color: var(--c-success); }
 .step-message-icon.rejected { background: var(--c-danger-soft); color: var(--c-danger); }
 .step-message p { font-size: var(--fs-section-title); font-weight: 600; color: var(--c-ink); }
 .step-message span { font-size: var(--fs-label); color: var(--c-ink-3); max-width: 320px; line-height: 1.6; }
@@ -2031,6 +2033,7 @@ button.answerer-metric-clickable { color: inherit; font: inherit; text-align: ce
 .daily-success-modal { display: flex; flex-direction: column; align-items: center; gap: var(--sp-3); padding: var(--sp-4); text-align: center; }
 .daily-success-modal p { margin: 0; font-size: var(--fs-title); font-weight: 700; }
 .daily-success-modal span { color: var(--c-ink-3); }
+.duplicate-notice-list { margin: 0; padding-left: 18px; max-height: 108px; overflow-y: auto; text-align: left; color: var(--c-ink-3); font-size: var(--fs-meta); line-height: 1.6; }
 .daily-question-form { display: grid; gap: var(--sp-3); }
 .daily-question-form-row { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; }
 .daily-question-form-row input { flex: 1; min-width: 180px; height: 40px; padding: 0 var(--sp-3); border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); font-size: var(--fs-body); color: var(--c-ink); outline: none; transition: border-color .12s, opacity .15s, background .15s; }
@@ -6066,3 +6069,26 @@ body.zq-resizing { cursor: col-resize; user-select: none; }
 .redeem-key-list:not(.inline) .redeem-key-item .outline-button { position: absolute; right: var(--sp-3); top: 50%; transform: translateY(-50%); }
 .coins-orders-section .redeem-key-item { padding: var(--sp-2) var(--sp-3); }
 .coins-orders-section .redeem-key-item code { font-size: 15px; letter-spacing: .08em; }
+
+/* === 投稿数据（2026-09-18） === */
+.submission-metrics .metrics-filter-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-3) 0; }
+.submission-metrics .metrics-filter-row label { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-meta); color: var(--c-ink-3); }
+.submission-metrics .metrics-filter-row input[type='date'] { height: 34px; padding: 0 var(--sp-2); border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); color: var(--c-ink); font: inherit; font-size: var(--fs-meta); }
+.submission-metrics .metrics-filter-sep { color: var(--c-ink-4); }
+.submission-metrics .metrics-search { flex: 1; min-width: 200px; height: 34px; padding: 0 var(--sp-3); border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); color: var(--c-ink); font: inherit; font-size: var(--fs-meta); }
+.submission-metrics .metrics-search:focus, .submission-metrics .metrics-filter-row input[type='date']:focus { border-color: var(--c-primary); outline: none; }
+.submission-metrics .metrics-help { margin-bottom: var(--sp-3); padding: var(--sp-3) var(--sp-4); border: 1px dashed var(--c-border); border-radius: var(--r-sm); background: var(--c-surface-2); color: var(--c-ink-3); font-size: var(--fs-meta); line-height: 1.7; }
+.submission-metrics .metrics-help p { margin: 0 0 4px; }
+.submission-metrics .metrics-help code { padding: 1px 6px; border-radius: 4px; background: var(--c-surface); font-family: 'Courier New', Courier, monospace; }
+.submission-metrics .metrics-summary { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: var(--sp-2); margin-bottom: var(--sp-3); }
+.submission-metrics .metrics-summary > div { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: var(--sp-3) var(--sp-2); border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); }
+.submission-metrics .metrics-summary span { font-size: var(--fs-title); font-weight: 700; color: var(--c-ink); font-variant-numeric: tabular-nums; }
+.submission-metrics .metrics-summary small { font-size: var(--fs-label); color: var(--c-ink-4); }
+.submission-metrics .table-sort { border: none; background: none; padding: 0; font: inherit; font-weight: 600; color: inherit; cursor: pointer; }
+.submission-metrics .table-sort:hover { color: var(--c-primary); }
+.submission-metrics tbody td { font-variant-numeric: tabular-nums; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+@media (max-width: 900px) {
+  .submission-metrics .metrics-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
