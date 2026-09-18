@@ -389,6 +389,7 @@ span.stage-green { background: #dcfce7; color: #15803d; }
 .answerer-dashboard .partner-table tbody td:nth-child(2) { font-size: 11px; }
 .submission-type.activity { color: #1d4ed8; background: #dbeafe; border: 1px solid #bfdbfe; }
 .submission-type.daily { color: #047857; background: #d1fae5; border: 1px solid #a7f3d0; }
+.submission-type.comprehensive { color: #b45309; background: #fef3c7; border: 1px solid #fde68a; }
 .dashboard-activity-body h3 { margin: 2px 0 var(--sp-3); color: var(--c-ink); font-size: var(--fs-body); }
 .dashboard-activity-body > div { display: flex; align-items: center; gap: var(--sp-2); }
 .dashboard-deadline { color: var(--c-danger); font-size: var(--fs-meta); font-weight: 600; }
@@ -689,6 +690,7 @@ button.answerer-metric-clickable { color: inherit; font: inherit; text-align: ce
 .step-message-icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: var(--r-full); margin-bottom: var(--sp-1); }
 .step-message-icon.waiting { background: var(--c-warning-soft); color: var(--c-warning); }
 .step-message-icon.done { background: var(--c-primary-soft); color: var(--c-success); }
+.step-message-icon.success { background: var(--c-success-soft); color: var(--c-success); }
 .step-message-icon.rejected { background: var(--c-danger-soft); color: var(--c-danger); }
 .step-message p { font-size: var(--fs-section-title); font-weight: 600; color: var(--c-ink); }
 .step-message span { font-size: var(--fs-label); color: var(--c-ink-3); max-width: 320px; line-height: 1.6; }
@@ -2031,6 +2033,7 @@ button.answerer-metric-clickable { color: inherit; font: inherit; text-align: ce
 .daily-success-modal { display: flex; flex-direction: column; align-items: center; gap: var(--sp-3); padding: var(--sp-4); text-align: center; }
 .daily-success-modal p { margin: 0; font-size: var(--fs-title); font-weight: 700; }
 .daily-success-modal span { color: var(--c-ink-3); }
+.duplicate-notice-list { margin: 0; padding-left: 18px; max-height: 108px; overflow-y: auto; text-align: left; color: var(--c-ink-3); font-size: var(--fs-meta); line-height: 1.6; }
 .daily-question-form { display: grid; gap: var(--sp-3); }
 .daily-question-form-row { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; }
 .daily-question-form-row input { flex: 1; min-width: 180px; height: 40px; padding: 0 var(--sp-3); border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); font-size: var(--fs-body); color: var(--c-ink); outline: none; transition: border-color .12s, opacity .15s, background .15s; }
