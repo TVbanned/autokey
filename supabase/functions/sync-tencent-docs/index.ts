@@ -81,6 +81,46 @@ function colLetter(n: number): string {
   return s;
 }
 
+// 腾讯文档单次写入有参数上限：整个区域一次性 PUT 时，行数/单元格数过多会返回
+// ret=10002「Input parameter verification failed」（2026-09-20：「答主日常投稿」表数据
+// 超过 1000 行后整段 A2:F1085 写入被拒，同步卡在 9/19）。
+// 这里按「每页 ≤200 行且 ≤800 个单元格」分页写入，逐页 PUT，失败即抛错。
+const WRITE_MAX_ROWS = 200;
+const WRITE_MAX_CELLS = 800;
+
+async function putValuesPaged(
+  book: string,
+  sheetName: string,
+  token: string,
+  cfg: { client_id: string; open_id: string },
+  startRow: number,
+  rows: (string | number)[][],
+): Promise<void> {
+  if (!rows.length) return;
+  const colCount = Math.max(...rows.map((r) => r.length));
+  const pageRows = Math.max(1, Math.min(WRITE_MAX_ROWS, Math.floor(WRITE_MAX_CELLS / Math.max(1, colCount))));
+  for (let i = 0; i < rows.length; i += pageRows) {
+    const slice = rows.slice(i, i + pageRows);
+    const from = startRow + i;
+    const to = startRow + i + slice.length - 1;
+    const range = `${sheetName}!A${from}:${colLetter(colCount)}${to}`;
+    const resp = await fetch(`${SHEET_API}/${book}/values/${range}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Token": token,
+        "Client-Id": cfg.client_id,
+        "Open-Id": cfg.open_id,
+      },
+      body: JSON.stringify({ values: slice }),
+    });
+    const body = await resp.json();
+    if (body.ret !== 0) {
+      throw new Error(`腾讯文档写入失败(${range}): ${body.msg || resp.status}`);
+    }
+  }
+}
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -172,21 +212,8 @@ async function resortDailyQuestionsSheet(
     ]),
   ];
 
-  const range = `${sheet.sheet}!A1:D${values.length}`;
-  const resp = await fetch(`${SHEET_API}/${sheet.book}/values/${range}`, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      "Access-Token": token,
-      "Client-Id": cfg.client_id,
-      "Open-Id": cfg.open_id,
-    },
-    body: JSON.stringify({ values }),
-  });
-  const body = await resp.json();
-  if (body.ret !== 0) {
-    throw new Error(`腾讯文档写入失败: ${body.msg || resp.status}`);
-  }
+  // 分页写入（表头 + 数据一起，从第 1 行开始），避免整段区域被腾讯文档判为参数非法
+  await putValuesPaged(sheet.book, sheet.sheet, token, cfg, 1, values);
 
   // 重建行号映射（最新在第二行，后续 UPDATE 据此原位更新状态列）
   if (list.length) {
@@ -309,21 +336,8 @@ async function resortSubmissionsSheet(
       body: JSON.stringify({ values: [["提交时间", "答主", "文章标题", "文章链接", "状态", "来源"]] }),
     });
   }
-  const range = `${sheet.sheet}!A2:${colLetter(colCount)}${1 + list.length}`;
-  const resp = await fetch(`${SHEET_API}/${sheet.book}/values/${range}`, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      "Access-Token": token,
-      "Client-Id": cfg.client_id,
-      "Open-Id": cfg.open_id,
-    },
-    body: JSON.stringify({ values: list.map((r) => r.cells) }),
-  });
-  const body = await resp.json();
-  if (body.ret !== 0) {
-    throw new Error(`腾讯文档写入失败: ${body.msg || resp.status}`);
-  }
+  // 分页写入（数据区从第 2 行开始，表头第 1 行上面单独写过）
+  await putValuesPaged(sheet.book, sheet.sheet, token, cfg, 2, list.map((r) => r.cells));
 
   // 重建行号映射（最新在第二行，后续 UPDATE 据此原位更新）
   const payload = list.map((r, i) => ({
