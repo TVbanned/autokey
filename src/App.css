@@ -6271,3 +6271,559 @@ body.zq-resizing { cursor: col-resize; user-select: none; }
 @media (max-width: 900px) {
   .submission-metrics .metrics-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
+
+/* ===== 答主看板「薅羊毛 · 限时福利」页卡（2026-10-09 新增） =====
+   数据：Epic 喜加一 / Steam 限时折扣 / 其它平台福利，由 Supabase Edge Function `deals` 聚合。
+   骨架沿用看板既有形态（面板头 → 分块 → 卡片网格），配色全部走全局 token，未新增颜色变量。
+   §20「禁止贴靠」：面板头分隔线到首个分块留 20px，分块之间 24px，卡片之间 16px。 */
+.deals-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: 0 0 var(--sp-3);
+  border-bottom: 1px dashed var(--c-border);
+  margin-bottom: var(--sp-5);
+}
+.deals-head-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-shrink: 0;
+}
+.deals-updated {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--r-full);
+  background: var(--c-surface-2);
+  color: var(--c-ink-4);
+  font-size: var(--fs-meta);
+  font-variant-numeric: tabular-nums;
+}
+.deals-refresh {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-full);
+  background: var(--c-surface);
+  color: var(--c-ink-3);
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color .15s, background .15s, color .15s;
+}
+.deals-refresh:hover:not(:disabled) {
+  border-color: var(--c-primary);
+  background: var(--c-primary-soft);
+  color: var(--c-primary);
+}
+.deals-refresh:disabled {
+  opacity: .6;
+  cursor: default;
+}
+
+.deals-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+  padding: 10px var(--sp-4);
+  border: 1px solid rgba(220, 38, 38, .24);
+  border-radius: var(--r-sm);
+  background: var(--c-danger-soft);
+  color: var(--c-danger);
+  font-size: var(--fs-label);
+}
+.deals-error button {
+  color: var(--c-danger);
+  font-size: var(--fs-label);
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.deals-source-warning {
+  margin: 0 0 var(--sp-4);
+  color: var(--c-warning);
+  font-size: var(--fs-meta);
+  line-height: 1.7;
+}
+
+.deals-block + .deals-block {
+  margin-top: var(--sp-6);
+  padding-top: var(--sp-5);
+  border-top: 1px solid var(--c-border);
+}
+.deals-block-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+.deals-block-head h4 {
+  color: var(--c-ink);
+  font-size: var(--fs-section-title);
+  font-weight: 700;
+}
+.deals-block-head > span {
+  color: var(--c-ink-4);
+  font-size: var(--fs-meta);
+}
+
+.deals-grid {
+  display: grid;
+  gap: var(--sp-4);
+}
+.deals-grid-epic { grid-template-columns: repeat(auto-fill, minmax(258px, 1fr)); }
+.deals-grid-steam { grid-template-columns: repeat(auto-fill, minmax(214px, 1fr)); }
+
+.deal-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-lg);
+  background: var(--c-surface);
+  transition: border-color .15s, box-shadow .15s, transform .15s;
+}
+.deal-card:hover {
+  border-color: var(--c-primary);
+  box-shadow: 0 10px 26px rgba(15, 41, 34, .10);
+  transform: translateY(-2px);
+}
+
+.deal-cover {
+  position: relative;
+  overflow: hidden;
+  background: var(--c-surface-2);
+}
+.deal-cover-wide { aspect-ratio: 16 / 9; }
+.deal-cover-capsule { aspect-ratio: 231 / 87; }
+.deal-cover img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.deal-flag {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 2px 8px;
+  border-radius: var(--r-full);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .2px;
+}
+.deal-flag-free {
+  background: var(--c-success);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(5, 150, 105, .3);
+}
+.deal-flag-discount {
+  background: var(--c-danger);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(220, 38, 38, .28);
+}
+
+.deal-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4) var(--sp-4);
+}
+.deal-title {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--c-ink);
+  font-size: var(--fs-label);
+  font-weight: 600;
+  line-height: 1.45;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.deal-meta-row,
+.deal-price-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: auto;
+}
+.deal-worth {
+  color: var(--c-ink-4);
+  font-size: var(--fs-meta);
+}
+.deal-countdown {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--c-ink-3);
+  font-size: var(--fs-meta);
+  font-variant-numeric: tabular-nums;
+}
+.deal-countdown.urgent {
+  color: var(--c-danger);
+  font-weight: 600;
+}
+.deal-cta {
+  align-self: flex-start;
+  margin-top: var(--sp-2);
+  padding: 5px 14px;
+  border-radius: var(--r-full);
+  background: var(--c-primary);
+  color: #fff;
+  font-size: var(--fs-meta);
+  font-weight: 600;
+}
+.deal-price-row s {
+  color: var(--c-ink-4);
+  font-size: var(--fs-meta);
+}
+.deal-price-row strong {
+  color: var(--c-danger);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.deals-upcoming {
+  margin-top: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px dashed var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface-2);
+}
+.deals-upcoming-label {
+  display: inline-block;
+  margin-bottom: var(--sp-2);
+  color: var(--c-ink-2);
+  font-size: var(--fs-meta);
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+.deals-upcoming-list {
+  display: grid;
+  gap: 6px;
+  list-style: none;
+}
+.deals-upcoming-list li {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  font-size: var(--fs-label);
+}
+.deals-upcoming-title { color: var(--c-ink); font-weight: 600; }
+.deals-upcoming-time { color: var(--c-primary); font-size: var(--fs-meta); }
+.deals-upcoming-worth { color: var(--c-ink-4); font-size: var(--fs-meta); }
+
+.deals-other-list {
+  display: grid;
+  gap: var(--sp-3);
+  list-style: none;
+}
+.deals-other-item {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  transition: border-color .15s, background .15s;
+}
+.deals-other-item:hover {
+  border-color: var(--c-primary);
+  background: var(--c-primary-soft);
+}
+.deals-other-thumb {
+  width: 64px;
+  height: 48px;
+  overflow: hidden;
+  border-radius: var(--r-sm);
+  background: var(--c-surface-2);
+}
+.deals-other-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.deals-other-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.deals-other-title {
+  overflow: hidden;
+  color: var(--c-ink);
+  font-size: var(--fs-label);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.deals-other-tags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pill.deal-type-tag {
+  border: 1px solid rgba(5, 150, 105, .18);
+  background: var(--c-primary-soft);
+  color: var(--c-success);
+}
+.pill.deal-platform-tag {
+  background: var(--c-surface-2);
+  color: var(--c-ink-3);
+}
+.deals-other-worth {
+  color: var(--c-ink-4);
+  font-size: var(--fs-meta);
+}
+.deals-other-worth-cny {
+  color: var(--c-danger);
+  font-size: var(--fs-meta);
+  font-variant-numeric: tabular-nums;
+}
+.deals-other-side {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+.deals-other-notime {
+  color: var(--c-ink-4);
+  font-size: var(--fs-meta);
+  white-space: nowrap;
+}
+
+.deals-other-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-4);
+  border-top: 1px dashed var(--c-border);
+}
+.deals-note {
+  flex: 1 1 320px;
+  margin: 0;
+  color: var(--c-ink-4);
+  font-size: var(--fs-meta);
+  line-height: 1.7;
+}
+
+@media (max-width: 760px) {
+  .deals-grid-epic,
+  .deals-grid-steam { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .deals-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .deals-other-item { grid-template-columns: 56px minmax(0, 1fr); }
+  .deals-other-side {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+}
+@media (max-width: 560px) {
+  .deals-grid-epic,
+  .deals-grid-steam { grid-template-columns: minmax(0, 1fr); }
+  .deals-other-item { grid-template-columns: minmax(0, 1fr); }
+  .deals-other-thumb {
+    width: 100%;
+    height: 120px;
+  }
+}
+
+/* 「主机特惠」子块（2026-10-09 新增）：Xbox / 任天堂 两块紧凑列表。
+   品牌色属于平台身份标识，全局 token 里没有对应色，按 §12「主题色」与 .favorite-heat 的既有做法，
+   在组件作用域内定义 --console-* 局部变量，不新增全局 token、不散落裸色值。 */
+.deals-console-group {
+  --console-xbox: #107c10;
+  --console-nintendo: #e60012;
+}
+.deals-console-groups {
+  display: grid;
+  gap: var(--sp-5);
+}
+.deals-console-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+.deals-console-brand {
+  padding: 3px 10px;
+  border-radius: var(--r-full);
+  color: #fff;
+  font-size: var(--fs-meta);
+  font-weight: 700;
+  letter-spacing: .2px;
+}
+.deals-console-brand.brand-xbox { background: var(--console-xbox); }
+.deals-console-brand.brand-nintendo { background: var(--console-nintendo); }
+.deals-console-note {
+  color: var(--c-ink-4);
+  font-size: var(--fs-meta);
+}
+.deals-console-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--sp-3);
+  list-style: none;
+}
+.deals-console-item {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  transition: border-color .15s, background .15s;
+}
+.deals-console-item:hover {
+  border-color: var(--c-primary);
+  background: var(--c-primary-soft);
+}
+.deals-console-thumb {
+  width: 48px;
+  height: 48px;
+  overflow: hidden;
+  border-radius: var(--r-sm);
+  background: var(--c-surface-2);
+}
+.deals-console-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.deals-console-body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+/* 区服切换：Xbox 6 个区、任天堂 8 个区，横向排列可换行。
+   没有数据的区保留按钮但置灰，避免切换后列表位置跳动。 */
+.deals-region-switch {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: var(--sp-3);
+}
+.deals-region-btn {
+  height: 26px;
+  padding: 0 11px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-full);
+  background: var(--c-surface);
+  color: var(--c-ink-3);
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color .15s, background .15s, color .15s;
+}
+.deals-region-btn:hover:not(:disabled) {
+  border-color: var(--c-primary);
+  color: var(--c-primary);
+}
+.deals-region-btn.active {
+  border-color: var(--c-primary);
+  background: var(--c-primary-soft);
+  color: var(--c-primary);
+  font-weight: 600;
+}
+.deals-region-btn:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+.deals-region-btn:focus-visible {
+  outline: 2px solid var(--c-primary);
+  outline-offset: 2px;
+}
+.deals-console-title {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--c-ink);
+  font-size: var(--fs-label);
+  font-weight: 600;
+  line-height: 1.4;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.deals-console-prices {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: var(--fs-meta);
+}
+.deals-console-off {
+  padding: 1px 6px;
+  border-radius: var(--r-full);
+  background: var(--c-danger);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.deals-console-prices s {
+  color: var(--c-ink-4);
+  font-variant-numeric: tabular-nums;
+}
+.deals-console-prices strong {
+  color: var(--c-danger);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.deals-console-orig {
+  color: var(--c-ink-4);
+  font-size: 11px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+.deals-console-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--c-ink-3);
+  font-size: var(--fs-meta);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.deals-console-end.urgent {
+  color: var(--c-danger);
+  font-weight: 600;
+}
+.deals-console-foot {
+  margin-top: var(--sp-4);
+  flex: none;
+}
+
+@media (max-width: 760px) {
+  .deals-console-list { grid-template-columns: minmax(0, 1fr); }
+  .deals-console-item { grid-template-columns: 44px minmax(0, 1fr); }
+  .deals-console-end {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    padding-left: 2px;
+  }
+}
