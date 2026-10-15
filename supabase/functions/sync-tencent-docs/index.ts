@@ -81,6 +81,29 @@ function colLetter(n: number): string {
   return s;
 }
 
+// PostgREST（supabase-js 的 select）单次最多只返回 1000 行，超过就静默截断；
+// 不显式 order 时返回的是哪一段还取决于表的物理顺序。
+// 2026-10-15 事故：「答主日常投稿」的 keyflow_daily_submissions 超过 1000 行后，
+// 函数只读到其中一段（1716 = 1000 + 综合活动 716），表里就少了最新/最旧的投稿。
+// 这里统一按 1000 行分页把整表读全，并显式排序保证顺序稳定。
+const READ_PAGE_ROWS = 1000;
+
+async function selectAllPaged<T>(
+  makeQuery: () => any,
+  label: string,
+  pageRows = READ_PAGE_ROWS,
+): Promise<T[]> {
+  const rows: T[] = [];
+  for (let from = 0; ; from += pageRows) {
+    const { data, error } = await makeQuery().range(from, from + pageRows - 1);
+    if (error) throw new Error(`读取${label}失败: ${error.message}`);
+    const batch = (data ?? []) as T[];
+    rows.push(...batch);
+    if (batch.length < pageRows) break;
+  }
+  return rows;
+}
+
 // 腾讯文档单次写入有参数上限：整个区域一次性 PUT 时，行数/单元格数过多会返回
 // ret=10002「Input parameter verification failed」（2026-09-20：「答主日常投稿」表数据
 // 超过 1000 行后整段 A2:F1085 写入被拒，同步卡在 9/19）。
@@ -190,14 +213,18 @@ async function resortDailyQuestionsSheet(
   cfg: { client_id: string; open_id: string },
 ): Promise<number> {
   // 回答已分流至 keyflow_daily_submissions（答主日常投稿），此表仅剩问题记录。
-  const { data, error } = await supabase
-    .from("keyflow_daily_questions")
-    .select("id,title,zhihu_url,processed,created_at")
-    .eq("content_type", "question");
+  const data = await selectAllPaged<any>(
+    () =>
+      supabase
+        .from("keyflow_daily_questions")
+        .select("id,title,zhihu_url,processed,created_at")
+        .eq("content_type", "question")
+        .order("created_at", { ascending: false })
+        .order("id"),
+    "日常问题记录",
+  );
 
-  if (error) throw new Error(`读取日常问题记录失败: ${error.message}`);
-
-  const list = (data ?? []).sort((a, b) =>
+  const list = data.sort((a, b) =>
     (new Date(String(b.created_at)).getTime() - new Date(String(a.created_at)).getTime()) ||
     (contentIdOf(b.zhihu_url) - contentIdOf(a.zhihu_url)),
   );
@@ -244,14 +271,27 @@ async function resortSubmissionsSheet(
 
   if (sheetKey === "keyflow_deliveries") {
     const [dres, ares, tres] = await Promise.all([
-      supabase.from("keyflow_deliveries").select("id,application_id,submitted_at,article_title,article_url,claimed_word_count,verified_word_count,status"),
-      supabase.from("keyflow_applications").select("id,zhihu_name,activity_id"),
-      supabase.from("keyflow_activities").select("id,title,game_name"),
+      selectAllPaged<any>(
+        () =>
+          supabase
+            .from("keyflow_deliveries")
+            .select("id,application_id,submitted_at,article_title,article_url,claimed_word_count,verified_word_count,status")
+            .order("submitted_at", { ascending: false })
+            .order("id"),
+        "活动投稿记录",
+      ),
+      selectAllPaged<any>(
+        () => supabase.from("keyflow_applications").select("id,zhihu_name,activity_id").order("id"),
+        "活动报名记录",
+      ),
+      selectAllPaged<any>(
+        () => supabase.from("keyflow_activities").select("id,title,game_name").order("id"),
+        "活动记录",
+      ),
     ]);
-    if (dres.error) throw new Error(`读取活动投稿记录失败: ${dres.error.message}`);
-    const appById: Record<string, any> = Object.fromEntries((ares.data ?? []).map((a) => [a.id, a]));
-    const actById: Record<string, any> = Object.fromEntries((tres.data ?? []).map((a) => [a.id, a]));
-    list = (dres.data ?? []).map((d) => {
+    const appById: Record<string, any> = Object.fromEntries(ares.map((a) => [a.id, a]));
+    const actById: Record<string, any> = Object.fromEntries(tres.map((a) => [a.id, a]));
+    list = dres.map((d) => {
       const app = appById[d.application_id] ?? {};
       const act = actById[app.activity_id] ?? {};
       return {
@@ -272,19 +312,39 @@ async function resortSubmissionsSheet(
   } else {
     // 「答主日常投稿」表 = 日常投稿 + 综合活动命中投稿，合并后按提交时间整体重排，第 6 列「来源」区分
     const [sres, ares, cres, tres] = await Promise.all([
-      supabase.from("keyflow_daily_submissions").select("id,answerer_id,submitted_at,article_title,article_url,processed"),
-      supabase.from("keyflow_answerers").select("id,zhihu_name"),
-      supabase.from("keyflow_comprehensive_submissions").select("id,answerer_id,activity_id,submitted_at,article_title,article_url,processed"),
-      supabase.from("keyflow_activities").select("id,title,game_name"),
+      selectAllPaged<any>(
+        () =>
+          supabase
+            .from("keyflow_daily_submissions")
+            .select("id,answerer_id,submitted_at,article_title,article_url,processed")
+            .order("submitted_at", { ascending: false })
+            .order("id"),
+        "日常投稿记录",
+      ),
+      selectAllPaged<any>(
+        () => supabase.from("keyflow_answerers").select("id,zhihu_name").order("id"),
+        "答主记录",
+      ),
+      selectAllPaged<any>(
+        () =>
+          supabase
+            .from("keyflow_comprehensive_submissions")
+            .select("id,answerer_id,activity_id,submitted_at,article_title,article_url,processed")
+            .order("submitted_at", { ascending: false })
+            .order("id"),
+        "综合活动投稿记录",
+      ),
+      selectAllPaged<any>(
+        () => supabase.from("keyflow_activities").select("id,title,game_name").order("id"),
+        "活动记录",
+      ),
     ]);
-    if (sres.error) throw new Error(`读取日常投稿记录失败: ${sres.error.message}`);
-    if (cres.error) throw new Error(`读取综合活动投稿记录失败: ${cres.error.message}`);
-    const answererById: Record<string, any> = Object.fromEntries((ares.data ?? []).map((a) => [a.id, a]));
-    const activityById: Record<string, any> = Object.fromEntries((tres.data ?? []).map((a) => [a.id, a]));
+    const answererById: Record<string, any> = Object.fromEntries(ares.map((a) => [a.id, a]));
+    const activityById: Record<string, any> = Object.fromEntries(tres.map((a) => [a.id, a]));
     const nameOf = (answererId: unknown) =>
       answererId ? (answererById[String(answererId)]?.zhihu_name ?? "") : "管理员";
     list = [
-      ...(sres.data ?? []).map((s) => ({
+      ...sres.map((s) => ({
         id: String(s.id),
         submitted_at: s.submitted_at,
         cells: [
@@ -296,7 +356,7 @@ async function resortSubmissionsSheet(
           "日常投稿",
         ],
       })),
-      ...(cres.data ?? []).map((s) => {
+      ...cres.map((s) => {
         const act = activityById[String(s.activity_id)] ?? {};
         const actTitle = act.title || act.game_name || "";
         return {
